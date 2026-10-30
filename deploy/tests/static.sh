@@ -21,6 +21,10 @@ check "afw-internal, lan and wan networks are internal" \
   bash -c 'for n in afw-internal lan wan; do jq -e --arg n "$n" ".networks[\$n].internal == true" <<<"$1" >/dev/null || exit 1; done' _ "$demo_json"
 check "agents have no NET_ADMIN and share an afw-net-* namespace" \
   bash -c 'for a in daniel-bot laurent-bot acme-bot; do jq -e --arg a "$a" "(.services[\$a].network_mode == \"service:afw-net-\" + \$a) and ((.services[\$a].cap_add // []) | index(\"NET_ADMIN\") | not)" <<<"$1" >/dev/null || { echo "$a"; exit 1; }; done' _ "$demo_json"
+check "agents drop NET_RAW and mount their CA bundle volume read-only" \
+  bash -c 'for a in daniel-bot laurent-bot acme-bot; do jq -e --arg a "$a" ".services[\$a] | ((.cap_drop // []) | (index(\"NET_RAW\") != null or index(\"ALL\") != null)) and any(.volumes[]; .source == \"afw-ca-\" + \$a and .target == \"/afw-ca\" and .read_only == true) and .environment.SSL_CERT_FILE == \"/afw-ca/bundle.pem\"" <<<"$1" >/dev/null || { echo "$a"; exit 1; }; done' _ "$demo_json"
+check "afw-net-* drop ALL capabilities but NET_ADMIN" \
+  bash -c 'for a in daniel-bot laurent-bot acme-bot; do jq -e --arg a "$a" ".services[\"afw-net-\" + \$a] | .cap_drop == [\"ALL\"] and .cap_add == [\"NET_ADMIN\"]" <<<"$1" >/dev/null || { echo "$a"; exit 1; }; done' _ "$demo_json"
 check "afw-net-* containers have NET_ADMIN and the enrolment labels" \
   bash -c 'for a in daniel-bot laurent-bot acme-bot; do jq -e --arg a "$a" ".services[\"afw-net-\" + \$a] | ((.cap_add | index(\"NET_ADMIN\")) != null) and .labels[\"afw.enrolled\"] == \"true\" and .labels[\"afw.agent\"] == \$a" <<<"$1" >/dev/null || { echo "$a"; exit 1; }; done' _ "$demo_json"
 check "published ports bind to 127.0.0.1 only" \

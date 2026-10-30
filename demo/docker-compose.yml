@@ -10,7 +10,8 @@
 #   wan          198.18.0.0/24 internal: simulated Internet (demo DNS, fake LLM, exfil, allowed API, S3);
 #                              198.18.0.0/15 (RFC 2544) is outside the policy's internal networks.
 # Agents are enrolled as afw-enroll does it (ADR 0003): each agent shares the network namespace of an
-# afw-net-<agent> container that alone has NET_ADMIN and routes everything to the gateway.
+# afw-net-<agent> container that alone has NET_ADMIN: it routes everything to the gateway (no direct route
+# to the other agents), downs any other interface and builds the agent's CA bundle in afw-ca-<agent>.
 
 name: afw-demo
 
@@ -21,11 +22,11 @@ x-proxy-env: &proxy-env
   https_proxy: http://10.77.0.2:3128
   NO_PROXY: localhost,127.0.0.1,10.76.0.10
   no_proxy: localhost,127.0.0.1,10.76.0.10
-  # Public certificate of the gateway's inspection CA, exported by the gateway in the shared volume.
-  SSL_CERT_FILE: /afw-ca/inspection-ca.crt
-  REQUESTS_CA_BUNDLE: /afw-ca/inspection-ca.crt
-  CURL_CA_BUNDLE: /afw-ca/inspection-ca.crt
-  NODE_EXTRA_CA_CERTS: /afw-ca/inspection-ca.crt
+  # CA bundle built by afw-net-<agent> (system roots + gateway inspection CA), mounted read-only.
+  SSL_CERT_FILE: /afw-ca/bundle.pem
+  REQUESTS_CA_BUNDLE: /afw-ca/bundle.pem
+  CURL_CA_BUNDLE: /afw-ca/bundle.pem
+  NODE_EXTRA_CA_CERTS: /afw-ca/gateway-ca.crt
 
 x-netinit: &netinit
   image: afw-netinit:local
@@ -35,18 +36,24 @@ x-netinit: &netinit
   cap_drop: [ALL]
   cap_add: [NET_ADMIN]
   dns: [10.77.0.2]
+  sysctls:
+    net.ipv6.conf.all.disable_ipv6: "1"
   environment:
     AFW_GATEWAY_IP: 10.77.0.2
+    AFW_GATEWAY_CA_FILE: /afw-gateway-ca/inspection-ca.crt
+  healthcheck:
+    test: ["CMD", "test", "-s", "/afw-ca/bundle.pem"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
   restart: unless-stopped
   mem_limit: 16m
 
 x-agent: &agent
   image: afw-demo-tools:local
   command: ["sleep", "infinity"]
-  cap_drop: [ALL]
+  cap_drop: [NET_RAW]
   security_opt: ["no-new-privileges:true"]
-  volumes:
-    - gateway-public:/afw-ca:ro
   restart: unless-stopped
   mem_limit: 64m
 
@@ -258,6 +265,9 @@ services:
     labels:
       afw.enrolled: "true"
       afw.agent: daniel-bot
+    volumes:
+      - gateway-public:/afw-gateway-ca:ro
+      - afw-ca-daniel-bot:/afw-ca
     networks:
       afw-internal:
         ipv4_address: 10.77.0.10
@@ -269,7 +279,7 @@ services:
       context: ../integrations/hermes
       dockerfile: demo/Dockerfile.demo
     network_mode: service:afw-net-daniel-bot
-    cap_drop: [ALL]
+    cap_drop: [NET_RAW]
     security_opt: ["no-new-privileges:true"]
     env_file:
       - path: .state/demo.env
@@ -280,11 +290,13 @@ services:
       AFW_AGENT_NAME: daniel-bot
       AFW_STATE_DIR: /tmp/afw-hermes
     volumes:
-      - gateway-public:/afw-ca:ro
+      - afw-ca-daniel-bot:/afw-ca:ro
     labels:
       afw.enrolled: "true"
       afw.agent: daniel-bot
-    depends_on: [afw-net-daniel-bot]
+    depends_on:
+      afw-net-daniel-bot:
+        condition: service_healthy
     restart: unless-stopped
     mem_limit: 128m
 
@@ -293,6 +305,9 @@ services:
     labels:
       afw.enrolled: "true"
       afw.agent: laurent-bot
+    volumes:
+      - gateway-public:/afw-gateway-ca:ro
+      - afw-ca-laurent-bot:/afw-ca
     networks:
       afw-internal:
         ipv4_address: 10.77.0.11
@@ -300,18 +315,25 @@ services:
   laurent-bot:
     <<: *agent
     network_mode: service:afw-net-laurent-bot
+    volumes:
+      - afw-ca-laurent-bot:/afw-ca:ro
     environment:
       <<: *proxy-env
     labels:
       afw.enrolled: "true"
       afw.agent: laurent-bot
-    depends_on: [afw-net-laurent-bot]
+    depends_on:
+      afw-net-laurent-bot:
+        condition: service_healthy
 
   afw-net-acme-bot:
     <<: *netinit
     labels:
       afw.enrolled: "true"
       afw.agent: acme-bot
+    volumes:
+      - gateway-public:/afw-gateway-ca:ro
+      - afw-ca-acme-bot:/afw-ca
     networks:
       afw-internal:
         ipv4_address: 10.77.0.12
@@ -319,12 +341,16 @@ services:
   acme-bot:
     <<: *agent
     network_mode: service:afw-net-acme-bot
+    volumes:
+      - afw-ca-acme-bot:/afw-ca:ro
     environment:
       <<: *proxy-env
     labels:
       afw.enrolled: "true"
       afw.agent: acme-bot
-    depends_on: [afw-net-acme-bot]
+    depends_on:
+      afw-net-acme-bot:
+        condition: service_healthy
 
   # --- tooling (not started by default) -------------------------------------------------------------
   # Plain client on the wan network, used by the latency scenario as the "without gateway" baseline.
@@ -364,3 +390,6 @@ volumes:
   gateway-public:
   demo-pki:
   upstream-logs:
+  afw-ca-daniel-bot:
+  afw-ca-laurent-bot:
+  afw-ca-acme-bot:

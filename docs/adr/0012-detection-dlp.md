@@ -53,8 +53,8 @@ ni code n'est repris mot pour mot, d'où aucune entrée dans la section « Third
 
 ## Performances
 Banc `tests/bench.rs` (`--release`, 10 Mio de JSON type API LLM avec échappements, base64 et secrets),
-conteneur `rust:1.91-bookworm` sur le poste de développement : ~50 Mio/s pour `scan`, ~49 Mio/s en flux
-par blocs de 64 Kio.
+conteneur `rust:1.91-bookworm` sur le poste de développement : 50 à 60 Mio/s pour `scan` comme en flux
+par blocs de 64 Kio (selon la charge du poste).
 
 ## Limites connues
 - Deux niveaux de décodage seulement (base64 dans base64 dans base64 non vu).

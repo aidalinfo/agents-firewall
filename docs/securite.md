@@ -34,17 +34,18 @@ La passerelle **ne laisse jamais tout passer** :
 | Aucune politique installée au démarrage | tout est refusé |
 | Politique corrompue, empreinte SHA-256 fausse, format inconnu | document rejeté ; la dernière politique valide est conservée, ou tout est refusé s'il n'y en a aucune |
 | Erreur interne du moteur, analyse de contenu impossible | refus |
+| Corps au-delà de `max_buffered_body`, flux continu (WebSocket, streaming) | analyse au fil de l'eau : coupure dès la détection, mais **un fragment déjà transmis ne peut pas être rappelé** (voir les limites) |
 | Agent inconnu (adresse non enrôlée) | refus |
 | Passerelle arrêtée | les agents n'ont plus de route : aucun réseau |
 | Console injoignable | la passerelle continue d'appliquer la dernière politique installée |
 
-Le refus est **immédiat et explicite** (réponse `403` avec la destination, l'agent et la règle), pour que l'agent puisse expliquer ce qui s'est passé au lieu de réessayer sans fin.
+Le refus est **immédiat et explicite**, pour que l'agent puisse expliquer ce qui s'est passé au lieu de réessayer sans fin : en HTTP(S), réponse `403` avec la destination, l'agent et la règle ; en TCP brut, réinitialisation de la connexion (RST) ; en DNS, réponse `REFUSED`. Tous ces refus sont journalisés.
 
 ## Isolement des agents
 
 Détail technique : [ADR 0003](adr/0003-isolement-reseau.md) et [enrolement.md](enrolement.md#le-motif-afw-net-ou-pourquoi-un-conteneur-de-plus).
 
-- **Docker.** L'agent est sur un réseau `internal: true`, sans sortie. Sa route par défaut est posée par un conteneur voisin `afw-net-<agent>` qui seul détient `NET_ADMIN` ; l'agent n'a pas ce droit et ne peut pas la changer. Sur la passerelle, nftables redirige tout le TCP vers l'écoute transparente, l'UDP 53 vers le DNS filtrant, et **rejette tout le reste**.
+- **Docker.** L'agent est sur un réseau `internal: true`, sans sortie. Sa route par défaut est posée par un conteneur voisin `afw-net-<agent>` qui seul détient `NET_ADMIN` ; l'agent n'a pas ce droit et ne peut pas la changer. Sur la passerelle, nftables redirige tout le TCP vers l'écoute transparente, l'UDP 53 vers le DNS filtrant, et **abandonne (drop) tout le reste**.
 - **Kubernetes.** Une NetworkPolicy n'autorise en sortie que la passerelle du namespace ; le DNS du pod est la passerelle.
 - **Identité.** Un agent est identifié par son adresse sur le réseau interne, fixée à l'enrôlement. Il ne peut pas la changer sans `NET_ADMIN`.
 
@@ -109,9 +110,25 @@ Choix de la V1 :
 
 - **pas de blocage** de ces accès ni de filtrage action par action des API d'administration ;
 - **surveillance** : les appels aux API d'administration passent par la passerelle et sont journalisés avec l'action et la ressource (création de pod, `exec`, redéploiement) ; une action inhabituelle déclenche une alerte ;
-- à l'enrôlement, un conteneur **privilégié** ou ayant le **socket Docker** reçoit un **avertissement**, pas un refus ; seul `network_mode: host` est refusé.
+- à l'enrôlement, un conteneur **privilégié** ou ayant le **socket Docker** reçoit seulement un **avertissement**, pas un refus. Seul `network_mode: host` est refusé : dans ce mode, l'isolement réseau est impossible et l'enrôlement mentirait sur la protection (choix du constructeur, ADR 0023 (lot L11, à venir)).
 
 Recommandations : réservez ces accès à des agents dédiés, placés dans une zone dédiée ; limitez leurs droits côté Kubernetes ou Coolify (comptes de service restreints) ; enrôlez aussi les charges qu'ils lancent quand c'est possible ; suivez les alertes « action d'administration inhabituelle ».
+
+### L'étage intention du plugin Hermes n'est pas une barrière
+
+Les classes d'actions et leur « gate » (plugin Hermes) s'exécutent **dans l'agent**. Elles se contournent par construction, exactement comme l'egress-guard qu'elles remplacent : un script, une variable ou un serveur MCP qui agit hors des outils surveillés n'y passe pas. Elles servent à guider l'agent et à corréler ses actions, pas à protéger. **La seule barrière est la passerelle**, qui voit le trafic réseau réel.
+
+### Flux internes acceptés par défaut
+
+Par décision, les flux vers les réseaux internes et les autres agents sont **acceptés et surveillés, pas bloqués**, tant qu'aucune règle de zone ne les refuse. Un agent compromis peut donc joindre une base, une API d'administration ou un autre agent : le flux est journalisé en détail, la carte des flux internes le montre et la détection de mouvement latéral peut lever une alerte, mais rien n'est empêché. Écrivez des règles de zone `deny` vers les systèmes internes sensibles.
+
+### Analyse au fil de l'eau des gros corps et des flux continus
+
+Jusqu'à `max_buffered_body` (1 Mio par défaut), un corps est analysé en entier **avant** d'être envoyé. Au-delà, et pour les WebSocket et le streaming, l'analyse se fait au fil de l'eau : la connexion est coupée dès la détection, mais **la partie déjà transmise est partie**. Un secret placé après un long préambule peut donc sortir en partie avant la coupure ; l'événement est journalisé et une alerte est levée. Augmentez `max_buffered_body` pour les zones sensibles si la mémoire le permet.
+
+### Exfiltration lente par DNS
+
+La passerelle filtre les noms demandés, mais si un domaine est autorisé avec un joker (par exemple `*.exemple.com`), un agent peut encoder des données dans des sous-domaines (`c2VjcmV0.exemple.com`) et les faire sortir lentement, requête après requête, vers le serveur qui fait autorité pour ce domaine. Chaque requête est journalisée, mais les détecteurs de classes de données ne voient que des fragments courts. Préférez des domaines exacts aux jokers et surveillez les alertes « nouvelle destination » et le volume de requêtes DNS par agent.
 
 ### Destinations autorisées et fournisseurs LLM
 
@@ -125,7 +142,7 @@ Une application qui n'accepte que le certificat attendu du serveur (épinglage) 
 
 ### QUIC, HTTP/3 et autre UDP
 
-Seuls le TCP et le DNS (UDP/TCP 53) sont pris en charge. **Tout autre UDP est rejeté**, y compris QUIC (HTTP/3). Les navigateurs et la plupart des bibliothèques reviennent alors en HTTPS sur TCP, qui est inspecté. Un usage qui exige UDP (VoIP, certains VPN, jeux) ne fonctionnera pas derrière la passerelle : c'est voulu.
+Seuls le TCP et le DNS (UDP/TCP 53) sont pris en charge. **Tout autre UDP est abandonné (drop)**, y compris QUIC (HTTP/3). Les navigateurs et la plupart des bibliothèques reviennent alors en HTTPS sur TCP, qui est inspecté. Un usage qui exige UDP (VoIP, certains VPN, jeux) ne fonctionnera pas derrière la passerelle : c'est voulu.
 
 ### DNS chiffré
 

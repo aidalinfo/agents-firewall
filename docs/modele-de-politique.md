@@ -123,10 +123,10 @@ En HTTP(S), la réponse est immédiate et explicite :
 HTTP/1.1 403 Forbidden
 X-Agents-Firewall: denied
 
-blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule 7)
+blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule default-deny)
 ```
 
-Le texte est en anglais car il s'adresse aux programmes et aux modèles ; la console le traduit. En TCP brut, la connexion est réinitialisée ; en DNS, la requête reçoit une réponse de refus. Dans tous les cas, le refus est journalisé avec la règle appliquée.
+Le texte est en anglais car il s'adresse aux programmes et aux modèles ; la console le traduit. Quand c'est une règle explicite qui refuse, son numéro est indiqué (`rule 7`) ; quand c'est le nettoyage implicite, la réponse indique `rule default-deny`. En TCP brut, la connexion est réinitialisée (RST) ; en DNS, la requête reçoit une réponse `REFUSED`. Dans tous les cas, le refus est journalisé avec la règle appliquée.
 
 ## Contenu et classes de données
 

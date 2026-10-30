@@ -26,7 +26,7 @@ Authorization: Bearer <jeton>
 
 - **Humains** : jeton OIDC obtenu par la console (fournisseur OIDC générique).
 - **Scripts, CLI, intégrations** : jeton d'API créé par `/api/v1/tokens`, rattaché à un rôle et révocable.
-- **Plugin Hermes** : jeton propre à l'agent, créé à l'enrôlement ; il ne donne accès qu'à `ingest/tool-calls` et `intent-policy`.
+- **Plugin Hermes** : jeton propre à l'agent, créé à l'enrôlement ; il est prévu qu'il ne donne accès qu'à `ingest/tool-calls` et `intent-policy` (à venir).
 
 Rôles : `admin`, `auditor`, `viewer`, `mcp_agent` (voir [securite.md](securite.md#rôles-et-droits)). `GET /api/v1/me` renvoie l'identité et le rôle du jeton utilisé.
 

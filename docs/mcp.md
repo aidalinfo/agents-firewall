@@ -33,7 +33,7 @@ Exemple de déclaration côté client MCP, en stdio (forme générique) :
 2. Un administrateur marque cet agent comme agréé (indicateur `mcp_admin`) et lui crée un jeton de rôle `mcp_agent`.
 3. Un administrateur indique quelles zones lui sont **déléguées** (indicateur `delegated_to_mcp` sur chaque zone).
 
-Il n'y a qu'un seul agent agréé.
+Il n'y a qu'un seul agent agréé : l'API n'accepte qu'**un seul jeton `mcp_agent` actif à la fois** (prévu, lot L7, à venir).
 
 ## Ce que l'agent peut faire
 
@@ -49,7 +49,7 @@ L'agent agréé ne peut **jamais modifier ce qui s'applique à lui-même** :
 - sa propre zone (mode, délégation, nom) ;
 - une règle dont la source est sa zone ;
 - déplacer un agent vers sa zone ou hors de sa zone ;
-- le socle commun ;
+- le socle commun (choix du constructeur, par sûreté : le socle porte les interdits absolus qui s'appliquent aussi à l'agent agréé) ;
 - une zone qui ne lui est pas déléguée.
 
 Ces refus sont appliqués par l'API (réponse `403`), pas seulement par le serveur MCP : passer directement par l'API avec le même jeton ne change rien.

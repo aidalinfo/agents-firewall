@@ -25,7 +25,7 @@ The most reliable way to break the trifecta is to **control what leaves**. Guard
 
 ## What it does
 
-- **Unbypassable egress control** — every enrolled agent container reaches the outside world *only* through a gateway. Default deny. Denials are immediate and explicit, so the agent can explain what happened.
+- **Unbypassable egress control** — for all network traffic of an enrolled agent: every enrolled agent container reaches the outside world *only* through a gateway (see the [known limitations](docs/securite.md#limites-connues), in French). Default deny. Denials are immediate and explicit, so the agent can explain what happened.
 - **Enterprise-grade policy model** — inspired by Check Point: reusable objects, zones (VLAN-like groups of agents), an ordered rulebase with a shared baseline layer, sessions, publish & install, revisions, rollback, hit counts, "where used".
 - **Maximum visibility** — every flow, DNS query and HTTP request/response (TLS inspection), with on-demand packet captures, all **correlated with the agent tool call and conversation** that triggered them.
 - **Data-aware rules** — block requests by data class (secrets, infrastructure inventory, commercial data), not only by destination. Secrets are masked before logs are stored.

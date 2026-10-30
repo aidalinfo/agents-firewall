@@ -122,11 +122,11 @@ Les variables de certificat couvrent les environnements les plus courants (Pytho
 
 | Situation | Effet |
 |---|---|
-| `network_mode: host` | **refus** : l'agent partagerait la pile réseau de l'hôte, l'isolement est impossible |
+| `network_mode: host` | **refus** : l'agent partagerait la pile réseau de l'hôte ; l'isolement est impossible, l'enrôlement mentirait donc sur la protection (choix du constructeur, ADR 0023 (lot L11, à venir)) |
 | `privileged: true` | **avertissement** : un conteneur privilégié peut modifier le réseau ; l'agent est enrôlé, mais la protection n'est plus garantie |
 | socket Docker monté (`/var/run/docker.sock`) | **avertissement** : l'agent peut lancer d'autres conteneurs hors de la passerelle |
 
-Le refus des conteneurs privilégiés à l'enrôlement a été volontairement écarté : on prévient, on surveille, on ne bloque pas. Voir les limites dans [securite.md](securite.md#limites-connues).
+Les conteneurs privilégiés ou ayant le socket Docker sont seulement **signalés par un avertissement** : leur refus à l'enrôlement a été volontairement écarté (on prévient, on surveille, on ne bloque pas). Seul `network_mode: host` est refusé, parce que l'isolement y est impossible (ADR 0023 (lot L11, à venir)). Voir les limites dans [securite.md](securite.md#limites-connues).
 
 ## Coolify
 
@@ -161,15 +161,17 @@ Pour un agent qui n'est ni dans un compose ni sous Coolify, l'enrôlement fourni
 
 Pour un agent Hermes, la même commande pose **l'enrôlement réseau et le plugin** :
 
-- montage du plugin `afw_hermes` dans le dossier de plugins de l'agent ;
-- variables `AFW_CONSOLE_URL`, `AFW_AGENT_TOKEN` (jeton propre à l'agent, créé par `POST /api/v1/enrollments`) et `AFW_AGENT_NAME`.
+- copie du plugin `afw_hermes` dans le dossier des plugins de Hermes, et activation du plugin dans la configuration de Hermes (`plugins.enabled`) ;
+- variables `AFW_CONSOLE_URL`, `AFW_AGENT_TOKEN` (jeton propre à l'agent, créé par `POST /api/v1/enrollments`), `AFW_AGENT_NAME` et `AFW_CA_FILE` (certificat de l'autorité d'inspection, pour que le plugin joigne la console à travers la passerelle).
 
 Le plugin apporte deux choses :
 
 1. la **corrélation** : il envoie le début et la fin de chaque appel d'outil (`POST /api/v1/ingest/tool-calls`), ce qui permet à la console d'afficher « tel outil, dans telle conversation, a ouvert ces connexions » ([ADR 0007](adr/0007-correlation.md)) ;
 2. l'**étage intention** : les classes d'actions (suppression, accès, infrastructure, génération payante) et leur « gate » (blocage avec un message à l'agent), selon une politique servie par la console (`GET /api/v1/intent-policy`), mise en cache, avec repli sur la dernière politique connue.
 
-Le plugin n'est jamais bloquant pour la corrélation : si la console est injoignable, les événements sont mis en file et envoyés plus tard. Les décisions de destination et de contenu restent portées par la passerelle.
+Le plugin n'est jamais bloquant pour la corrélation : si la console est injoignable, les événements sont mis en file et envoyés plus tard.
+
+> **Attention.** L'étage intention s'exécute **dans l'agent** : il guide l'agent et alimente la corrélation, mais il se contourne par construction (un script ou un serveur MCP qui agit hors des outils surveillés n'y passe pas). Ce n'est pas une barrière de sécurité. La protection réelle, sur les destinations et le contenu, est portée par la passerelle. Voir [securite.md](securite.md#létage-intention-du-plugin-hermes-nest-pas-une-barrière).
 
 Objectif : un nouvel agent Hermes est protégé et visible dans la console **en une commande**.
 
@@ -193,7 +195,7 @@ Depuis le conteneur de l'agent :
 ```sh
 # 1. Destination non autorisée : refus explicite, immédiat
 curl -sS https://exfil.exemple.com/
-# blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule 7)
+# blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule default-deny)
 
 # 2. Même chose en ignorant le proxy : toujours bloqué
 curl -sS --noproxy '*' https://exfil.exemple.com/

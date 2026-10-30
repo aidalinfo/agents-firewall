@@ -149,7 +149,7 @@ Le jeton est alors consommé : le relancer ne sert à rien. En cas d'échec (jet
 | 53/udp et 53/tcp | DNS filtrant | réseau interne des agents |
 | 9090/tcp | santé de la passerelle | supervision locale |
 
-Aucun de ces ports n'a besoin d'être publié sur l'hôte. Tout autre trafic transféré depuis le réseau interne (UDP autre que DNS, ICMP…) est rejeté.
+Aucun de ces ports n'a besoin d'être publié sur l'hôte. Tout autre trafic transféré depuis le réseau interne (UDP autre que DNS, ICMP…) est abandonné (drop).
 
 ### 3.4 Vérifier
 

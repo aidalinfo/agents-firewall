@@ -23,7 +23,7 @@ Le moyen le plus fiable de casser cette combinaison est de **contrôler ce qui s
 
 ## Ce qu'il fait
 
-- **Contrôle des sorties impossible à contourner** : un agent enrôlé ne sort que par la passerelle. Refus par défaut, immédiat et explicite.
+- **Contrôle des sorties impossible à contourner**, pour tout le trafic réseau d'un agent enrôlé : il ne sort que par la passerelle (voir les [limites connues](docs/securite.md#limites-connues)). Refus par défaut, immédiat et explicite.
 - **Modèle de politique d'entreprise**, inspiré de Check Point : objets, zones (façon VLAN), base de règles ordonnée avec socle commun, sessions, publication et installation, révisions, retour arrière, compteurs.
 - **Visibilité maximale** : chaque flux, requête DNS, requête et réponse HTTP (inspection TLS), captures à la demande, **rattachés à l'appel d'outil et à la conversation** de l'agent.
 - **Règles sur le contenu** : refus selon la classe de donnée (secrets, inventaire d'infrastructure, données commerciales). Secrets masqués avant stockage.

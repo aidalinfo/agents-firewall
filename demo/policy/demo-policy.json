@@ -1,0 +1,495 @@
+{
+  "objects": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "api.anthropic.com",
+      "comment": "Fournisseur LLM (simulé par fake-llm dans la démo)",
+      "category": "llm_provider",
+      "spec": {
+        "type": "domain",
+        "pattern": "api.anthropic.com"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "api.openai.com",
+      "comment": "Fournisseur LLM (simulé par fake-llm dans la démo)",
+      "category": "llm_provider",
+      "spec": {
+        "type": "domain",
+        "pattern": "api.openai.com"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000103",
+      "name": "Fournisseurs LLM",
+      "comment": "Détail maximal, exemptés du blocage par classe de données (EF-25)",
+      "category": "llm_provider",
+      "spec": {
+        "type": "group",
+        "members": [
+          "00000000-0000-4000-8000-000000000101",
+          "00000000-0000-4000-8000-000000000102"
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000104",
+      "name": "Métadonnées cloud (IP)",
+      "comment": "",
+      "category": "cloud_metadata",
+      "spec": {
+        "type": "host",
+        "ip": "169.254.169.254"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000105",
+      "name": "Métadonnées cloud (GCP)",
+      "comment": "",
+      "category": "cloud_metadata",
+      "spec": {
+        "type": "domain",
+        "pattern": "metadata.google.internal"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000106",
+      "name": "Métadonnées cloud",
+      "comment": "",
+      "category": "cloud_metadata",
+      "spec": {
+        "type": "group",
+        "members": [
+          "00000000-0000-4000-8000-000000000104",
+          "00000000-0000-4000-8000-000000000105"
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000107",
+      "name": "api.github.com",
+      "comment": "",
+      "category": null,
+      "spec": {
+        "type": "domain",
+        "pattern": "api.github.com"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000108",
+      "name": "allowed.example",
+      "comment": "API autorisée de démonstration",
+      "category": null,
+      "spec": {
+        "type": "domain",
+        "pattern": "allowed.example"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000109",
+      "name": "s3.demo.example",
+      "comment": "Stockage objet (URL présignées, EF-72)",
+      "category": null,
+      "spec": {
+        "type": "domain",
+        "pattern": "s3.demo.example"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000110",
+      "name": "Console agents-firewall",
+      "comment": "API du plan de contrôle (plugin Hermes)",
+      "category": null,
+      "spec": {
+        "type": "host",
+        "ip": "10.76.0.10"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000111",
+      "name": "LAN de démonstration",
+      "comment": "Réseau interne simulé (internal-db)",
+      "category": "internal",
+      "spec": {
+        "type": "network",
+        "cidr": "10.78.0.0/24"
+      }
+    }
+  ],
+  "services": [
+    {
+      "id": "00000000-0000-4000-8000-000000000201",
+      "name": "https",
+      "comment": "",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "start": 443,
+          "end": 443
+        }
+      ],
+      "app": {
+        "proto": "https",
+        "methods": [],
+        "path_prefixes": []
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000202",
+      "name": "http",
+      "comment": "",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "start": 80,
+          "end": 80
+        }
+      ],
+      "app": {
+        "proto": "http",
+        "methods": [],
+        "path_prefixes": []
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000203",
+      "name": "API agents-firewall",
+      "comment": "",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "start": 8080,
+          "end": 8080
+        }
+      ],
+      "app": {
+        "proto": "http",
+        "methods": [],
+        "path_prefixes": [
+          "/api/v1/"
+        ]
+      }
+    }
+  ],
+  "data_classes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000301",
+      "name": "Secrets",
+      "comment": "Clés, jetons et mots de passe",
+      "category": "secret",
+      "detectors": [
+        {
+          "type": "builtin",
+          "id": "aws_access_key"
+        },
+        {
+          "type": "builtin",
+          "id": "aws_secret_key"
+        },
+        {
+          "type": "builtin",
+          "id": "github_token"
+        },
+        {
+          "type": "builtin",
+          "id": "gitlab_token"
+        },
+        {
+          "type": "builtin",
+          "id": "anthropic_key"
+        },
+        {
+          "type": "builtin",
+          "id": "openai_key"
+        },
+        {
+          "type": "builtin",
+          "id": "slack_token"
+        },
+        {
+          "type": "builtin",
+          "id": "jwt"
+        },
+        {
+          "type": "builtin",
+          "id": "private_key_pem"
+        },
+        {
+          "type": "builtin",
+          "id": "password_in_url"
+        },
+        {
+          "type": "builtin",
+          "id": "generic_secret_assignment"
+        }
+      ]
+    }
+  ],
+  "zones": [
+    {
+      "id": "00000000-0000-4000-8000-000000000401",
+      "name": "internes",
+      "comment": "Agents d'exploitation internes",
+      "mode": "enforce",
+      "delegated_to_mcp": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000402",
+      "name": "clients",
+      "comment": "Agents au service des clients (observation puis application)",
+      "mode": "observe",
+      "delegated_to_mcp": true
+    }
+  ],
+  "agents": [
+    {
+      "id": "00000000-0000-4000-8000-000000000501",
+      "name": "daniel-bot",
+      "zone_id": "00000000-0000-4000-8000-000000000401",
+      "kind": "docker_compose",
+      "gateway_id": null,
+      "addresses": [
+        "10.77.0.10"
+      ],
+      "labels": {
+        "demo": "true"
+      },
+      "hermes": true,
+      "mcp_admin": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000502",
+      "name": "laurent-bot",
+      "zone_id": "00000000-0000-4000-8000-000000000401",
+      "kind": "docker_compose",
+      "gateway_id": null,
+      "addresses": [
+        "10.77.0.11"
+      ],
+      "labels": {
+        "demo": "true"
+      },
+      "hermes": false,
+      "mcp_admin": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000503",
+      "name": "acme-bot",
+      "zone_id": "00000000-0000-4000-8000-000000000402",
+      "kind": "docker_compose",
+      "gateway_id": null,
+      "addresses": [
+        "10.77.0.12"
+      ],
+      "labels": {
+        "demo": "true"
+      },
+      "hermes": false,
+      "mcp_admin": false
+    }
+  ],
+  "rules": [
+    {
+      "id": "00000000-0000-4000-8000-000000000601",
+      "name": "Métadonnées cloud",
+      "layer": {
+        "type": "baseline"
+      },
+      "section": "Socle",
+      "position": 1,
+      "sources": [],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000106"
+      ],
+      "services": [],
+      "data_classes": [],
+      "action": "deny",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "Jamais d'accès aux métadonnées d'instance",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000602",
+      "name": "Secrets sortants",
+      "layer": {
+        "type": "baseline"
+      },
+      "section": "Socle",
+      "position": 2,
+      "sources": [],
+      "destinations": [],
+      "services": [],
+      "data_classes": [
+        "00000000-0000-4000-8000-000000000301"
+      ],
+      "action": "deny",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "Aucun secret ne sort (sauf fournisseurs LLM, EF-25)",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000603",
+      "name": "Console agents-firewall",
+      "layer": {
+        "type": "baseline"
+      },
+      "section": "Socle",
+      "position": 3,
+      "sources": [],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000110"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000203"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "log",
+      "expires_at": null,
+      "comment": "Envoi des appels d'outil par le plugin Hermes",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000604",
+      "name": "Fournisseurs LLM",
+      "layer": {
+        "type": "baseline"
+      },
+      "section": "Socle",
+      "position": 4,
+      "sources": [],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000103"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000201"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000611",
+      "name": "GitHub API",
+      "layer": {
+        "type": "zone",
+        "zone_id": "00000000-0000-4000-8000-000000000401"
+      },
+      "section": null,
+      "position": 1,
+      "sources": [
+        "00000000-0000-4000-8000-000000000401"
+      ],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000107"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000201"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000612",
+      "name": "API autorisée",
+      "layer": {
+        "type": "zone",
+        "zone_id": "00000000-0000-4000-8000-000000000401"
+      },
+      "section": null,
+      "position": 2,
+      "sources": [
+        "00000000-0000-4000-8000-000000000401"
+      ],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000108"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000201",
+        "00000000-0000-4000-8000-000000000202"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000613",
+      "name": "Stockage S3",
+      "layer": {
+        "type": "zone",
+        "zone_id": "00000000-0000-4000-8000-000000000401"
+      },
+      "section": null,
+      "position": 3,
+      "sources": [
+        "00000000-0000-4000-8000-000000000401"
+      ],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000109"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000201"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000621",
+      "name": "API autorisée",
+      "layer": {
+        "type": "zone",
+        "zone_id": "00000000-0000-4000-8000-000000000402"
+      },
+      "section": null,
+      "position": 1,
+      "sources": [
+        "00000000-0000-4000-8000-000000000402"
+      ],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000108"
+      ],
+      "services": [
+        "00000000-0000-4000-8000-000000000201"
+      ],
+      "data_classes": [],
+      "action": "accept",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "",
+      "enabled": true
+    }
+  ],
+  "inspection_rules": [],
+  "settings": {
+    "internal_networks": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "fc00::/7"
+    ],
+    "max_buffered_body": 1048576,
+    "max_stored_body": 262144,
+    "retention_days": {
+      "flows": 30,
+      "http": 14,
+      "captures": 7
+    }
+  }
+}

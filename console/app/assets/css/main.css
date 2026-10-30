@@ -1,0 +1,232 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@source "../../../app";
+
+/*
+ * Design tokens from docs/design/maquette (light on :root, dark on .dark — dark is the default
+ * color mode). They are exposed to Tailwind (bg-panel, text-text3, border-line, …) and mapped
+ * onto the Nuxt UI variables so that UButton, UInput, UTable… render with the mockup palette.
+ */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --sub: #f0f2f5;
+  --line: #e4e7ec;
+  --line2: #d0d5dd;
+  --text: #0b1220;
+  --text2: #3e4a5c;
+  --text3: #5a6677;
+  --pri: #0369a1;
+  --pri-bg: #e3f2fb;
+  --pri-fg: #ffffff;
+  --ok: #047857;
+  --ok-bg: #e3f5ec;
+  --ko: #b42318;
+  --ko-bg: #fdeceb;
+  --warn: #8a4b06;
+  --warn-bg: #fdf1dc;
+  --obs: #6d28d9;
+  --obs-bg: #f1ebfd;
+  --code: #f8f9fb;
+  --bar: #9fb8cc;
+  --edge: #9aa8bd;
+  --dot: rgba(15, 23, 42, 0.06);
+  --syn-str: #7a5200;
+  --syn-key: #5a6677;
+}
+
+.dark {
+  --bg: #090b0f;
+  --panel: #0e1117;
+  --sub: #151a22;
+  --line: #1c222c;
+  --line2: #29313d;
+  --text: #e8edf4;
+  --text2: #a7b1bf;
+  --text3: #7f8a9a;
+  --pri: #5cc8ff;
+  --pri-bg: #0f2533;
+  --pri-fg: #04131c;
+  --ok: #3fdc97;
+  --ok-bg: #0d2a1f;
+  --ko: #ff6b6b;
+  --ko-bg: #331418;
+  --warn: #f6b84b;
+  --warn-bg: #2e220d;
+  --obs: #b79bff;
+  --obs-bg: #231a3a;
+  --code: #0b0e13;
+  --bar: #2b5470;
+  --edge: #3a4a62;
+  --dot: rgba(255, 255, 255, 0.04);
+  --syn-str: #e9c46a;
+  --syn-key: #7f8a9a;
+}
+
+/* Nuxt UI mapping (same tokens in both modes thanks to the indirection above). */
+:root,
+.dark {
+  --ui-bg: var(--panel);
+  --ui-bg-muted: var(--sub);
+  --ui-bg-elevated: var(--panel);
+  --ui-bg-accented: var(--sub);
+  --ui-bg-inverted: var(--text);
+  --ui-border: var(--line);
+  --ui-border-muted: var(--line);
+  --ui-border-accented: var(--line2);
+  --ui-border-inverted: var(--text);
+  --ui-text: var(--text);
+  --ui-text-dimmed: var(--text3);
+  --ui-text-muted: var(--text3);
+  --ui-text-toned: var(--text2);
+  --ui-text-highlighted: var(--text);
+  --ui-text-inverted: var(--bg);
+  --ui-primary: var(--pri);
+  --ui-success: var(--ok);
+  --ui-error: var(--ko);
+  --ui-warning: var(--warn);
+  --ui-info: var(--obs);
+  --ui-radius: 0.4375rem;
+}
+
+@theme inline {
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-sub: var(--sub);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-text: var(--text);
+  --color-text2: var(--text2);
+  --color-text3: var(--text3);
+  --color-pri: var(--pri);
+  --color-pri-bg: var(--pri-bg);
+  --color-pri-fg: var(--pri-fg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-ko: var(--ko);
+  --color-ko-bg: var(--ko-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-obs: var(--obs);
+  --color-obs-bg: var(--obs-bg);
+  --color-code: var(--code);
+  --color-bar: var(--bar);
+  --color-edge: var(--edge);
+  --color-syn-str: var(--syn-str);
+  --color-syn-key: var(--syn-key);
+}
+
+@layer base {
+  /* The root font size stays at 16px so that rem-based Tailwind/Nuxt UI sizes are unchanged;
+     the mockup's 13px base applies to the document body. */
+  html {
+    background: var(--bg);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  a {
+    color: var(--pri);
+  }
+
+  a:hover {
+    color: var(--text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--pri);
+    outline-offset: 1px;
+  }
+
+  input::placeholder {
+    color: var(--text3);
+  }
+}
+
+.grid-bg {
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.afw-ghost {
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.afw-ghost:hover {
+  background: var(--sub);
+  border-color: var(--line2);
+}
+
+.afw-row:hover {
+  background: var(--sub);
+}
+
+.afw-row[aria-current="true"],
+.afw-row[aria-current="true"]:hover {
+  background: var(--pri-bg);
+  box-shadow: inset 2px 0 0 var(--pri);
+}
+
+.afw-nav:hover {
+  background: var(--sub);
+  color: var(--text);
+}
+
+.afw-hbar:hover {
+  opacity: 0.75;
+}
+
+.afw-kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+.afw-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.afw-th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.sr-only-afw {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@keyframes afwlive {
+  0% {
+    box-shadow: 0 0 0 0 rgba(63, 220, 151, 0.55);
+  }
+
+  100% {
+    box-shadow: 0 0 0 7px rgba(63, 220, 151, 0);
+  }
+}
+
+.afw-live-dot {
+  animation: afwlive 1.6s infinite;
+}

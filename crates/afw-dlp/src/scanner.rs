@@ -5,8 +5,11 @@ use std::sync::LazyLock;
 
 use regex::bytes::Regex;
 
-use crate::decode::{base64_variants, json_unescape, percent_decode};
-use crate::detectors::{Detector, fingerprint};
+use crate::decode::{
+    base64_variants, hex_variants, json_unescape, normalize_unicode, percent_decode,
+    spaced_base64_variants, utf16_variants,
+};
+use crate::detectors::{Detector, Span, fingerprint};
 use crate::stream::StreamScanner;
 use crate::{ClassSpec, DataCategory, DetectorSpec, DlpError, Finding, ScannerOptions};
 
@@ -14,11 +17,22 @@ use crate::{ClassSpec, DataCategory, DetectorSpec, DlpError, Finding, ScannerOpt
 /// (for example percent-encoded base64).
 const MAX_DEPTH: u8 = 2;
 
-/// `X-Amz-Credential=<access key id>/<yyyymmdd>/...` in a presigned S3 URL (EF-72): the access
-/// key id is a public identifier there, not a secret.
-static PRESIGNED_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i-u)x-amz-credential(?:=|%3D)A[KS]IA[A-Z0-9]{16}(?:/|%2F)[0-9]{8}(?:/|%2F)")
+/// SigV4 credential scope `X-Amz-Credential=<key id>/<yyyymmdd>/…` (presigned URL) or
+/// `Credential=<key id>/<yyyymmdd>/…` (`Authorization` header): the access key id is a public
+/// identifier there, not a secret (EF-72).
+static SIGV4_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i-u)(?:x-amz-credential(?:=|%3D)|\bcredential=)A[KS]IA[A-Z0-9]{16}(?:/|%2F)[0-9]{8}(?:/|%2F)[A-Za-z0-9\-_%/]*")
         .expect("static regex")
+});
+
+/// SigV2 presigned URL: `AWSAccessKeyId=<key id>` with `Signature=` and `Expires=`.
+static SIGV2_KEY_ID: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?-u)[?&]AWSAccessKeyId=A[KS]IA[A-Z0-9]{16}").expect("static regex")
+});
+
+/// GCS V4 presigned URL credential (`service-account@project/…`): nothing in it is a secret.
+static GCS_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i-u)[?&]x-goog-credential(?:=|%3D)[^&\s"'<>]*"#).expect("static regex")
 });
 
 #[derive(Debug, Clone)]
@@ -35,6 +49,8 @@ pub(crate) struct Hit {
     pub start: usize,
     pub end: usize,
     pub fp: String,
+    /// Start of the whole match (key included); retained by the stream while pending.
+    pub ctx: usize,
 }
 
 /// Compiled set of data classes. Cheap to share (`&Scanner` is `Sync`).
@@ -159,11 +175,13 @@ impl Scanner {
                 .map(|h| Hit {
                     start: h.start.max(p) - p,
                     end: h.end - p,
+                    ctx: h.ctx.max(p) - p,
                     ..h
                 })
                 .collect();
             if matches!(lname.as_str(), "authorization" | "proxy-authorization")
                 && let Some(det) = self.bearer_det
+                && !is_signing_scheme(value)
                 && let Some((s, e)) = authorization_credential(value)
                 && !hits.iter().any(|h| h.start <= s && h.end >= e)
             {
@@ -172,6 +190,7 @@ impl Scanner {
                     start: s,
                     end: e,
                     fp: fingerprint(&value.as_bytes()[s..e]),
+                    ctx: s,
                 });
             }
             let location = format!("header:{lname}");
@@ -204,30 +223,27 @@ impl Scanner {
     /// `quote_only`: `data` only differs from its parent by JSON quote/whitespace escapes, so
     /// only quote-sensitive detectors can find something new and no further decoding is needed.
     fn scan_raw(&self, data: &[u8], depth: u8, quote_only: bool, out: &mut Vec<Hit>) {
-        let exclusions: Vec<(usize, usize)> = match self.aws_key_det {
-            Some(_) => PRESIGNED_CREDENTIAL
-                .find_iter(data)
-                .map(|m| (m.start(), m.end()))
-                .collect(),
-            None => Vec::new(),
-        };
-        let mut ranges = Vec::new();
+        let exclusions = self.exclusions(data);
+        let mut spans: Vec<Span> = Vec::new();
         for (i, d) in self.detectors.iter().enumerate() {
             if quote_only && !d.quote_sensitive {
                 continue;
             }
-            ranges.clear();
-            d.find(data, &mut ranges);
-            for &(s, e) in &ranges {
-                if Some(i) == self.aws_key_det && exclusions.iter().any(|(a, b)| s >= *a && e <= *b)
-                {
+            spans.clear();
+            d.find(data, &mut spans);
+            for sp in &spans {
+                let excluded = exclusions.iter().any(|(a, b, only)| {
+                    sp.start >= *a && sp.end <= *b && only.is_none_or(|o| o == i)
+                });
+                if excluded {
                     continue;
                 }
                 out.push(Hit {
                     det: i,
-                    start: s,
-                    end: e,
-                    fp: fingerprint(&data[s..e]),
+                    start: sp.start,
+                    end: sp.end,
+                    fp: fingerprint(&data[sp.start..sp.end]),
+                    ctx: sp.ctx,
                 });
             }
         }
@@ -237,18 +253,50 @@ impl Scanner {
         let mut variants = Vec::new();
         variants.extend(percent_decode(data).map(|v| (v, false)));
         variants.extend(json_unescape(data).map(|v| (v, !has_deep_json_escape(data))));
+        variants.extend(normalize_unicode(data).map(|v| (v, false)));
         variants.extend(base64_variants(data).into_iter().map(|v| (v, false)));
+        variants.extend(spaced_base64_variants(data).into_iter().map(|v| (v, false)));
+        variants.extend(hex_variants(data).into_iter().map(|v| (v, false)));
+        variants.extend(utf16_variants(data).into_iter().map(|v| (v, false)));
         let mut sub = Vec::new();
         for (v, quote_only) in variants {
             sub.clear();
             self.scan_raw(&v.data, depth + 1, quote_only, &mut sub);
             for h in sub.drain(..) {
                 let (start, end) = v.map.range(h.start, h.end);
+                let (ctx, _) = v.map.range(h.ctx, h.ctx);
                 if start < end {
-                    out.push(Hit { start, end, ..h });
+                    out.push(Hit {
+                        start,
+                        end,
+                        ctx: ctx.min(start),
+                        ..h
+                    });
                 }
             }
         }
+    }
+
+    /// Ranges of signed-URL parameters that are not secrets (EF-72), with the only detector
+    /// they apply to (`None`: every detector).
+    fn exclusions(&self, data: &[u8]) -> Vec<(usize, usize, Option<usize>)> {
+        let mut ex = Vec::new();
+        // The whole scope (`<key id>/<date>/<region>/<service>/aws4_request`), every detector.
+        for m in SIGV4_CREDENTIAL.find_iter(data) {
+            ex.push((m.start(), m.end(), None));
+        }
+        if let Some(aws) = self.aws_key_det
+            && contains(data, b"Signature=")
+            && contains(data, b"Expires=")
+        {
+            for m in SIGV2_KEY_ID.find_iter(data) {
+                ex.push((m.start(), m.end(), Some(aws)));
+            }
+        }
+        for m in GCS_CREDENTIAL.find_iter(data) {
+            ex.push((m.start(), m.end(), None));
+        }
+        ex
     }
 
     /// One finding per class bound to the hit's detector; `offset` shifts the range.
@@ -274,6 +322,17 @@ impl Scanner {
             });
         }
     }
+}
+
+fn contains(hay: &[u8], needle: &[u8]) -> bool {
+    hay.windows(needle.len()).any(|w| w == needle)
+}
+
+/// `Authorization: AWS4-HMAC-SHA256 Credential=…, Signature=…` (or GCS `GOOG4-…`): a request
+/// signature, not a reusable credential.
+fn is_signing_scheme(value: &str) -> bool {
+    let v = value.trim_start().to_ascii_uppercase();
+    v.starts_with("AWS4-") || v.starts_with("GOOG4-")
 }
 
 /// JSON escapes that can change what non key/value detectors see (`\uXXXX`, `\/`, `\\`).

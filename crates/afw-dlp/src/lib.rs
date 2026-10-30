@@ -3,12 +3,14 @@
 //! This crate is self-contained (no dependency on `afw-core`): callers convert [`Finding`]
 //! into their own types.
 
+mod content;
 mod decode;
 mod detectors;
 mod mask;
 mod scanner;
 mod stream;
 
+pub use content::decode_content;
 pub use detectors::BUILTIN_DETECTORS;
 pub use mask::{mask, mask_bytes};
 pub use scanner::Scanner;
@@ -79,12 +81,6 @@ pub enum DlpError {
     Decode(String),
 }
 
-/// Undoes a `Content-Encoding` (stub).
-pub fn decode_content(encoding: &str, data: &[u8], max_out: usize) -> Result<Vec<u8>, DlpError> {
-    let _ = (encoding, max_out);
-    Ok(data.to_vec())
-}
-
 /// Scanner options.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScannerOptions {
@@ -146,6 +142,8 @@ pub fn builtin_classes() -> Vec<ClassSpec> {
                 "password_in_url",
                 "generic_secret_assignment",
                 "bearer_token",
+                "session_cookie",
+                "azure_sas_signature",
             ],
         ),
         class(

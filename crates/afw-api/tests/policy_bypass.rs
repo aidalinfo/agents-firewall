@@ -359,17 +359,44 @@ async fn delegated_agent_cannot_touch_baseline_or_undelegated_zones() {
     // move the MCP agent's traffic into that zone.
     let mut twin = agent(Uuid::new_v4(), "twin", f.z_del, false);
     twin["addresses"] = json!(["10.0.0.5"]);
-    assert!(
-        f.mcp_call("POST", "/agents", s, Some(twin))
-            .await
-            .is_client_error()
+    assert_eq!(
+        f.mcp_call("POST", "/agents", s, Some(twin)).await,
+        StatusCode::FORBIDDEN
     );
     let mut moved = agent(f.a_del, "worker", f.z_del, false);
-    moved["addresses"] = json!(["10.0.0.5"]);
-    assert!(
+    moved["addresses"] = json!(["10.0.0.77"]);
+    assert_eq!(
         f.mcp_call("PUT", &format!("/agents/{}", f.a_del), s, Some(moved))
-            .await
-            .is_client_error()
+            .await,
+        StatusCode::FORBIDDEN,
+        "the MCP agent cannot set agent addresses"
+    );
+    // Without addresses, an agent of a delegated zone may be created and renamed.
+    let plain = Uuid::new_v4();
+    assert_eq!(
+        f.mcp_call(
+            "POST",
+            "/agents",
+            s,
+            Some(agent(plain, "plain", f.z_del, false))
+        )
+        .await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        f.mcp_call(
+            "PUT",
+            &format!("/agents/{plain}"),
+            s,
+            Some(agent(plain, "plain2", f.z_del, false))
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.mcp_call("DELETE", &format!("/agents/{plain}"), s, None)
+            .await,
+        StatusCode::NO_CONTENT
     );
     // Granting MCP administration to another agent.
     let a = agent(Uuid::new_v4(), "second-admin", f.z_del, true);
@@ -434,29 +461,45 @@ async fn delegated_agent_cannot_install_old_revision_or_decide_approvals() {
         )
         .await;
     assert_eq!(f.env.publish(&f.env.admin, s).await, 2);
-    let gw = Uuid::new_v4();
-    let (st, _) = f
-        .env
-        .call(
-            "POST",
-            "/installs",
-            &f.mcp,
-            None,
-            Some(json!({"revision": 1, "gateways": [gw]})),
-        )
-        .await;
-    assert_eq!(st, StatusCode::FORBIDDEN, "rollback by the MCP agent");
-    let (st, _) = f
-        .env
-        .call(
-            "POST",
-            "/installs",
-            &f.mcp,
-            None,
-            Some(json!({"revision": 2, "gateways": [gw]})),
-        )
-        .await;
-    assert_eq!(st, StatusCode::ACCEPTED, "latest revision may be installed");
+    let gw = f.env.gateway().await;
+    let install = |token: &str, revision: u64| {
+        let body = json!({"revision": revision, "gateways": [gw]});
+        let token = token.to_owned();
+        let env = &f.env;
+        async move {
+            env.call("POST", "/installs", &token, None, Some(body))
+                .await
+                .0
+        }
+    };
+    assert_eq!(
+        install(&f.mcp, 1).await,
+        StatusCode::FORBIDDEN,
+        "rollback by the MCP agent"
+    );
+    assert_eq!(
+        install(&f.mcp, 2).await,
+        StatusCode::FORBIDDEN,
+        "latest revision, but published by a human"
+    );
+    // A revision the MCP agent published itself may be installed by it.
+    let s = f.env.open(&f.mcp).await;
+    let rule = zone_rule(Uuid::new_v4(), "narrow", f.z_del, 1, &[f.free_obj]);
+    assert_eq!(
+        f.mcp_call("POST", "/rules", s, Some(rule)).await,
+        StatusCode::CREATED
+    );
+    let (st, rev) = f.mcp_publish(s).await;
+    assert_eq!(st, StatusCode::CREATED, "{rev}");
+    assert_eq!(install(&f.mcp, 3).await, StatusCode::ACCEPTED);
+    assert_eq!(
+        install(&f.mcp, 3).await,
+        StatusCode::ACCEPTED,
+        "reinstall of its own install"
+    );
+    // A human rolls back: the MCP agent can no longer reinstall over it.
+    assert_eq!(install(&f.env.admin, 2).await, StatusCode::ACCEPTED);
+    assert_eq!(install(&f.mcp, 3).await, StatusCode::FORBIDDEN);
     // Approval decided by the MCP agent: refused (and by a viewer).
     let s = f.env.open(&f.mcp).await;
     let rule = zone_rule(Uuid::new_v4(), "any", f.z_del, 1, &[]);
@@ -759,4 +802,287 @@ async fn read_roles_and_plugin_token() {
     }
     let (st, _) = f.env.call("GET", "/objects", "nope", None, None).await;
     assert_eq!(st, StatusCode::UNAUTHORIZED);
+}
+
+// ---- Review of PR #13: bypass tests -------------------------------------------------------
+
+fn eval_from_mcp(
+    doc: &afw_core::policy::PolicyDocument,
+    rev: u64,
+    host: &str,
+    ip: &str,
+    classes: Vec<Uuid>,
+) -> afw_engine::Decision {
+    let installed = afw_core::installed::InstalledPolicy {
+        format: afw_core::installed::INSTALLED_POLICY_FORMAT,
+        revision: rev,
+        published_at: chrono::Utc::now(),
+        published_by: "x".into(),
+        sha256: afw_core::installed::installed_sha256(rev, false, doc),
+        rollback: false,
+        document: doc.clone(),
+    };
+    let c = afw_engine::CompiledPolicy::compile(&installed, chrono::Utc::now()).unwrap();
+    c.evaluate(&afw_engine::FlowContext {
+        agent_ip: "10.0.0.5".parse().unwrap(),
+        dst_ip: Some(ip.parse().unwrap()),
+        dst_ip_trusted: true,
+        dst_port: 443,
+        l4: L4Proto::Tcp,
+        app: None,
+        host: Some(host.into()),
+        method: None,
+        path: None,
+        data_classes: classes,
+        now: chrono::Utc::now(),
+    })
+}
+
+async fn latest_doc(f: &Fixture, n: u64) -> afw_core::policy::PolicyDocument {
+    let (st, body) = f
+        .env
+        .call("GET", &format!("/revisions/{n}"), &f.env.admin, None, None)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    serde_json::from_value(body["document"].clone()).unwrap()
+}
+
+/// Admin narrows the fixture's catch-all baseline deny to the metadata address (revision 2), so
+/// that only the zone layers and implicit rules decide.
+async fn narrow_baseline(f: &Fixture) {
+    let a = &f.env.admin;
+    let s = f.env.open(a).await;
+    let md = Uuid::new_v4();
+    f.env
+        .create(
+            a,
+            s,
+            "objects",
+            json!({"id": md, "name": "md", "category": "cloud_metadata",
+        "spec": {"type": "host", "ip": "169.254.169.254"}}),
+        )
+        .await;
+    let (st, b) = f
+        .env
+        .call(
+            "PUT",
+            &format!("/rules/{}", f.r_base),
+            a,
+            Some(s),
+            Some(baseline_rule(f.r_base, "no-metadata", 1, &[md])),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b}");
+    assert_eq!(f.env.publish(a, s).await, 2);
+}
+
+/// EF-51: an object of category `internal` (used by no rule) changes the implicit decision of
+/// EVERY zone, including the MCP agent's own zone (implicit internal allow).
+#[tokio::test]
+async fn review_internal_category_object_opens_own_zone() {
+    let f = fixture_or_skip!();
+    // Before: the MCP's own traffic to the attacker is denied.
+    narrow_baseline(&f).await;
+    let doc = latest_doc(&f, 2).await;
+    let d = eval_from_mcp(&doc, 2, "exfil.attacker.net", "203.0.113.9", vec![]);
+    assert_eq!(d.verdict, Verdict::Deny, "before");
+    let s = f.env.open(&f.mcp).await;
+    let mut o = domain(Uuid::new_v4(), "harmless", "exfil.attacker.net");
+    o["category"] = json!("internal");
+    // Refused at creation (stricter than refusing the publication).
+    let created = f.mcp_call("POST", "/objects", s, Some(o)).await;
+    if created != StatusCode::CREATED {
+        assert_eq!(created, StatusCode::FORBIDDEN);
+        return;
+    }
+    let (st, body) = f.mcp_publish(s).await;
+    let doc = latest_doc(&f, 3).await;
+    let d = eval_from_mcp(&doc, 3, "exfil.attacker.net", "203.0.113.9", vec![]);
+    assert!(
+        !(st == StatusCode::CREATED && d.verdict == Verdict::Allow),
+        "BYPASS: MCP published {body} and its own zone now reaches the attacker: {:?}",
+        d.implicit
+    );
+}
+
+/// EF-51: an agent created in a delegated zone with a public address makes that address an
+/// internal destination for every zone (implicit allow from the MCP's own zone).
+#[tokio::test]
+async fn review_agent_address_opens_own_zone() {
+    let f = fixture_or_skip!();
+    narrow_baseline(&f).await;
+    assert_eq!(
+        eval_from_mcp(
+            &latest_doc(&f, 2).await,
+            2,
+            "203.0.113.9",
+            "203.0.113.9",
+            vec![]
+        )
+        .verdict,
+        Verdict::Deny
+    );
+    let s = f.env.open(&f.mcp).await;
+    let mut a = agent(Uuid::new_v4(), "decoy", f.z_del, false);
+    a["addresses"] = json!(["203.0.113.9"]);
+    // Refused at creation (stricter than refusing the publication).
+    let created = f.mcp_call("POST", "/agents", s, Some(a)).await;
+    if created != StatusCode::CREATED {
+        assert_eq!(created, StatusCode::FORBIDDEN);
+        return;
+    }
+    let (st, body) = f.mcp_publish(s).await;
+    let doc = latest_doc(&f, 3).await;
+    let d = eval_from_mcp(&doc, 3, "203.0.113.9", "203.0.113.9", vec![]);
+    assert!(
+        !(st == StatusCode::CREATED && d.verdict == Verdict::Allow),
+        "BYPASS: MCP published {body} and its own zone now reaches 203.0.113.9: {:?}",
+        d.implicit
+    );
+}
+
+/// EF-51/EF-52: an `llm_provider` object (used by no rule) exempts the destination from every
+/// data-class rule, including the baseline secret-deny rule applied to the MCP's own zone.
+#[tokio::test]
+async fn review_llm_category_exempts_own_zone_from_dlp() {
+    let f = fixture_or_skip!();
+    narrow_baseline(&f).await;
+    // Admin: baseline rule "deny secrets anywhere" + an accept-any rule in the MCP zone.
+    let a = &f.env.admin;
+    let s = f.env.open(a).await;
+    let sec = Uuid::new_v4();
+    f.env
+        .create(a, s, "data-classes", secret_class(sec, "aws"))
+        .await;
+    let mut b = baseline_rule(Uuid::new_v4(), "no-secrets", 2, &[]);
+    b["data_classes"] = json!([sec]);
+    f.env.create(a, s, "rules", b).await;
+    let any = Uuid::new_v4();
+    f.env
+        .create(
+            a,
+            s,
+            "objects",
+            domain(any, "attacker", "exfil.attacker.net"),
+        )
+        .await;
+    f.env
+        .create(
+            a,
+            s,
+            "rules",
+            zone_rule(Uuid::new_v4(), "own-to-attacker", f.z_own, 2, &[any]),
+        )
+        .await;
+    assert_eq!(f.env.publish(a, s).await, 3);
+    let doc = latest_doc(&f, 3).await;
+    assert_eq!(
+        eval_from_mcp(&doc, 3, "exfil.attacker.net", "203.0.113.9", vec![sec]).verdict,
+        Verdict::Deny
+    );
+    // MCP: new llm_provider object for the same destination, used by nothing.
+    let s = f.env.open(&f.mcp).await;
+    let mut o = domain(Uuid::new_v4(), "my llm", "exfil.attacker.net");
+    o["category"] = json!("llm_provider");
+    // Refused at creation (stricter than refusing the publication).
+    let created = f.mcp_call("POST", "/objects", s, Some(o)).await;
+    if created != StatusCode::CREATED {
+        assert_eq!(created, StatusCode::FORBIDDEN);
+        return;
+    }
+    let (st, body) = f.mcp_publish(s).await;
+    let doc = latest_doc(&f, 4).await;
+    let d = eval_from_mcp(&doc, 4, "exfil.attacker.net", "203.0.113.9", vec![sec]);
+    assert!(
+        !(st == StatusCode::CREATED && d.verdict == Verdict::Allow),
+        "BYPASS: MCP published {body}; secrets from its own zone now leave: {:?}",
+        d.rule_name
+    );
+}
+
+/// EF-52: the whole IPv4 Internet through two /1 networks is not detected as a widening.
+#[tokio::test]
+async fn review_two_half_internets_need_no_approval() {
+    let f = fixture_or_skip!();
+    let s = f.env.open(&f.mcp).await;
+    let (h1, h2) = (Uuid::new_v4(), Uuid::new_v4());
+    for (id, cidr) in [(h1, "0.0.0.0/1"), (h2, "128.0.0.0/1")] {
+        let o = json!({"id": id, "name": cidr, "spec": {"type": "network", "cidr": cidr}});
+        assert_eq!(
+            f.mcp_call("POST", "/objects", s, Some(o)).await,
+            StatusCode::CREATED
+        );
+    }
+    let r = zone_rule(Uuid::new_v4(), "internet", f.z_del, 1, &[h1, h2]);
+    assert_eq!(
+        f.mcp_call("POST", "/rules", s, Some(r)).await,
+        StatusCode::CREATED
+    );
+    let (st, body) = f.mcp_publish(s).await;
+    assert_eq!(
+        st,
+        StatusCode::ACCEPTED,
+        "BYPASS EF-52: published without approval: {body}"
+    );
+}
+
+/// EF-52: switching a delegated zone to observe mode (= everything allowed) needs no approval.
+#[tokio::test]
+async fn review_observe_mode_needs_no_approval() {
+    let f = fixture_or_skip!();
+    let s = f.env.open(&f.mcp).await;
+    let mut z = zone(f.z_del, "delegated", true);
+    z["mode"] = json!("observe");
+    assert_eq!(
+        f.mcp_call("PUT", &format!("/zones/{}", f.z_del), s, Some(z))
+            .await,
+        StatusCode::OK
+    );
+    let (st, body) = f.mcp_publish(s).await;
+    assert_eq!(
+        st,
+        StatusCode::ACCEPTED,
+        "BYPASS EF-52: published without approval: {body}"
+    );
+}
+
+/// A human rolled the gateways back to revision 1; the MCP agent re-installs the latest
+/// revision, undoing the human rollback.
+#[tokio::test]
+async fn review_mcp_undoes_human_rollback() {
+    let f = fixture_or_skip!();
+    let a = &f.env.admin;
+    let s = f.env.open(a).await;
+    f.env
+        .create(
+            a,
+            s,
+            "objects",
+            domain(Uuid::new_v4(), "x", "x.example.com"),
+        )
+        .await;
+    assert_eq!(f.env.publish(a, s).await, 2);
+    let gw = f.env.gateway().await;
+    let (st, _) = f
+        .env
+        .call(
+            "POST",
+            "/installs",
+            a,
+            None,
+            Some(json!({"revision": 1, "gateways": [gw]})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    let (st, _) = f
+        .env
+        .call(
+            "POST",
+            "/installs",
+            &f.mcp,
+            None,
+            Some(json!({"revision": 2, "gateways": [gw]})),
+        )
+        .await;
+    assert_ne!(st, StatusCode::ACCEPTED, "MCP undid a human rollback");
 }

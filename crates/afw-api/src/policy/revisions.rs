@@ -74,9 +74,10 @@ pub async fn load_revision(conn: &mut PgConnection, n: u64) -> Result<RevisionDe
         .fetch_optional(&mut *conn)
         .await?;
     let r = row.ok_or(ApiError::NotFound)?;
+    let document = store::check_revision(r.0 as u64, r.7.0, &r.6)?;
     Ok(RevisionDetail {
         revision: from_raw((r.0, r.1, r.2, r.3, r.4, r.5, r.6))?,
-        document: r.7.0,
+        document,
     })
 }
 

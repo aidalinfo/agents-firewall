@@ -311,6 +311,7 @@ fn destination_object(
     flow: &afw_core::events::FlowEvent,
     mode: AllowDestination,
     zone_name: &str,
+    group_id: Option<Uuid>,
     created: &mut Vec<NetObject>,
 ) -> Result<Uuid, ApiError> {
     let domain = flow.domain.as_deref().or(flow.sni.as_deref());
@@ -318,9 +319,9 @@ fn destination_object(
         (Some(d), AllowDestination::Wildcard) => {
             let d = normalize_domain(d)?;
             let parent = d.split_once('.').map(|(_, p)| p).unwrap_or("");
-            if !parent.contains('.') {
+            if psl::domain_str(parent).is_none() {
                 return Err(ApiError::BadRequest(format!(
-                    "wildcard of {d} would cover a whole top-level domain"
+                    "wildcard of {d} would cover a whole public suffix"
                 )));
             }
             NetObjectSpec::Domain {
@@ -351,7 +352,7 @@ fn destination_object(
     let group = match doc
         .objects
         .iter()
-        .find(|o| o.name == group_name && matches!(o.spec, NetObjectSpec::Group { .. }))
+        .find(|o| Some(o.id) == group_id && matches!(o.spec, NetObjectSpec::Group { .. }))
     {
         Some(g) => g.clone(),
         None => new_object(group_name, NetObjectSpec::Group { members: vec![] }),
@@ -408,7 +409,29 @@ async fn allow_from_log(
         p.require_zone_write(zone_id, own, &delegated)?;
     }
     let mut objects = Vec::new();
-    let dest = destination_object(&doc, &flow, req.destination, &zone.name, &mut objects)?;
+    let group_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT group_id FROM allow_log_groups WHERE zone_id = $1")
+            .bind(zone_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let dest = destination_object(
+        &doc,
+        &flow,
+        req.destination,
+        &zone.name,
+        group_id,
+        &mut objects,
+    )?;
+    if req.destination == AllowDestination::Group {
+        sqlx::query(
+            "INSERT INTO allow_log_groups (zone_id, group_id) VALUES ($1, $2) \
+             ON CONFLICT (zone_id) DO UPDATE SET group_id = EXCLUDED.group_id",
+        )
+        .bind(zone_id)
+        .bind(dest)
+        .execute(&mut *tx)
+        .await?;
+    }
     let mut mutations: Vec<Mutation> = Vec::new();
     let created_object = objects
         .iter()

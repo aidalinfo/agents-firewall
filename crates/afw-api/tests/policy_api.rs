@@ -579,7 +579,7 @@ async fn verify_reports_expired_rules_and_unused_objects() {
 async fn install_ack_and_rollback() {
     let env = env_or_skip!(env());
     let a = &env.admin;
-    let gw = Uuid::new_v4();
+    let gw = env.gateway().await;
     let s = env.open(a).await;
     env.create(
         a,
@@ -912,7 +912,7 @@ async fn every_mutation_is_audited_with_interface_and_session() {
             "/installs",
             a,
             None,
-            Some(json!({"revision": 1, "gateways": [Uuid::new_v4()]})),
+            Some(json!({"revision": 1, "gateways": [env.gateway().await]})),
         )
         .await;
     assert_eq!(st, StatusCode::ACCEPTED);
@@ -1220,7 +1220,7 @@ async fn session_name_and_pending_install_survive_a_reload() {
             "/installs",
             a,
             None,
-            Some(json!({"revision": n, "gateways": [Uuid::new_v4()]})),
+            Some(json!({"revision": n, "gateways": [env.gateway().await]})),
         )
         .await;
     assert_eq!(st, StatusCode::ACCEPTED);
@@ -1301,20 +1301,8 @@ async fn policy_port_for_gateways_and_enrollments() {
     use afw_core::policy::AgentKind;
     let env = env_or_skip!(env());
     // The gateway registry of lot L7c, linked by value.
-    sqlx::query(
-        "CREATE TABLE gateways (id uuid PRIMARY KEY, deleted_at timestamptz NULL, \
-         desired_revision bigint NULL, active_revision bigint NULL)",
-    )
-    .execute(&env.pool)
-    .await
-    .unwrap();
-    let (gw, gone) = (Uuid::new_v4(), Uuid::new_v4());
-    sqlx::query("INSERT INTO gateways (id) VALUES ($1)")
-        .bind(gw)
-        .execute(&env.pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO gateways (id, deleted_at) VALUES ($1, now())")
+    let (gw, gone) = (env.gateway().await, env.gateway().await);
+    sqlx::query("UPDATE gateways SET deleted_at = now() WHERE id = $1")
         .bind(gone)
         .execute(&env.pool)
         .await
@@ -1417,4 +1405,201 @@ async fn policy_port_for_gateways_and_enrollments() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn review_minor_fixes() {
+    let env = env_or_skip!(env());
+    let (a, b) = (&env.admin, &env.admin2);
+    let z = Uuid::new_v4();
+    let s = env.open(a).await;
+    env.create(a, s, "zones", zone(z, "z", false)).await;
+    // Agent addresses must be internal (for everyone).
+    let mut public = agent(Uuid::new_v4(), "public", z, false);
+    public["addresses"] = json!(["203.0.113.9"]);
+    let (st, body) = env.call("POST", "/agents", a, Some(s), Some(public)).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
+    let mut internal = agent(Uuid::new_v4(), "internal", z, false);
+    internal["addresses"] = json!(["10.1.2.3"]);
+    env.create(a, s, "agents", internal).await;
+    assert_eq!(env.publish(a, s).await, 1);
+
+    // A lock is released when the entity returns to its published state.
+    let (s1, s2) = (env.open(a).await, env.open(b).await);
+    let path = format!("/zones/{z}");
+    let mut observe = zone(z, "z", false);
+    observe["mode"] = json!("observe");
+    assert_eq!(
+        env.call("PUT", &path, a, Some(s1), Some(observe)).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        env.call("PUT", &path, b, Some(s2), Some(zone(z, "zz", false)))
+            .await
+            .0,
+        StatusCode::LOCKED
+    );
+    assert_eq!(
+        env.call("PUT", &path, a, Some(s1), Some(zone(z, "z", false)))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let (_, sess) = env
+        .call("GET", &format!("/sessions/{s1}"), a, None, None)
+        .await;
+    assert!(sess["locks"].as_array().unwrap().is_empty(), "{sess}");
+    assert_eq!(
+        env.call("PUT", &path, b, Some(s2), Some(zone(z, "zz", false)))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(env.publish(b, s2).await, 2);
+
+    // Acknowledgement of a revision that is not the desired one: never active.
+    let gw = env.gateway().await;
+    let (st, _) = env
+        .call(
+            "POST",
+            "/installs",
+            a,
+            None,
+            Some(json!({"revision": 2, "gateways": [gw]})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    record_install_ack(
+        &env.pool,
+        gw,
+        &PolicyAck {
+            revision: 1,
+            ok: true,
+            error: None,
+        },
+    )
+    .await
+    .unwrap();
+    let state = afw_api::policy::install::gateway_policy_state(&env.pool, gw)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.active_revision, None);
+    record_install_ack(
+        &env.pool,
+        gw,
+        &PolicyAck {
+            revision: 2,
+            ok: true,
+            error: None,
+        },
+    )
+    .await
+    .unwrap();
+    let state = afw_api::policy::install::gateway_policy_state(&env.pool, gw)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.active_revision, Some(2));
+
+    // A tampered revision is never served.
+    sqlx::query(
+        "UPDATE revisions SET document = jsonb_set(document, '{zones,0,mode}', '\"observe\"') \
+         WHERE number = 2",
+    )
+    .execute(&env.pool)
+    .await
+    .unwrap();
+    assert!(installed_policy_for(&env.pool, gw).await.is_err());
+    let (st, _) = env.call("GET", "/revisions/2", a, None, None).await;
+    assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR);
+    let (st, _) = env.call("GET", "/zones", a, None, None).await;
+    assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn allow_from_log_public_suffixes_and_group_by_id() {
+    let (z, ag, f1, f2, f3) = (
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+    );
+    let make = |id: Uuid, domain: &str| FlowEvent {
+        id,
+        gateway_id: Uuid::new_v4(),
+        agent_id: Some(ag),
+        zone_id: None,
+        src: "10.0.0.5:40000".parse().unwrap(),
+        dst: "93.184.216.34:443".parse().unwrap(),
+        protocol: L4Proto::Tcp,
+        app: None,
+        domain: Some(domain.into()),
+        sni: None,
+        bytes_out: 1,
+        bytes_in: 1,
+        started_at: chrono::Utc::now(),
+        ended_at: None,
+        verdict: Verdict::Deny,
+        decision: DecisionRef {
+            rule_id: None,
+            rule_number: None,
+            rule_name: "cleanup".into(),
+            revision: Some(1),
+            layer: "implicit".into(),
+            reason: "default deny".into(),
+        },
+        internal: false,
+        llm_provider: false,
+        tls_inspected: true,
+        data_classes: vec![],
+        observed: false,
+    };
+    let flows = Flows(HashMap::from([
+        (f1, make(f1, "example.co.uk")),
+        (f2, make(f2, "a.example.co.uk")),
+        (f3, make(f3, "b.example.co.uk")),
+    ]));
+    let env = env_or_skip!(env_with(Some(Arc::new(flows))));
+    let a = &env.admin;
+    let s = env.open(a).await;
+    env.create(a, s, "zones", zone(z, "build", false)).await;
+    env.create(a, s, "agents", agent(ag, "bot", z, false)).await;
+    env.publish(a, s).await;
+    let s = env.open(a).await;
+    let path = format!("/sessions/{s}/allow-from-log");
+    let allow = |body: Value| env.call("POST", &path, a, None, Some(body));
+    let (st, out) = allow(json!({"flow_id": f1, "destination": "wildcard"})).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "*.co.uk refused: {out}");
+    let (st, out) = allow(json!({"flow_id": f2, "destination": "wildcard"})).await;
+    assert_eq!(st, StatusCode::CREATED, "{out}");
+    assert_eq!(out["created_object"]["spec"]["pattern"], "*.example.co.uk");
+    // Group found by id even after a rename; a look-alike group by name is ignored.
+    let (_, g1) = allow(json!({"flow_id": f2, "destination": "group"})).await;
+    let gid: Uuid = g1["rule"]["destinations"][0]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let (_, mut group) = env
+        .call("GET", &format!("/objects/{gid}"), a, Some(s), None)
+        .await;
+    let original_name = group["name"].clone();
+    group["name"] = json!("renamed");
+    let (st, _) = env
+        .call("PUT", &format!("/objects/{gid}"), a, Some(s), Some(group))
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let decoy = Uuid::new_v4();
+    let mut fake = group_json(decoy, original_name.as_str().unwrap());
+    fake["comment"] = json!("decoy");
+    env.create(a, s, "objects", fake).await;
+    let (_, g2) = allow(json!({"flow_id": f3, "destination": "group"})).await;
+    assert_eq!(g2["rule"]["destinations"][0], json!(gid));
+    env.publish(a, s).await;
+}
+
+fn group_json(id: Uuid, name: &str) -> Value {
+    group(id, name, &[])
 }

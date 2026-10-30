@@ -137,11 +137,30 @@ pub async fn session_for_write(
 pub async fn latest_revision(
     conn: &mut PgConnection,
 ) -> Result<Option<(u64, PolicyDocument)>, ApiError> {
-    let row: Option<(i64, Json<PolicyDocument>)> =
-        sqlx::query_as("SELECT number, document FROM revisions ORDER BY number DESC LIMIT 1")
-            .fetch_optional(&mut *conn)
-            .await?;
-    Ok(row.map(|(n, d)| (n as u64, d.0)))
+    let row: Option<(i64, Json<PolicyDocument>, String)> = sqlx::query_as(
+        "SELECT number, document, sha256 FROM revisions ORDER BY number DESC LIMIT 1",
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
+    row.map(|(n, d, sha)| check_revision(n as u64, d.0, &sha).map(|d| (n as u64, d)))
+        .transpose()
+}
+
+/// Refuses a stored revision whose document does not match its fingerprint (tampering or
+/// corruption): no policy is served from it.
+pub fn check_revision(
+    number: u64,
+    document: PolicyDocument,
+    sha256: &str,
+) -> Result<PolicyDocument, ApiError> {
+    let actual = afw_core::installed::document_sha256(&document);
+    if actual != sha256 {
+        tracing::error!(revision = number, expected = sha256, %actual, "revision fingerprint mismatch");
+        return Err(ApiError::Internal(format!(
+            "revision {number} fingerprint mismatch"
+        )));
+    }
+    Ok(document)
 }
 
 /// Published state: the last revision's document, or an empty policy.
@@ -298,15 +317,18 @@ pub async fn apply(
         let pub_value = get(&published, m.kind, m.id);
         match op_against(pub_value.as_ref(), after.as_ref()) {
             None => {
-                sqlx::query(
-                    "DELETE FROM policy_session_changes WHERE session_id = $1 AND kind = $2 \
-                     AND entity_id = $3",
-                )
-                .bind(session.id)
-                .bind(m.kind.as_str())
-                .bind(m.id)
-                .execute(&mut *conn)
-                .await?;
+                // Back to its published state: no change left, the lock is released.
+                for table in ["policy_session_changes", "policy_locks"] {
+                    sqlx::query(&format!(
+                        "DELETE FROM {table} WHERE session_id = $1 AND kind = $2 \
+                         AND entity_id = $3"
+                    ))
+                    .bind(session.id)
+                    .bind(m.kind.as_str())
+                    .bind(m.id)
+                    .execute(&mut *conn)
+                    .await?;
+                }
             }
             Some(op) => {
                 sqlx::query(

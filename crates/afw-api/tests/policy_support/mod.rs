@@ -95,6 +95,21 @@ impl Env {
         secret
     }
 
+    /// Registers a gateway in the registry of lot L7c and returns its id.
+    pub async fn gateway(&self) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO gateways (id, name, hostname, cert_sha256) VALUES ($1, $2, 'host', $3)",
+        )
+        .bind(id)
+        .bind(format!("gw-{id}"))
+        .bind(id.simple().to_string())
+        .execute(&self.pool)
+        .await
+        .expect("insert gateway");
+        id
+    }
+
     /// Calls the API (`/api/v1` prefix added) and returns the status and JSON body.
     pub async fn call(
         &self,

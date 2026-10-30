@@ -242,6 +242,21 @@ async fn write(
     if !create && !exists {
         return Err(ApiError::NotFound);
     }
+    // Rights first (EF-51): a refused caller learns nothing from validation errors.
+    let before = get_entity(&doc, kind, id);
+    let mut next = doc.clone();
+    super::model::set(&mut next, kind, id, Some(value.clone()))?;
+    let after = get_entity(&next, kind, id);
+    super::authz::check_change(
+        &p,
+        &published,
+        &doc,
+        &next,
+        kind,
+        id,
+        before.as_ref(),
+        after.as_ref(),
+    )?;
     let normalized = normalize(kind, id, value, &doc)?;
     let mutations = if kind == Kind::Rule {
         let rule: Rule = parse(normalized)?;

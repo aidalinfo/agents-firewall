@@ -14,7 +14,6 @@ use super::store::{self, open_session, owner_key};
 use super::{install, pool};
 use crate::AppState;
 use crate::auth::Principal;
-use crate::error::ApiError;
 
 pub use crate::gateways::ports::PortFuture;
 

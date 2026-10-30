@@ -100,3 +100,10 @@ CREATE TABLE intent_policy (
     interface  text NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Group of each zone receiving the destinations allowed from the log (`allow-from-log`
+-- `destination: group`), found by id rather than by name.
+CREATE TABLE allow_log_groups (
+    zone_id  uuid PRIMARY KEY,
+    group_id uuid NOT NULL
+);

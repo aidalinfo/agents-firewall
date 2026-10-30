@@ -89,6 +89,16 @@ pub fn normalize(kind: Kind, id: Uuid, v: Value, doc: &PolicyDocument) -> Result
         Kind::Agent => {
             let a: Agent = parse(v)?;
             check_name(&a.name)?;
+            if let Some(ip) = a.addresses.iter().find(|ip| {
+                !doc.settings
+                    .internal_networks
+                    .iter()
+                    .any(|n| n.contains(*ip))
+            }) {
+                return Err(bad(format!(
+                    "agent address {ip} is outside the internal networks"
+                )));
+            }
             for other in doc.agents.iter().filter(|o| o.id != a.id) {
                 if let Some(ip) = a.addresses.iter().find(|ip| other.addresses.contains(ip)) {
                     return Err(ApiError::Conflict {
@@ -293,6 +303,21 @@ pub fn document_errors(doc: &PolicyDocument) -> Vec<String> {
         }
         if cycle {
             errors.push(format!("group {:?} contains itself (cycle)", o.name));
+        }
+    }
+    for a in &doc.agents {
+        for ip in &a.addresses {
+            if !doc
+                .settings
+                .internal_networks
+                .iter()
+                .any(|n| n.contains(ip))
+            {
+                errors.push(format!(
+                    "agent {:?}: address {ip} is outside the internal networks",
+                    a.name
+                ));
+            }
         }
     }
     let mut owners: HashMap<std::net::IpAddr, &str> = HashMap::new();

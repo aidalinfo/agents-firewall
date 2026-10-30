@@ -7,9 +7,13 @@
 use std::collections::{BTreeSet, HashSet};
 
 use afw_core::api::Role;
+use std::net::IpAddr;
+
 use afw_core::policy::{
-    Action, Agent, DataCategory, InspectionRule, Layer, NetObjectSpec, PolicyDocument, Rule, Zone,
+    Action, Agent, DataCategory, InspectionRule, Layer, NetObject, NetObjectSpec, PolicyDocument,
+    Rule, Zone, ZoneMode,
 };
+use ipnet::IpNet;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -152,6 +156,19 @@ pub fn check_change(
                 return Err(forbidden("the MCP agent cannot modify itself"));
             }
             both(&|v| scope.require(parse::<Agent>(v.clone())?.zone_id))?;
+            // Addresses decide which agent (thus which zone) traffic belongs to, and what is
+            // internal for every zone: human-only.
+            if let Some(after) = after {
+                let addresses = |v: Option<&Value>| -> Result<Vec<IpAddr>, ApiError> {
+                    Ok(v.map(|v| parse::<Agent>(v.clone()))
+                        .transpose()?
+                        .map(|a| a.addresses)
+                        .unwrap_or_default())
+                };
+                if addresses(Some(after))? != addresses(before)? {
+                    return Err(forbidden("only a human can set agent addresses"));
+                }
+            }
             let admin = |v: Option<&Value>| -> Result<bool, ApiError> {
                 Ok(v.map(|v| parse::<Agent>(v.clone()))
                     .transpose()?
@@ -167,6 +184,18 @@ pub fn check_change(
             both(&|v| scope.require_inspection(&parse::<InspectionRule>(v.clone())?))
         }
         Kind::Object | Kind::Service | Kind::DataClass => {
+            if kind == Kind::Object {
+                // A category (internal, llm_provider, cloud_metadata) changes the implicit
+                // decisions of every zone, used by a rule or not: human-only.
+                let categorized = |v: Option<&Value>| -> Result<bool, ApiError> {
+                    Ok(v.map(|v| parse::<NetObject>(v.clone()))
+                        .transpose()?
+                        .is_some_and(|o| o.category.is_some()))
+                };
+                if categorized(before)? || categorized(after)? {
+                    return Err(forbidden("only a human can manage objects with a category"));
+                }
+            }
             if before.is_none() && get(published, kind, id).is_none() {
                 // A new entity is used by nothing yet; rules adding it are checked themselves.
                 return Ok(());
@@ -186,19 +215,14 @@ fn widening_reason(r: &Rule, doc: &PolicyDocument) -> Option<String> {
     if r.destinations.is_empty() {
         return Some(format!("rule {:?} accepts any destination", r.name));
     }
-    for id in resolve_objects(doc, &r.destinations) {
-        let Some(o) = doc.objects.iter().find(|o| o.id == id) else {
+    let objects = resolve_objects(doc, &r.destinations);
+    for id in &objects {
+        let Some(o) = doc.objects.iter().find(|o| o.id == *id) else {
             continue;
         };
         let broad = match &o.spec {
             NetObjectSpec::Any => true,
-            NetObjectSpec::Domain { pattern } => {
-                pattern == "*"
-                    || pattern
-                        .strip_prefix("*.")
-                        .is_some_and(|rest| !rest.contains('.'))
-            }
-            NetObjectSpec::Network { cidr } => cidr.prefix_len() == 0,
+            NetObjectSpec::Domain { pattern } => broad_domain(pattern),
             _ => false,
         };
         if broad {
@@ -207,6 +231,13 @@ fn widening_reason(r: &Rule, doc: &PolicyDocument) -> Option<String> {
                 r.name, o.name
             ));
         }
+    }
+    let (v4, v6) = coverage(doc, &objects);
+    if v4 > MAX_PUBLIC_V4 || v6 > MAX_V6 {
+        return Some(format!(
+            "rule {:?} accepts a wide address space ({v4} public IPv4, {v6} IPv6 addresses)",
+            r.name
+        ));
     }
     for c in &r.data_classes {
         if doc
@@ -218,6 +249,115 @@ fn widening_reason(r: &Rule, doc: &PolicyDocument) -> Option<String> {
         }
     }
     None
+}
+
+/// `*` or a wildcard over a public suffix (`*.com`, `*.co.uk`).
+pub fn broad_domain(pattern: &str) -> bool {
+    match pattern.strip_prefix("*.") {
+        None => pattern == "*",
+        Some(rest) => psl::domain_str(rest).is_none(),
+    }
+}
+
+/// More than a /8 of public IPv4 addresses, or more than a /32 of IPv6.
+const MAX_PUBLIC_V4: u128 = 1 << 24;
+const MAX_V6: u128 = 1 << 96;
+
+type Interval = (u128, u128);
+
+fn bounds(net: &IpNet) -> (bool, Interval) {
+    match net {
+        IpNet::V4(n) => (
+            true,
+            (
+                u32::from(n.network()) as u128,
+                u32::from(n.broadcast()) as u128,
+            ),
+        ),
+        IpNet::V6(n) => (false, (u128::from(n.network()), u128::from(n.broadcast()))),
+    }
+}
+
+fn ip(a: IpAddr) -> (bool, u128) {
+    match a {
+        IpAddr::V4(a) => (true, u32::from(a) as u128),
+        IpAddr::V6(a) => (false, u128::from(a)),
+    }
+}
+
+fn merge(mut v: Vec<Interval>) -> Vec<Interval> {
+    v.sort();
+    let mut out: Vec<Interval> = Vec::new();
+    for (s, e) in v {
+        match out.last_mut() {
+            Some(last) if s <= last.1.saturating_add(1) => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
+fn subtract(v: Vec<Interval>, holes: &[Interval]) -> Vec<Interval> {
+    let mut cur = v;
+    for &(hs, he) in holes {
+        let mut next = Vec::new();
+        for (s, e) in cur {
+            if he < s || hs > e {
+                next.push((s, e));
+                continue;
+            }
+            if s < hs {
+                next.push((s, hs - 1));
+            }
+            if e > he {
+                next.push((he + 1, e));
+            }
+        }
+        cur = next;
+    }
+    cur
+}
+
+fn count(v: &[Interval]) -> u128 {
+    v.iter().fold(0u128, |acc, (s, e)| {
+        acc.saturating_add((e - s).saturating_add(1))
+    })
+}
+
+/// Addresses covered by the union of the objects' networks, ranges and hosts: public IPv4
+/// (outside the policy's internal networks) and IPv6.
+fn coverage(doc: &PolicyDocument, objects: &BTreeSet<Uuid>) -> (u128, u128) {
+    let (mut v4, mut v6) = (Vec::new(), Vec::new());
+    let mut push = |is_v4: bool, iv: Interval| if is_v4 { v4.push(iv) } else { v6.push(iv) };
+    for o in doc.objects.iter().filter(|o| objects.contains(&o.id)) {
+        match &o.spec {
+            NetObjectSpec::Network { cidr } => {
+                let (f, iv) = bounds(cidr);
+                push(f, iv);
+            }
+            NetObjectSpec::Host { ip: a } => {
+                let (f, x) = ip(*a);
+                push(f, (x, x));
+            }
+            NetObjectSpec::Range { start, end } => {
+                let ((f, s), (g, e)) = (ip(*start), ip(*end));
+                if f == g && s <= e {
+                    push(f, (s, e));
+                }
+            }
+            _ => {}
+        }
+    }
+    let internal: Vec<Interval> = merge(
+        doc.settings
+            .internal_networks
+            .iter()
+            .map(bounds)
+            .filter(|(f, _)| *f)
+            .map(|(_, iv)| iv)
+            .collect(),
+    );
+    (count(&subtract(merge(v4), &internal)), count(&merge(v6)))
 }
 
 /// What decides a rule's effect: the rule, its resolved destinations and its data classes.
@@ -251,6 +391,18 @@ pub fn widenings(published: &PolicyDocument, draft: &PolicyDocument) -> Vec<Stri
             .is_some_and(|p| rule_fingerprint(p, published) == rule_fingerprint(r, draft));
         if !unchanged {
             reasons.push(reason);
+        }
+    }
+    for z in &draft.zones {
+        let was_observe = published
+            .zones
+            .iter()
+            .any(|p| p.id == z.id && p.mode == ZoneMode::Observe);
+        if z.mode == ZoneMode::Observe && !was_observe {
+            reasons.push(format!(
+                "zone {:?} switched to observe mode (nothing denied)",
+                z.name
+            ));
         }
     }
     for p in &published.rules {

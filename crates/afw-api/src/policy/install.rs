@@ -84,13 +84,23 @@ pub async fn installed_policy_for(
 }
 
 /// Records a gateway's acknowledgement: the pending installs of that revision become
-/// `installed` (and the revision active) or `failed` with the error.
+/// `installed` or `failed` with the error; the revision becomes active only when it is the
+/// gateway's desired revision and its stored fingerprint is valid.
 pub async fn record_install_ack(
     pool: &PgPool,
     gateway_id: Uuid,
     ack: &PolicyAck,
 ) -> Result<(), ApiError> {
     let mut tx = pool.begin().await?;
+    let desired: Option<i64> = sqlx::query_scalar(
+        "SELECT desired_revision FROM gateway_policy_state WHERE gateway_id = $1 FOR UPDATE",
+    )
+    .bind(gateway_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    // Only the desired revision, with a valid fingerprint, can become active.
+    let is_desired =
+        desired == Some(ack.revision as i64) && load_revision(&mut tx, ack.revision).await.is_ok();
     let (state, error) = if ack.ok {
         (InstallState::Installed, None)
     } else {
@@ -109,7 +119,7 @@ pub async fn record_install_ack(
     .bind(error)
     .execute(&mut *tx)
     .await?;
-    if ack.ok {
+    if ack.ok && is_desired {
         sqlx::query(
             "UPDATE gateway_policy_state SET active_revision = $2, updated_at = now() \
              WHERE gateway_id = $1",
@@ -187,6 +197,42 @@ fn from_raw(r: RawInstall) -> Result<Install, ApiError> {
     })
 }
 
+/// The MCP agent installs only the latest revision, published by itself, and only while no one
+/// else (a human rollback or reinstall) installed anything since that publication.
+async fn mcp_may_install(
+    conn: &mut PgConnection,
+    p: &Principal,
+    revision: u64,
+    latest: u64,
+) -> Result<(), ApiError> {
+    let deny = |m: &str| Err(ApiError::Forbidden(m.to_owned()));
+    if revision != latest {
+        return deny("the MCP agent may only install the latest revision");
+    }
+    let publisher: Option<String> = sqlx::query_scalar(
+        "SELECT s.owner_key FROM revisions r JOIN policy_sessions s ON s.id = r.session_id \
+         WHERE r.number = $1",
+    )
+    .bind(revision as i64)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if publisher.as_deref() != Some(store::owner_key(p).as_str()) {
+        return deny("the MCP agent may only install a revision it published");
+    }
+    let others: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM installs i, revisions r WHERE r.number = $1 \
+         AND i.requested_at >= r.published_at AND i.requested_by <> $2)",
+    )
+    .bind(revision as i64)
+    .bind(SqlJson(&p.actor))
+    .fetch_one(&mut *conn)
+    .await?;
+    if others {
+        return deny("an installation was made by someone else since this revision");
+    }
+    Ok(())
+}
+
 /// Installs a revision (human admin; the MCP agent only the latest revision, never a
 /// rollback). An older revision is installed as a rollback.
 async fn install(
@@ -204,10 +250,8 @@ async fn install(
         .map(|(n, _)| n)
         .unwrap_or(0);
     let detail = load_revision(&mut tx, req.revision).await?;
-    if p.role == Role::McpAgent && req.revision != latest {
-        return Err(ApiError::Forbidden(
-            "the MCP agent may only install the latest revision".into(),
-        ));
+    if p.role == Role::McpAgent {
+        mcp_may_install(&mut tx, &p, req.revision, latest).await?;
     }
     let gateways = if req.gateways.is_empty() {
         let in_doc: Vec<Uuid> = detail

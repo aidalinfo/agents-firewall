@@ -36,6 +36,10 @@ impl<S> Prefixed<S> {
     pub fn get_ref(&self) -> &S {
         &self.inner
     }
+    /// Drops the unread prefix and returns the inner stream.
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Prefixed<S> {

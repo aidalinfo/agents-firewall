@@ -22,6 +22,9 @@ use uuid::Uuid;
 pub struct FlowContext {
     pub agent_ip: IpAddr,
     pub dst_ip: Option<IpAddr>,
+    /// `true` when `dst_ip` is the address the gateway itself connects to (resolved from the
+    /// name, or the original destination of a nameless flow); `false` for the agent's choice.
+    pub dst_ip_trusted: bool,
     pub dst_port: u16,
     pub l4: L4Proto,
     pub app: Option<AppProto>,
@@ -71,6 +74,9 @@ pub struct Decision {
     pub observed: bool,
     pub llm_provider: bool,
     pub internal: bool,
+    /// Connection stage: an Accept rule with a method or path condition could match a request,
+    /// so the flow must be inspected and each request re-evaluated.
+    pub needs_l7: bool,
     pub trace: Vec<TraceStep>,
     /// Shim-only: revision carried into `to_ref` (the real engine knows it too).
     revision: Option<u64>,
@@ -205,6 +211,7 @@ impl CompiledPolicy {
             observed: false,
             llm_provider: false,
             internal: false,
+            needs_l7: false,
             trace: Vec::new(),
             revision: self.revision,
         }
@@ -227,7 +234,7 @@ impl CompiledPolicy {
         let host = ctx.host.as_deref();
         let llm = self.category_of(doc, DestCategory::LlmProvider, host, ctx.dst_ip);
         let metadata = self.category_of(doc, DestCategory::CloudMetadata, host, ctx.dst_ip);
-        let internal = ctx.dst_ip.is_some_and(|ip| {
+        let internal = ctx.dst_ip.filter(|_| ctx.dst_ip_trusted).is_some_and(|ip| {
             doc.settings.internal_networks.iter().any(|n| n.contains(&ip))
                 || doc.agents.iter().any(|a| a.id != agent.id && a.addresses.contains(&ip))
         });
@@ -251,7 +258,14 @@ impl CompiledPolicy {
         ordered.sort_by_key(|r| (matches!(r.layer, Layer::Zone { .. }), r.position));
         let mut matched: Option<&Rule> = None;
         for r in ordered {
-            let ok = self.rule_matches(doc, r, ctx, llm);
+            if ctx.method.is_none()
+                && r.action == Action::Accept
+                && self.has_l7_condition(doc, r)
+                && self.rule_matches(doc, r, &FlowContext { method: Some(String::new()), path: Some(String::new()), ..ctx.clone() }, llm, true)
+            {
+                d.needs_l7 = true;
+            }
+            let ok = self.rule_matches(doc, r, ctx, llm, false);
             d.trace.push(TraceStep {
                 rule_id: r.id,
                 matched: ok,
@@ -311,7 +325,15 @@ impl CompiledPolicy {
         true
     }
 
-    fn rule_matches(&self, doc: &PolicyDocument, r: &Rule, ctx: &FlowContext, llm: bool) -> bool {
+    fn has_l7_condition(&self, doc: &PolicyDocument, r: &Rule) -> bool {
+        r.services.iter().any(|s| {
+            doc.services.iter().find(|x| x.id == *s).is_some_and(|s| {
+                s.app.as_ref().is_some_and(|a| !a.methods.is_empty() || !a.path_prefixes.is_empty())
+            })
+        })
+    }
+
+    fn rule_matches(&self, doc: &PolicyDocument, r: &Rule, ctx: &FlowContext, llm: bool, ignore_l7: bool) -> bool {
         if !r.enabled || r.expires_at.is_some_and(|e| e <= ctx.now) {
             return false;
         }
@@ -321,14 +343,16 @@ impl CompiledPolicy {
             return false;
         }
         let host = ctx.host.as_deref();
+        // An untrusted (agent-chosen) address may only make deny rules match.
+        let ip = if ctx.dst_ip_trusted || r.action == Action::Deny { ctx.dst_ip } else { None };
         if !r.destinations.is_empty()
-            && !r.destinations.iter().any(|o| self.object_matches(doc, *o, host, ctx.dst_ip, 0))
+            && !r.destinations.iter().any(|o| self.object_matches(doc, *o, host, ip, 0))
         {
             return false;
         }
         if !r.services.is_empty()
             && !r.services.iter().any(|s| {
-                doc.services.iter().find(|x| x.id == *s).is_some_and(|s| service_matches(s, ctx))
+                doc.services.iter().find(|x| x.id == *s).is_some_and(|s| service_matches(s, ctx, ignore_l7))
             })
         {
             return false;
@@ -358,23 +382,24 @@ impl CompiledPolicy {
     }
 }
 
-fn service_matches(s: &Service, ctx: &FlowContext) -> bool {
+fn service_matches(s: &Service, ctx: &FlowContext, ignore_l7: bool) -> bool {
     if s.protocol != L4Proto::Any && ctx.l4 != L4Proto::Any && s.protocol != ctx.l4 {
         return false;
     }
     if !s.ports.is_empty() && !s.ports.iter().any(|p| p.start <= ctx.dst_port && ctx.dst_port <= p.end) {
         return false;
     }
-    if let Some(app) = &s.app {
-        if let Some(m) = &ctx.method
-            && !app.methods.is_empty()
-            && !app.methods.iter().any(|x| x.eq_ignore_ascii_case(m))
+    if let Some(app) = &s.app
+        && !ignore_l7
+    {
+        // Without a method/path (connection stage), an L7 condition does not match.
+        if !app.methods.is_empty()
+            && !ctx.method.as_ref().is_some_and(|m| app.methods.iter().any(|x| x.eq_ignore_ascii_case(m)))
         {
             return false;
         }
-        if let Some(p) = &ctx.path
-            && !app.path_prefixes.is_empty()
-            && !app.path_prefixes.iter().any(|x| p.starts_with(x.as_str()))
+        if !app.path_prefixes.is_empty()
+            && !ctx.path.as_ref().is_some_and(|p| app.path_prefixes.iter().any(|x| p.starts_with(x.as_str())))
         {
             return false;
         }

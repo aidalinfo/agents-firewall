@@ -43,6 +43,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 hickory-proto = { workspace = true }
 clap = { workspace = true }
+tower = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]

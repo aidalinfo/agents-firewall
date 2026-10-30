@@ -38,8 +38,15 @@ async fn client_without_certificate_is_allowed_but_has_no_identity() {
     // Registration (`POST /gw/v1/register`) happens before the gateway has a cert.
     let console_dir = tempfile::tempdir().unwrap();
     let console = ConsolePki::load_or_create(console_dir.path()).unwrap();
-    let server = console.server_config(&["console.local".to_string()]).unwrap();
-    let out = handshake(server, client_trusting(&console.ca_cert_pem()), "console.local").await;
+    let server = console
+        .server_config(&["console.local".to_string()])
+        .unwrap();
+    let out = handshake(
+        server,
+        client_trusting(&console.ca_cert_pem()),
+        "console.local",
+    )
+    .await;
     assert!(out.ok());
     assert!(out.server.unwrap().is_none());
 }
@@ -83,8 +90,12 @@ async fn gateway_does_not_trust_public_web_pki_for_the_console() {
 #[test]
 fn console_ca_is_stable_across_reloads() {
     let dir = tempfile::tempdir().unwrap();
-    let a = ConsolePki::load_or_create(dir.path()).unwrap().ca_cert_pem();
-    let b = ConsolePki::load_or_create(dir.path()).unwrap().ca_cert_pem();
+    let a = ConsolePki::load_or_create(dir.path())
+        .unwrap()
+        .ca_cert_pem();
+    let b = ConsolePki::load_or_create(dir.path())
+        .unwrap()
+        .ca_cert_pem();
     assert_eq!(a, b);
 }
 
@@ -95,11 +106,17 @@ fn signed_certificate_has_client_auth_and_requested_validity() {
     let console = ConsolePki::load_or_create(console_dir.path()).unwrap();
     let (_k, csr) = GatewayIdentity::generate(gw_dir.path()).unwrap();
     let pem = console.sign_gateway_csr(&csr, "gw1", 90).unwrap();
-    let der = rustls_pemfile::certs(&mut pem.as_bytes()).next().unwrap().unwrap();
+    let der = rustls_pemfile::certs(&mut pem.as_bytes())
+        .next()
+        .unwrap()
+        .unwrap();
     let (_, x) = x509_parser::parse_x509_certificate(&der).unwrap();
     let eku = x.extended_key_usage().unwrap().unwrap().value;
     assert!(eku.client_auth);
     assert!(!eku.server_auth);
     let v = x.validity();
-    assert_eq!(v.not_after.timestamp() - v.not_before.timestamp(), 90 * 86400 + 3600);
+    assert_eq!(
+        v.not_after.timestamp() - v.not_before.timestamp(),
+        90 * 86400 + 3600
+    );
 }

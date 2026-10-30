@@ -92,8 +92,16 @@ async fn reloaded_ca_keeps_identity_and_still_signs_valid_leaves() {
     assert_eq!(again.fingerprint_sha256(), fp);
     assert_eq!(again.ca_cert_pem(), pem);
     assert_eq!(fp.len(), 64);
-    assert!(fp.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
-    let out = handshake(again.server_config(), client_trusting(&pem), "reload.example").await;
+    assert!(
+        fp.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
+    let out = handshake(
+        again.server_config(),
+        client_trusting(&pem),
+        "reload.example",
+    )
+    .await;
     assert!(out.ok(), "{:?}", out.client);
 }
 
@@ -104,7 +112,11 @@ fn ca_files_have_expected_modes_and_extensions() {
     let dir = tempfile::tempdir().unwrap();
     let ca = GatewayCa::load_or_create(dir.path(), "afw gw").unwrap();
     let mode = |n: &str| {
-        std::fs::metadata(dir.path().join(n)).unwrap().permissions().mode() & 0o777
+        std::fs::metadata(dir.path().join(n))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
     };
     assert_eq!(mode("ca.key"), 0o600);
     assert_eq!(mode("ca.crt"), 0o644);
@@ -121,7 +133,12 @@ fn ca_files_have_expected_modes_and_extensions() {
     let years = (v.not_after.timestamp() - v.not_before.timestamp()) / (365 * 24 * 3600);
     assert_eq!(years, 10);
     assert_eq!(
-        x.subject().iter_common_name().next().unwrap().as_str().unwrap(),
+        x.subject()
+            .iter_common_name()
+            .next()
+            .unwrap()
+            .as_str()
+            .unwrap(),
         "afw gw"
     );
 }
@@ -131,7 +148,10 @@ async fn alpn_is_negotiated() {
     let dir = tempfile::tempdir().unwrap();
     let ca = Arc::new(GatewayCa::load_or_create(dir.path(), "afw gw").unwrap());
     let cfg = ca.server_config();
-    assert_eq!(cfg.alpn_protocols, vec![b"h2".to_vec(), b"http/1.1".to_vec()]);
+    assert_eq!(
+        cfg.alpn_protocols,
+        vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+    );
     let only = ca.server_config_for_alpn(vec![b"http/1.1".to_vec()]);
     assert_eq!(only.alpn_protocols, vec![b"http/1.1".to_vec()]);
 }

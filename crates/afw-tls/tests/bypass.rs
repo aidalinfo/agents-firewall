@@ -17,7 +17,10 @@ async fn leaf_is_rejected_by_a_standard_webpki_client() {
     let dir = tempfile::tempdir().unwrap();
     let ca = Arc::new(GatewayCa::load_or_create(dir.path(), "afw test gateway").unwrap());
     let out = handshake(ca.server_config(), webpki_client(), "api.example.com").await;
-    assert!(out.client.is_err(), "public PKI client must not accept a gateway leaf");
+    assert!(
+        out.client.is_err(),
+        "public PKI client must not accept a gateway leaf"
+    );
 }
 
 #[tokio::test]
@@ -138,9 +141,14 @@ async fn client_certificate_from_another_ca_is_refused() {
     GatewayIdentity::store_cert(gw_dir.path(), &cert, &console.ca_cert_pem()).unwrap();
     let client = GatewayIdentity::client_config(gw_dir.path()).unwrap();
 
-    let server = console.server_config(&["console.local".to_string()]).unwrap();
+    let server = console
+        .server_config(&["console.local".to_string()])
+        .unwrap();
     let out = handshake(server, client, "console.local").await;
-    assert!(out.server.is_err(), "server must reject a foreign client cert");
+    assert!(
+        out.server.is_err(),
+        "server must reject a foreign client cert"
+    );
 }
 
 #[test]
@@ -155,7 +163,13 @@ fn csr_requesting_another_identity_gets_the_imposed_id() {
     params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "gw:other");
-    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+    params.key_usages = vec![rcgen::KeyUsagePurpose::KeyCertSign];
+    // Requested basicConstraints cA=TRUE (rcgen refuses is_ca in CSRs, so raw).
+    params.custom_extensions = vec![rcgen::CustomExtension::from_oid_content(
+        &[2, 5, 29, 19],
+        vec![0x30, 0x03, 0x01, 0x01, 0xff],
+    )];
     let csr = params.serialize_request(&key).unwrap().pem().unwrap();
 
     let cert_pem = console.sign_gateway_csr(&csr, "gw-imposed", 30).unwrap();
@@ -163,7 +177,10 @@ fn csr_requesting_another_identity_gets_the_imposed_id() {
         .next()
         .unwrap()
         .unwrap();
-    assert_eq!(peer_gateway_id(&[der.clone()]).as_deref(), Some("gw-imposed"));
+    assert_eq!(
+        peer_gateway_id(std::slice::from_ref(&der)).as_deref(),
+        Some("gw-imposed")
+    );
 
     let (_, x509) = x509_parser::parse_x509_certificate(&der).unwrap();
     let cns: Vec<_> = x509
@@ -172,12 +189,18 @@ fn csr_requesting_another_identity_gets_the_imposed_id() {
         .map(|c| c.as_str().unwrap().to_string())
         .collect();
     assert_eq!(cns, vec!["gw:gw-imposed".to_string()]);
+    let eku = x509.extended_key_usage().unwrap().unwrap().value;
+    assert!(eku.client_auth && !eku.server_auth);
+    assert!(!x509.key_usage().unwrap().unwrap().value.key_cert_sign());
     let bc = x509.basic_constraints().unwrap();
     assert!(bc.map(|b| !b.value.ca).unwrap_or(true), "never a CA");
     let san = x509.subject_alternative_name().unwrap();
     if let Some(san) = san {
         for n in &san.value.general_names {
-            assert!(!format!("{n:?}").contains("other"), "requested SAN leaked: {n:?}");
+            assert!(
+                !format!("{n:?}").contains("other"),
+                "requested SAN leaked: {n:?}"
+            );
         }
     }
 
@@ -274,7 +297,11 @@ fn base64_encode(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         for i in 0..4 {
             if i <= chunk.len() {

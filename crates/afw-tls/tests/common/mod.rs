@@ -48,7 +48,10 @@ pub async fn handshake(
     let mut server_chain = None;
     let client_res = async {
         let tcp = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
-        let mut tls = connector.connect(name, tcp).await.map_err(|e| e.to_string())?;
+        let mut tls = connector
+            .connect(name, tcp)
+            .await
+            .map_err(|e| e.to_string())?;
         server_chain = tls.get_ref().1.peer_certificates().map(|c| c.to_vec());
         tls.write_all(b"x").await.map_err(|e| e.to_string())?;
         tls.flush().await.map_err(|e| e.to_string())?;

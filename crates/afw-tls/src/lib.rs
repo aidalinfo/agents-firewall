@@ -1,31 +1,116 @@
-#![allow(unused_variables, clippy::missing_errors_doc)]
-use std::path::Path;
+//! TLS building blocks for agents-firewall.
+//!
+//! - [`GatewayCa`]: the per-gateway inspection authority. Its key never leaves
+//!   the gateway host (ENF-02/ENF-03); it mints short-lived leaf certificates
+//!   on the fly, keyed by SNI, for TLS inspection.
+//! - [`upstream_client_config`]: the client side of inspection, with normal
+//!   certificate verification (never accepts invalid certificates).
+//! - [`ConsolePki`]: the console authority that signs gateway CSRs and serves
+//!   the `/gw/v1` API over mutual TLS.
+//! - [`GatewayIdentity`]: the gateway's own mTLS identity towards the console.
+//!
+//! The `ring` crypto provider is always passed explicitly to rustls builders;
+//! no process-wide default provider is ever relied on (see ADR 0013).
+
+mod console;
+mod gateway_ca;
+mod identity;
+mod names;
+mod store;
+mod upstream;
+
+use std::path::PathBuf;
 use std::sync::Arc;
-use rustls::pki_types::CertificateDer;
+
+pub use console::{ConsolePki, peer_gateway_id};
+pub use gateway_ca::{GatewayCa, LEAF_CACHE_CAPACITY};
+pub use identity::GatewayIdentity;
+pub use upstream::upstream_client_config;
+
+/// Errors raised by this crate.
 #[derive(Debug, thiserror::Error)]
-pub enum TlsError { #[error("x")] X }
-pub struct GatewayCa;
-impl GatewayCa {
-    pub fn load_or_create(dir: &Path, cn: &str) -> Result<Self, TlsError> { todo!() }
-    pub fn ca_cert_pem(&self) -> String { todo!() }
-    pub fn fingerprint_sha256(&self) -> String { todo!() }
-    pub fn leaf_for(&self, n: &str) -> Result<Arc<rustls::sign::CertifiedKey>, TlsError> { todo!() }
-    pub fn server_config(self: &Arc<Self>) -> Arc<rustls::ServerConfig> { todo!() }
-    pub fn server_config_for_alpn(&self, a: Vec<Vec<u8>>) -> Arc<rustls::ServerConfig> { todo!() }
-    pub fn server_config_for_target(&self, t: &str, a: Vec<Vec<u8>>) -> Arc<rustls::ServerConfig> { todo!() }
+pub enum TlsError {
+    #[error("i/o error on {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("insecure permissions on {path}: mode {mode:o} (group/other access is not allowed)")]
+    InsecurePermissions { path: PathBuf, mode: u32 },
+    #[error("refusing to use {path}: not a regular file")]
+    NotARegularFile { path: PathBuf },
+    #[error("inconsistent key material in {dir}: {reason}")]
+    InconsistentStore { dir: PathBuf, reason: String },
+    #[error("invalid server name {0:?}")]
+    InvalidServerName(String),
+    #[error("invalid gateway id {0:?}")]
+    InvalidGatewayId(String),
+    #[error("invalid validity: {0}")]
+    InvalidValidity(String),
+    #[error("invalid PEM: {0}")]
+    InvalidPem(String),
+    #[error("invalid certificate signing request: {0}")]
+    InvalidCsr(String),
+    #[error("invalid certificate: {0}")]
+    InvalidCertificate(String),
+    #[error("certificate generation failed: {0}")]
+    Rcgen(#[from] rcgen::Error),
+    #[error("rustls error: {0}")]
+    Rustls(#[from] rustls::Error),
+    #[error("client certificate verifier: {0}")]
+    Verifier(String),
 }
-pub fn upstream_client_config(e: &[String], a: Vec<Vec<u8>>) -> Result<Arc<rustls::ClientConfig>, TlsError> { todo!() }
-pub struct ConsolePki;
-impl ConsolePki {
-    pub fn load_or_create(dir: &Path) -> Result<Self, TlsError> { todo!() }
-    pub fn ca_cert_pem(&self) -> String { todo!() }
-    pub fn sign_gateway_csr(&self, c: &str, id: &str, d: u32) -> Result<String, TlsError> { todo!() }
-    pub fn server_config(&self, n: &[String]) -> Result<Arc<rustls::ServerConfig>, TlsError> { todo!() }
+
+/// Default ALPN offered by inspection and API servers.
+pub fn default_alpn() -> Vec<Vec<u8>> {
+    vec![b"h2".to_vec(), b"http/1.1".to_vec()]
 }
-pub fn peer_gateway_id(c: &[CertificateDer<'_>]) -> Option<String> { todo!() }
-pub struct GatewayIdentity;
-impl GatewayIdentity {
-    pub fn generate(dir: &Path) -> Result<(String, String), TlsError> { todo!() }
-    pub fn store_cert(dir: &Path, c: &str, ca: &str) -> Result<(), TlsError> { todo!() }
-    pub fn client_config(dir: &Path) -> Result<Arc<rustls::ClientConfig>, TlsError> { todo!() }
+
+/// The crypto provider used everywhere in this crate: `ring`, explicitly.
+pub fn crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
+    Arc::new(rustls::crypto::ring::default_provider())
+}
+
+/// Random positive serial number (16 bytes, MSB cleared) from the provider's CSPRNG.
+pub(crate) fn random_serial() -> Result<rcgen::SerialNumber, TlsError> {
+    let mut bytes = [0u8; 16];
+    crypto_provider()
+        .secure_random
+        .fill(&mut bytes)
+        .map_err(|_| TlsError::Rustls(rustls::Error::FailedToGetRandomBytes))?;
+    bytes[0] &= 0x7f;
+    bytes[0] |= 0x01; // never zero / never a shorter encoding
+    Ok(rcgen::SerialNumber::from_slice(&bytes))
+}
+
+/// Parses every certificate in a PEM bundle; fails on garbage or empty input.
+pub(crate) fn certs_from_pem(
+    pem: &str,
+) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, TlsError> {
+    let certs = rustls_pemfile::certs(&mut pem.as_bytes())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| TlsError::InvalidPem(e.to_string()))?;
+    if certs.is_empty() {
+        return Err(TlsError::InvalidPem("no certificate found".into()));
+    }
+    Ok(certs)
+}
+
+/// Builds a rustls `CertifiedKey` from a chain and an rcgen key pair.
+pub(crate) fn certified_key(
+    chain: Vec<rustls::pki_types::CertificateDer<'static>>,
+    key: &rcgen::KeyPair,
+) -> Result<rustls::sign::CertifiedKey, TlsError> {
+    let der = rustls::pki_types::PrivateKeyDer::Pkcs8(key.serialize_der().into());
+    let signing = crypto_provider().key_provider.load_private_key(der)?;
+    Ok(rustls::sign::CertifiedKey::new(chain, signing))
+}
+
+/// `now - 1h`, used as `not_before` to tolerate clock skew between hosts.
+pub(crate) fn backdated_now() -> time::OffsetDateTime {
+    // Truncate to whole seconds so that X.509 lifetimes are exact.
+    let now = time::OffsetDateTime::now_utc();
+    let now = now.replace_nanosecond(0).unwrap_or(now);
+    now - time::Duration::hours(1)
 }

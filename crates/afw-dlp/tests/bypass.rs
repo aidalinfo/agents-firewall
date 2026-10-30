@@ -47,7 +47,10 @@ fn stream_every_split_point_reports_exactly_once_with_same_range() {
             assert_eq!(n, 1, "cut at {cut}: {kind} reported {n} times: {found:#?}");
             let a = find(&found, kind);
             let b = find(&full, kind);
-            assert_eq!((a.start, a.end, &a.fingerprint), (b.start, b.end, &b.fingerprint));
+            assert_eq!(
+                (a.start, a.end, &a.fingerprint),
+                (b.start, b.end, &b.fingerprint)
+            );
         }
     }
 }
@@ -56,7 +59,9 @@ fn stream_every_split_point_reports_exactly_once_with_same_range() {
 fn stream_tiny_chunks_large_body_each_secret_once() {
     let mut data = String::new();
     for i in 0..40 {
-        data.push_str(&format!("line {i} lorem ipsum dolor sit amet consectetur\n"));
+        data.push_str(&format!(
+            "line {i} lorem ipsum dolor sit amet consectetur\n"
+        ));
         if i % 10 == 3 {
             data.push_str(&format!("token: {GITLAB}\n"));
         }
@@ -77,8 +82,15 @@ fn base64_encoded_secret_is_detected_and_masked() {
     let body = format!("{{\"file\":\"{encoded}\"}}");
     let found = scanner().scan(body.as_bytes(), "body");
     let f = find(&found, "anthropic_key");
-    assert_eq!(f.fingerprint, fp(ANTHROPIC), "fingerprint is of the decoded value");
-    assert!(f.start <= body.find(&encoded).unwrap() && f.end >= body.find(&encoded).unwrap() + encoded.len() - 2);
+    assert_eq!(
+        f.fingerprint,
+        fp(ANTHROPIC),
+        "fingerprint is of the decoded value"
+    );
+    assert!(
+        f.start <= body.find(&encoded).unwrap()
+            && f.end >= body.find(&encoded).unwrap() + encoded.len() - 2
+    );
     let masked = mask(&body, &found);
     assert!(!masked.contains(&encoded[..16]));
     assert!(masked.contains(&format!("[SECRET:anthropic_key:{}]", fp(ANTHROPIC))));
@@ -106,9 +118,15 @@ fn percent_encoded_secret_is_detected() {
 
 #[test]
 fn percent_encoded_assignment_is_detected() {
-    let body = format!("payload=password%3D{}%26x%3D1", PASSWORD.replace('#', "%23").replace('$', "%24"));
+    let body = format!(
+        "payload=password%3D{}%26x%3D1",
+        PASSWORD.replace('#', "%23").replace('$', "%24")
+    );
     let found = scanner().scan(body.as_bytes(), "body");
-    assert_eq!(find(&found, "generic_secret_assignment").fingerprint, fp(PASSWORD));
+    assert_eq!(
+        find(&found, "generic_secret_assignment").fingerprint,
+        fp(PASSWORD)
+    );
 }
 
 #[test]
@@ -130,8 +148,14 @@ fn json_unicode_escaped_dash_is_detected() {
 
 #[test]
 fn multipart_field_and_base64_part_are_detected() {
-    let b64 = STANDARD.encode(format!("[default]\naws_access_key_id = {AWS_KEY}\naws_secret_access_key = {AWS_SECRET}\n"));
-    let wrapped: Vec<String> = b64.as_bytes().chunks(20).map(|c| String::from_utf8(c.to_vec()).unwrap()).collect();
+    let b64 = STANDARD.encode(format!(
+        "[default]\naws_access_key_id = {AWS_KEY}\naws_secret_access_key = {AWS_SECRET}\n"
+    ));
+    let wrapped: Vec<String> = b64
+        .as_bytes()
+        .chunks(20)
+        .map(|c| String::from_utf8(c.to_vec()).unwrap())
+        .collect();
     let body = format!(
         "--XyZ\r\nContent-Disposition: form-data; name=\"api_key\"\r\n\r\n{OPAQUE}\r\n\
          --XyZ\r\nContent-Disposition: form-data; name=\"f\"; filename=\"credentials\"\r\n\
@@ -139,7 +163,10 @@ fn multipart_field_and_base64_part_are_detected() {
         wrapped.join("\r\n")
     );
     let found = scanner().scan(body.as_bytes(), "body");
-    assert_eq!(find(&found, "generic_secret_assignment").fingerprint, fp(OPAQUE));
+    assert_eq!(
+        find(&found, "generic_secret_assignment").fingerprint,
+        fp(OPAQUE)
+    );
     assert_eq!(find(&found, "aws_access_key").fingerprint, fp(AWS_KEY));
     assert_eq!(find(&found, "aws_secret_key").fingerprint, fp(AWS_SECRET));
 }
@@ -184,7 +211,10 @@ fn secret_in_url_query_is_detected() {
 
 #[test]
 fn uppercase_keywords_and_prefixes_are_detected() {
-    let body = format!("PASSWORD={PASSWORD}\nAUTHORIZATION: BEARER {OPAQUE}\n{}\n", ANTHROPIC.to_uppercase());
+    let body = format!(
+        "PASSWORD={PASSWORD}\nAUTHORIZATION: BEARER {OPAQUE}\n{}\n",
+        ANTHROPIC.to_uppercase()
+    );
     let found = scanner().scan(body.as_bytes(), "body");
     assert!(has(&found, "generic_secret_assignment"), "{found:#?}");
     assert!(has(&found, "bearer_token"), "{found:#?}");
@@ -206,7 +236,9 @@ fn same_secret_twice_gives_same_fingerprint() {
 
 #[test]
 fn masking_leaves_no_fragment_of_any_secret() {
-    let secrets = [ANTHROPIC, OPENAI, GITHUB, GITLAB, AWS_KEY, SLACK, JWT, PASSWORD, OPAQUE];
+    let secrets = [
+        ANTHROPIC, OPENAI, GITHUB, GITLAB, AWS_KEY, SLACK, JWT, PASSWORD, OPAQUE,
+    ];
     let body = format!(
         "a {ANTHROPIC} b {OPENAI} c {GITHUB} d {GITLAB} e {AWS_KEY}\n\
          aws_secret_access_key={AWS_SECRET}\n{SLACK} {JWT}\npassword={PASSWORD} \
@@ -219,7 +251,10 @@ fn masking_leaves_no_fragment_of_any_secret() {
     for s in secrets.iter().chain([&AWS_SECRET]) {
         for w in s.as_bytes().windows(8) {
             let w = std::str::from_utf8(w).unwrap();
-            assert!(!masked.contains(w), "fragment {w:?} of {s} survived:\n{masked}");
+            assert!(
+                !masked.contains(w),
+                "fragment {w:?} of {s} survived:\n{masked}"
+            );
         }
     }
     assert!(!masked.contains(&STANDARD.encode(GITHUB)[..12]));
@@ -231,8 +266,16 @@ fn masking_leaves_no_fragment_of_any_secret() {
 fn random_non_utf8_input_never_panics() {
     let s = scanner();
     let fragments: [&[u8]; 10] = [
-        b"sk-ant-", b"password=", b"%", b"%4", b"\\u00", b"\\\"", b"==", b"-----BEGIN PRIVATE KEY-----",
-        b"https://u:p@", b"\xe2\x82\xac",
+        b"sk-ant-",
+        b"password=",
+        b"%",
+        b"%4",
+        b"\\u00",
+        b"\\\"",
+        b"==",
+        b"-----BEGIN PRIVATE KEY-----",
+        b"https://u:p@",
+        b"\xe2\x82\xac",
     ];
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for _ in 0..400 {
@@ -284,7 +327,11 @@ fn no_false_positive_on_uuid_and_git_sha() {
 const PRESIGNED: &str = concat!(
     "https://my-bucket.s3.eu-west-3.amazonaws.com/uploads/report.pdf",
     "?X-Amz-Algorithm=AWS4-HMAC-SHA256",
-    "&X-Amz-Credential=", "AK", "IA", "Q3EXAMPLE7ZK4M2P", "%2F20261030%2Feu-west-3%2Fs3%2Faws4_request",
+    "&X-Amz-Credential=",
+    "AK",
+    "IA",
+    "Q3EXAMPLE7ZK4M2P",
+    "%2F20261030%2Feu-west-3%2Fs3%2Faws4_request",
     "&X-Amz-Date=20261030T120000Z&X-Amz-Expires=3600",
     "&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJr%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCWV1LXdlc3QtMyJHMEUCIQD",
     "x9mLq2Vt7Zk4Pw8Rn1Hb6Jc3Ys0Ga5Fd8Kt2Lm9Qp4Wv7Xz1Bn6Cr3Ej0Hu5Ik8Ol2Ma9Pq4Rs7Tt1Uv6Wx3Yz0",
@@ -298,7 +345,10 @@ fn presigned_s3_url_is_not_a_secret_ef72() {
     assert!(found.is_empty(), "{found:#?}");
     let body = format!("{{\"upload_url\":\"{PRESIGNED}\"}}");
     let found = scanner().scan(body.as_bytes(), "body");
-    assert!(!found.iter().any(|f| f.category == DataCategory::Secret), "{found:#?}");
+    assert!(
+        !found.iter().any(|f| f.category == DataCategory::Secret),
+        "{found:#?}"
+    );
     let found = scanner().scan(PRESIGNED.replace("%2F", "/").as_bytes(), "body");
     assert!(found.is_empty(), "{found:#?}");
 }
@@ -310,4 +360,50 @@ fn presigned_s3_url_does_not_hide_other_secrets() {
     assert_eq!(kinds(&found), vec!["github_token"]);
     let url = format!("{PRESIGNED}&password={PASSWORD}");
     assert!(has(&scanner().scan_url(&url), "generic_secret_assignment"));
+}
+
+#[test]
+fn stream_base64_secret_split_across_feeds_reported_once() {
+    let encoded = STANDARD.encode(format!("{} {GITHUB} {}", "x".repeat(300), "y".repeat(300)));
+    let data = format!("{}\nfile={encoded}\nend\n", "z ".repeat(400));
+    let bytes = data.as_bytes();
+    for size in [13, 100, 333, 1024] {
+        let chunks: Vec<&[u8]> = bytes.chunks(size).collect();
+        let found = stream_all(&chunks);
+        let gh: Vec<&Finding> = found.iter().filter(|f| f.kind == "github_token").collect();
+        assert_eq!(gh.len(), 1, "chunk {size}: {found:#?}");
+        assert_eq!(gh[0].fingerprint, fp(GITHUB));
+    }
+}
+
+#[test]
+fn stream_long_pem_block_longer_than_overlap_is_reported_once() {
+    let body: String = (0..40)
+        .map(|i| format!("MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC{i:02}\n"))
+        .collect();
+    let pem = format!("-----BEGIN PRIVATE KEY-----\n{body}-----END PRIVATE KEY-----");
+    assert!(pem.len() > 1500);
+    let data = format!("cat key.pem\n{pem}\ndone\n");
+    let full = scanner().scan(data.as_bytes(), "body");
+    let expected = find(&full, "private_key_pem");
+    assert_eq!(&data[expected.start..expected.end], pem);
+    let chunks: Vec<&[u8]> = data.as_bytes().chunks(100).collect();
+    let found = stream_all(&chunks);
+    let pk: Vec<&Finding> = found
+        .iter()
+        .filter(|f| f.kind == "private_key_pem")
+        .collect();
+    assert_eq!(pk.len(), 1, "{found:#?}");
+    assert_eq!((pk[0].start, pk[0].end), (expected.start, expected.end));
+    assert!(!mask(&data, &found).contains("MIIEvQIBADAN"));
+}
+
+#[test]
+fn secret_smuggled_in_header_name_is_detected() {
+    let headers = vec![(format!("X-{GITHUB}"), "1".to_string())];
+    let found = scanner().scan_headers(&headers);
+    let f = find(&found, "github_token");
+    assert!(f.location.starts_with("header_name:"), "{f:?}");
+    assert_eq!(f.fingerprint, fp(GITHUB));
+    assert_eq!(&headers[0].0[f.start..f.end], GITHUB);
 }

@@ -3,6 +3,17 @@
 //! This crate is self-contained (no dependency on `afw-core`): callers convert [`Finding`]
 //! into their own types.
 
+mod decode;
+mod detectors;
+mod mask;
+mod scanner;
+mod stream;
+
+pub use detectors::BUILTIN_DETECTORS;
+pub use mask::{mask, mask_bytes};
+pub use scanner::Scanner;
+pub use stream::StreamScanner;
+
 use serde::{Deserialize, Serialize};
 
 /// Category of a data class. Drives the label used when masking.
@@ -75,82 +86,73 @@ pub struct ScannerOptions {
 impl Default for ScannerOptions {
     fn default() -> Self {
         Self {
-            internal_host_suffixes: Vec::new(),
+            internal_host_suffixes: [
+                ".internal",
+                ".local",
+                ".lan",
+                ".corp",
+                ".localdomain",
+                ".home.arpa",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             max_pattern_len: 512,
         }
     }
 }
 
-/// Compiled set of data classes.
-#[derive(Debug)]
-pub struct Scanner {
-    opts: ScannerOptions,
-}
-
-impl Scanner {
-    pub fn new(classes: &[ClassSpec], opts: ScannerOptions) -> Result<Scanner, DlpError> {
-        let _ = classes;
-        Ok(Scanner { opts })
-    }
-
-    pub fn scan(&self, data: &[u8], location: &str) -> Vec<Finding> {
-        let _ = (data, location);
-        Vec::new()
-    }
-
-    pub fn scan_headers(&self, headers: &[(String, String)]) -> Vec<Finding> {
-        let _ = headers;
-        Vec::new()
-    }
-
-    pub fn scan_url(&self, url: &str) -> Vec<Finding> {
-        let _ = url;
-        Vec::new()
-    }
-
-    pub fn stream(&self, location: &str) -> StreamScanner<'_> {
-        StreamScanner {
-            scanner: self,
-            location: location.to_string(),
-        }
-    }
-
-    pub fn options(&self) -> &ScannerOptions {
-        &self.opts
+fn class(id: &str, name: &str, category: DataCategory, ids: &[&str]) -> ClassSpec {
+    ClassSpec {
+        id: id.to_string(),
+        name: name.to_string(),
+        category,
+        detectors: ids
+            .iter()
+            .map(|d| DetectorSpec::Builtin { id: d.to_string() })
+            .collect(),
     }
 }
 
-/// Incremental scanner for a continuous stream.
-#[derive(Debug)]
-pub struct StreamScanner<'a> {
-    scanner: &'a Scanner,
-    location: String,
-}
-
-impl StreamScanner<'_> {
-    pub fn feed(&mut self, chunk: &[u8]) -> Vec<Finding> {
-        let _ = (chunk, self.scanner, &self.location);
-        Vec::new()
-    }
-
-    pub fn finish(self) -> Vec<Finding> {
-        Vec::new()
-    }
-}
-
-pub fn mask(text: &str, findings: &[Finding]) -> String {
-    let _ = findings;
-    text.to_string()
-}
-
-pub fn mask_bytes(data: &[u8], findings: &[Finding]) -> Vec<u8> {
-    let _ = findings;
-    data.to_vec()
-}
-
+/// Default data classes: `secrets`, `inventaire-infra`, `commercial`, `donnees-personnelles`.
 pub fn builtin_classes() -> Vec<ClassSpec> {
-    Vec::new()
+    vec![
+        class(
+            "secrets",
+            "Secrets",
+            DataCategory::Secret,
+            &[
+                "aws_access_key",
+                "aws_secret_key",
+                "github_token",
+                "gitlab_token",
+                "anthropic_key",
+                "openai_key",
+                "slack_token",
+                "jwt",
+                "private_key_pem",
+                "password_in_url",
+                "generic_secret_assignment",
+                "bearer_token",
+            ],
+        ),
+        class(
+            "inventaire-infra",
+            "Inventaire infra",
+            DataCategory::Infra,
+            &["private_ip", "internal_hostname"],
+        ),
+        class(
+            "commercial",
+            "Commercial",
+            DataCategory::Commercial,
+            &["price_amount", "iban"],
+        ),
+        class(
+            "donnees-personnelles",
+            "Données personnelles",
+            DataCategory::Personal,
+            &["email", "credit_card"],
+        ),
+    ]
 }
-
-/// Identifiers of the built-in detectors.
-pub const BUILTIN_DETECTORS: &[&str] = &[];

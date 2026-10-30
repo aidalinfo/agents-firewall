@@ -121,7 +121,12 @@
 }
 
 @layer base {
-  html,
+  /* The root font size stays at 16px so that rem-based Tailwind/Nuxt UI sizes are unchanged;
+     the mockup's 13px base applies to the document body. */
+  html {
+    background: var(--bg);
+  }
+
   body {
     background: var(--bg);
     color: var(--text);

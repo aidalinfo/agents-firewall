@@ -333,7 +333,7 @@ function notAvailable() {
                   class="flex items-center gap-[10px] rounded-lg border border-line px-[10px] py-2 no-underline"
                   style="color: var(--text)"
                 >
-                  <span class="w-16 flex-none text-[10.5px] font-bold tracking-[.04em] text-text3 uppercase">{{ u.kind === 'rule' ? t('objects.useKind.rule', { n: u.ref }) : t(`objects.useKind.${u.kind}`) }}</span>
+                  <span class="w-[76px] flex-none text-[10px] font-bold tracking-[.04em] text-text3 uppercase">{{ u.kind === 'rule' ? t('objects.useKind.rule', { n: u.ref }) : t(`objects.useKind.${u.kind}`) }}</span>
                   <span class="flex min-w-0 flex-col leading-[1.3]">
                     <span class="text-[12.5px] font-semibold">{{ u.name }}</span>
                     <span class="text-[11.5px] text-text3">{{ usedContext(u) }}</span>

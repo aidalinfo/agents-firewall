@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
-#[command(name = "afw-gateway", version, about = "agents-firewall gateway (data plane)")]
+#[command(
+    name = "afw-gateway",
+    version,
+    about = "agents-firewall gateway (data plane)"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
@@ -48,7 +52,11 @@ pub struct RunArgs {
     #[arg(long, env = "AFW_STATE_DIR", default_value = "/var/lib/afw")]
     pub state_dir: PathBuf,
     /// Where to export the PUBLIC inspection CA certificate (never the key).
-    #[arg(long, env = "AFW_CA_EXPORT", default_value = "/var/lib/afw/public/gateway.crt")]
+    #[arg(
+        long,
+        env = "AFW_CA_EXPORT",
+        default_value = "/var/lib/afw/public/gateway.crt"
+    )]
     pub ca_export: PathBuf,
     /// Upstream DNS server (`ip` or `ip:port`); default: first nameserver of /etc/resolv.conf.
     #[arg(long, env = "AFW_UPSTREAM_DNS")]
@@ -96,25 +104,46 @@ pub struct RegisterArgs {
 
 impl RunArgs {
     pub fn upstream_dns_addr(&self) -> anyhow::Result<Option<SocketAddr>> {
-        let Some(v) = self.upstream_dns.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
+        let Some(v) = self
+            .upstream_dns
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        else {
             return Ok(None);
         };
         if let Ok(a) = v.parse::<SocketAddr>() {
             return Ok(Some(a));
         }
-        let ip: IpAddr = v.parse().map_err(|_| anyhow::anyhow!("invalid AFW_UPSTREAM_DNS {v:?}"))?;
+        let ip: IpAddr = v
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid AFW_UPSTREAM_DNS {v:?}"))?;
         Ok(Some(SocketAddr::new(ip, 53)))
     }
 
     /// Extra upstream roots (PEM contents). An unreadable file is an error, never skipped.
     pub fn extra_roots(&self) -> anyhow::Result<Vec<String>> {
-        let mut files: Vec<PathBuf> = self.upstream_ca_file.iter().filter(|p| !p.as_os_str().is_empty()).cloned().collect();
+        let mut files: Vec<PathBuf> = self
+            .upstream_ca_file
+            .iter()
+            .filter(|p| !p.as_os_str().is_empty())
+            .cloned()
+            .collect();
         if let Ok(alias) = std::env::var("AFW_EXTRA_CA") {
-            files.extend(alias.split(',').map(str::trim).filter(|s| !s.is_empty()).map(PathBuf::from));
+            files.extend(
+                alias
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(PathBuf::from),
+            );
         }
         files
             .iter()
-            .map(|p| std::fs::read_to_string(p).map_err(|e| anyhow::anyhow!("upstream CA {}: {e}", p.display())))
+            .map(|p| {
+                std::fs::read_to_string(p)
+                    .map_err(|e| anyhow::anyhow!("upstream CA {}: {e}", p.display()))
+            })
             .collect()
     }
 }

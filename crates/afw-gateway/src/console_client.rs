@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use afw_core::InstalledPolicy;
 use afw_core::protocol::{
-    EventBatch, GatewayCommand, GatewayStats, Heartbeat, HeartbeatResponse, POLICY_LONG_POLL_SECS, PolicyAck,
-    RegisterRequest, RegisterResponse,
+    EventBatch, GatewayCommand, GatewayStats, Heartbeat, HeartbeatResponse, POLICY_LONG_POLL_SECS,
+    PolicyAck, RegisterRequest, RegisterResponse,
 };
 use afw_tls::GatewayIdentity;
 use anyhow::{Context, anyhow, bail};
@@ -51,7 +51,11 @@ impl ConsoleHttp {
         if uri.scheme_str() != Some("https") {
             bail!("console URL must be https://");
         }
-        let host = uri.host().ok_or_else(|| anyhow!("console URL without host"))?.trim_matches(['[', ']']).to_string();
+        let host = uri
+            .host()
+            .ok_or_else(|| anyhow!("console URL without host"))?
+            .trim_matches(['[', ']'])
+            .to_string();
         Ok(Self {
             port: uri.port_u16().unwrap_or(443),
             host,
@@ -59,43 +63,80 @@ impl ConsoleHttp {
         })
     }
 
-    pub async fn request(&self, method: Method, path: &str, body: Option<Vec<u8>>, content_type: &str, timeout: Duration) -> anyhow::Result<(u16, Bytes)> {
+    pub async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+        content_type: &str,
+        timeout: Duration,
+    ) -> anyhow::Result<(u16, Bytes)> {
         let fut = async {
             let tcp = tokio::net::TcpStream::connect((self.host.as_str(), self.port)).await?;
             let name = ServerName::try_from(self.host.clone())?;
-            let tls = tokio_rustls::TlsConnector::from(self.tls.clone()).connect(name, tcp).await?;
+            let tls = tokio_rustls::TlsConnector::from(self.tls.clone())
+                .connect(name, tcp)
+                .await?;
             let (mut send, conn) = hyper::client::conn::http1::handshake(TokioIo::new(tls)).await?;
             tokio::spawn(conn);
-            let authority = if self.host.contains(':') { format!("[{}]:{}", self.host, self.port) } else { format!("{}:{}", self.host, self.port) };
+            let authority = if self.host.contains(':') {
+                format!("[{}]:{}", self.host, self.port)
+            } else {
+                format!("{}:{}", self.host, self.port)
+            };
             let req = Request::builder()
                 .method(method)
                 .uri(path)
                 .header("host", authority)
                 .header("content-type", content_type)
-                .header("user-agent", concat!("afw-gateway/", env!("CARGO_PKG_VERSION")))
+                .header(
+                    "user-agent",
+                    concat!("afw-gateway/", env!("CARGO_PKG_VERSION")),
+                )
                 .body(Full::new(Bytes::from(body.unwrap_or_default())))?;
             let resp = send.send_request(req).await?;
             let status = resp.status().as_u16();
             let bytes = resp.into_body().collect().await?.to_bytes();
             Ok::<_, anyhow::Error>((status, bytes))
         };
-        tokio::time::timeout(timeout, fut).await.map_err(|_| anyhow!("console request timed out"))?
+        tokio::time::timeout(timeout, fut)
+            .await
+            .map_err(|_| anyhow!("console request timed out"))?
     }
 
-    async fn json<T: serde::Serialize>(&self, path: &str, body: &T) -> anyhow::Result<(u16, Bytes)> {
-        self.request(Method::POST, path, Some(serde_json::to_vec(body)?), "application/json", REQUEST_TIMEOUT).await
+    async fn json<T: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> anyhow::Result<(u16, Bytes)> {
+        self.request(
+            Method::POST,
+            path,
+            Some(serde_json::to_vec(body)?),
+            "application/json",
+            REQUEST_TIMEOUT,
+        )
+        .await
     }
 }
 
 /// Registers the gateway (one-time token): generates the key + CSR, stores the certificate,
 /// the console CA and the gateway id under `<state>/identity`.
-pub async fn register(console_url: &str, token: &str, name: &str, console_ca_pem: Option<String>, state_dir: &Path) -> anyhow::Result<Uuid> {
+pub async fn register(
+    console_url: &str,
+    token: &str,
+    name: &str,
+    console_ca_pem: Option<String>,
+    state_dir: &Path,
+) -> anyhow::Result<Uuid> {
     let dir = identity_dir(state_dir);
     let csr_pem = GatewayIdentity::generate(&dir).context("generate gateway key")?;
     let roots: Vec<String> = console_ca_pem.into_iter().collect();
     let tls = afw_tls::upstream_client_config(&roots, vec![b"http/1.1".to_vec()])?;
     let http = ConsoleHttp::new(console_url, tls)?;
-    let hostname = std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string()).unwrap_or_default();
+    let hostname = std::fs::read_to_string("/etc/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     let req = RegisterRequest {
         token: token.to_string(),
         name: name.to_string(),
@@ -104,11 +145,17 @@ pub async fn register(console_url: &str, token: &str, name: &str, console_ca_pem
     };
     let (status, body) = http.json("/gw/v1/register", &req).await?;
     if status != 200 && status != 201 {
-        bail!("registration refused ({status}): {}", String::from_utf8_lossy(&body));
+        bail!(
+            "registration refused ({status}): {}",
+            String::from_utf8_lossy(&body)
+        );
     }
     let resp: RegisterResponse = serde_json::from_slice(&body).context("registration response")?;
     GatewayIdentity::store_cert(&dir, &resp.cert_pem, &resp.ca_pem)?;
-    crate::policy_store::write_atomic(&dir.join("gateway_id"), resp.gateway_id.to_string().as_bytes())?;
+    crate::policy_store::write_atomic(
+        &dir.join("gateway_id"),
+        resp.gateway_id.to_string().as_bytes(),
+    )?;
     Ok(resp.gateway_id)
 }
 
@@ -137,13 +184,23 @@ pub async fn run(state: Arc<GatewayState>, url: String) {
 async fn policy_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>, force: Arc<AtomicBool>) {
     let mut backoff = Duration::from_secs(1);
     loop {
-        let have = if force.swap(false, Ordering::Relaxed) { None } else { state.store.revision() };
+        let have = if force.swap(false, Ordering::Relaxed) {
+            None
+        } else {
+            state.store.revision()
+        };
         let path = match have {
             Some(r) => format!("/gw/v1/policy?have={r}"),
             None => "/gw/v1/policy".to_string(),
         };
         let res = http
-            .request(Method::GET, &path, None, "application/json", Duration::from_secs(POLICY_LONG_POLL_SECS + 10))
+            .request(
+                Method::GET,
+                &path,
+                None,
+                "application/json",
+                Duration::from_secs(POLICY_LONG_POLL_SECS + 10),
+            )
             .await;
         match res {
             Ok((200, body)) => {
@@ -151,13 +208,22 @@ async fn policy_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>, force: Ar
                 let (revision, outcome) = match serde_json::from_slice::<InstalledPolicy>(&body) {
                     Ok(p) => {
                         let rev = p.revision;
-                        (rev, state.store.install(p).map(|_| ()).map_err(|e| e.to_string()))
+                        (
+                            rev,
+                            state
+                                .store
+                                .install(p)
+                                .map(|_| ())
+                                .map_err(|e| e.to_string()),
+                        )
                     }
                     Err(e) => (0, Err(format!("invalid policy document: {e}"))),
                 };
                 match &outcome {
                     Ok(()) => tracing::info!(revision, "policy installed"),
-                    Err(e) => tracing::error!(revision, error = %e, "policy rejected: keeping the last valid policy"),
+                    Err(e) => {
+                        tracing::error!(revision, error = %e, "policy rejected: keeping the last valid policy")
+                    }
                 }
                 let ack = PolicyAck {
                     revision,
@@ -256,18 +322,41 @@ async fn heartbeat_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>, force:
     }
 }
 
-fn command(state: &Arc<GatewayState>, http: &Arc<ConsoleHttp>, force: &AtomicBool, c: GatewayCommand) {
+fn command(
+    state: &Arc<GatewayState>,
+    http: &Arc<ConsoleHttp>,
+    force: &AtomicBool,
+    c: GatewayCommand,
+) {
     match c {
-        GatewayCommand::StartCapture { capture_id, agent_id, duration_secs } => {
+        GatewayCommand::StartCapture {
+            capture_id,
+            agent_id,
+            duration_secs,
+        } => {
             let session = state.captures.start(capture_id, agent_id, duration_secs);
             let (state, http) = (state.clone(), http.clone());
             tokio::spawn(async move {
-                tokio::time::sleep(session.until.saturating_duration_since(std::time::Instant::now())).await;
+                tokio::time::sleep(
+                    session
+                        .until
+                        .saturating_duration_since(std::time::Instant::now()),
+                )
+                .await;
                 state.captures.finish(&session);
                 let data = session.bytes();
                 let path = format!("/gw/v1/captures/{capture_id}");
                 for _ in 0..5 {
-                    match http.request(Method::POST, &path, Some(data.clone()), "application/vnd.tcpdump.pcap", Duration::from_secs(120)).await {
+                    match http
+                        .request(
+                            Method::POST,
+                            &path,
+                            Some(data.clone()),
+                            "application/vnd.tcpdump.pcap",
+                            Duration::from_secs(120),
+                        )
+                        .await
+                    {
                         Ok((s, _)) if (200..300).contains(&s) => return,
                         _ => tokio::time::sleep(Duration::from_secs(10)).await,
                     }
@@ -277,7 +366,10 @@ fn command(state: &Arc<GatewayState>, http: &Arc<ConsoleHttp>, force: &AtomicBoo
         }
         GatewayCommand::Reinstall => force.store(true, Ordering::Relaxed),
         GatewayCommand::SelfTest => {
-            let ok = state.ca.leaf_for("self-test.agents-firewall.invalid").is_ok();
+            let ok = state
+                .ca
+                .leaf_for("self-test.agents-firewall.invalid")
+                .is_ok();
             tracing::info!(ok, revision = ?state.store.revision(), "self-test");
         }
     }
@@ -303,14 +395,18 @@ pub async fn write_local(state: Arc<GatewayState>) {
         if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > 64 * 1024 * 1024 {
             let _ = std::fs::rename(&path, path.with_extension("jsonl.1"));
         }
-        let res = std::fs::OpenOptions::new().create(true).append(true).open(&path).and_then(|mut f| {
-            let mut buf = Vec::new();
-            for e in &batch {
-                serde_json::to_writer(&mut buf, e)?;
-                buf.push(b'\n');
-            }
-            f.write_all(&buf)
-        });
+        let res = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .and_then(|mut f| {
+                let mut buf = Vec::new();
+                for e in &batch {
+                    serde_json::to_writer(&mut buf, e)?;
+                    buf.push(b'\n');
+                }
+                f.write_all(&buf)
+            });
         if let Err(e) = res {
             tracing::warn!(error = %e, "cannot write local events");
         }

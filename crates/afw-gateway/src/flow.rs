@@ -89,7 +89,13 @@ pub struct Flow {
 }
 
 impl Flow {
-    pub fn new(state: Arc<GatewayState>, src: SocketAddr, target: Target, name: Option<String>, sni: Option<String>) -> Arc<Self> {
+    pub fn new(
+        state: Arc<GatewayState>,
+        src: SocketAddr,
+        target: Target,
+        name: Option<String>,
+        sni: Option<String>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             id: Uuid::now_v7(),
             state,
@@ -132,7 +138,10 @@ impl Flow {
     }
 
     pub fn add_classes(&self, names: impl IntoIterator<Item = String>) {
-        self.data_classes.lock().unwrap_or_else(|e| e.into_inner()).extend(names);
+        self.data_classes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(names);
     }
 
     /// Context for the policy engine. `dst_ip` is trusted unless it is the agent's choice.
@@ -153,9 +162,9 @@ impl Flow {
     }
 
     fn event(&self, id: Uuid, d: &Decision, ended: bool) -> FlowEvent {
-        let dst = self
-            .dst()
-            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), self.port()));
+        let dst = self.dst().unwrap_or_else(|| {
+            SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), self.port())
+        });
         FlowEvent {
             id,
             gateway_id: self.state.gateway_id,
@@ -176,14 +185,29 @@ impl Flow {
             internal: d.internal,
             llm_provider: d.llm_provider,
             tls_inspected: self.tls_inspected.load(Ordering::Relaxed),
-            data_classes: self.data_classes.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect(),
+            data_classes: self
+                .data_classes
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .cloned()
+                .collect(),
             observed: d.observed,
         }
     }
 
     /// Emits a denial for this flow now (connection or single request). Returns its id.
     pub fn emit_deny(&self, d: &Decision) -> Uuid {
-        let id = if self.allowed.lock().unwrap_or_else(|e| e.into_inner()).is_some() { Uuid::now_v7() } else { self.id };
+        let id = if self
+            .allowed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+        {
+            Uuid::now_v7()
+        } else {
+            self.id
+        };
         let mut ev = self.event(id, d, true);
         ev.verdict = Verdict::Deny;
         emit_flow(&self.state, ev, Track::Detailed);
@@ -193,7 +217,11 @@ impl Flow {
 
 impl Drop for Flow {
     fn drop(&mut self) {
-        let d = self.allowed.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let d = self
+            .allowed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(d) = d {
             let ev = self.event(self.id, &d, true);
             emit_flow(&self.state, ev, d.track);
@@ -228,7 +256,12 @@ pub async fn resolve(state: &GatewayState, name: &str, port: u16) -> Option<Sock
 }
 
 /// Entry point for a new agent connection (transparent or CONNECT tunnel).
-pub async fn handle<S: AgentStream>(state: Arc<GatewayState>, mut stream: S, src: SocketAddr, target: Target) {
+pub async fn handle<S: AgentStream>(
+    state: Arc<GatewayState>,
+    mut stream: S,
+    src: SocketAddr,
+    target: Target,
+) {
     let _active = state.metrics.active();
     let (initial, kind) = match read_initial(&mut stream, state.sniff_timeout).await {
         Ok(x) => x,
@@ -257,7 +290,9 @@ pub async fn handle<S: AgentStream>(state: Arc<GatewayState>, mut stream: S, src
         Sniff::Ssh | Sniff::Other => {
             let app = (kind == Sniff::Ssh).then_some(AppProto::Ssh);
             let name = connect_name.or_else(|| {
-                target.addr().and_then(|a| state.dns_cache.name_for(src.ip(), a.ip()))
+                target
+                    .addr()
+                    .and_then(|a| state.dns_cache.name_for(src.ip(), a.ip()))
             });
             let flow = Flow::new(state.clone(), src, target, name, None);
             if let Some(a) = app {

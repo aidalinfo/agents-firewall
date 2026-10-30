@@ -26,11 +26,25 @@ fn bad_gateway(text: &str) -> Response<GwBody> {
         .expect("static response")
 }
 
-pub async fn handle(hf: Arc<HttpFlow>, mut req: Request<Incoming>, upstream: SocketAddr, decision: Decision, judge: ContentJudge, mut log: HttpLog) -> Response<GwBody> {
+pub async fn handle(
+    hf: Arc<HttpFlow>,
+    mut req: Request<Incoming>,
+    upstream: SocketAddr,
+    decision: Decision,
+    judge: ContentJudge,
+    mut log: HttpLog,
+) -> Response<GwBody> {
     let state = hf.state().clone();
     let flow = hf.flow.clone();
     let client_upgrade = hyper::upgrade::on(&mut req);
-    let tls = hf.tls.then(|| (flow.name.clone().unwrap_or_else(|| upstream.ip().to_string()), state.upstream_tls_h1.clone()));
+    let tls = hf.tls.then(|| {
+        (
+            flow.name
+                .clone()
+                .unwrap_or_else(|| upstream.ip().to_string()),
+            state.upstream_tls_h1.clone(),
+        )
+    });
     let (stream, _) = match open_upstream(upstream, tls).await {
         Ok(s) => s,
         Err(e) => {
@@ -39,7 +53,10 @@ pub async fn handle(hf: Arc<HttpFlow>, mut req: Request<Incoming>, upstream: Soc
             return bad_gateway("upstream unreachable");
         }
     };
-    let (mut sender, conn) = match hyper::client::conn::http1::Builder::new().handshake::<_, GwBody>(TokioIo::new(stream)).await {
+    let (mut sender, conn) = match hyper::client::conn::http1::Builder::new()
+        .handshake::<_, GwBody>(TokioIo::new(stream))
+        .await
+    {
         Ok(x) => x,
         Err(_) => return bad_gateway("upstream handshake failed"),
     };
@@ -48,10 +65,19 @@ pub async fn handle(hf: Arc<HttpFlow>, mut req: Request<Incoming>, upstream: Soc
     });
     let (mut parts, _) = req.into_parts();
     parts.version = Version::HTTP_11;
-    parts.uri = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/").parse().unwrap_or_default();
+    parts.uri = parts
+        .uri
+        .path_and_query()
+        .map(|p| p.as_str())
+        .unwrap_or("/")
+        .parse()
+        .unwrap_or_default();
     parts.headers.remove("proxy-connection");
     parts.headers.remove("proxy-authorization");
-    let mut resp = match sender.send_request(Request::from_parts(parts, full(""))).await {
+    let mut resp = match sender
+        .send_request(Request::from_parts(parts, full("")))
+        .await
+    {
         Ok(r) => r,
         Err(_) => return bad_gateway("upstream request failed"),
     };
@@ -67,7 +93,9 @@ pub async fn handle(hf: Arc<HttpFlow>, mut req: Request<Incoming>, upstream: Soc
     let max_msg = state.store.current().settings().max_buffered_body as usize;
     let flow2 = flow.clone();
     tokio::spawn(async move {
-        let (Ok(agent), Ok(up)) = (client_upgrade.await, upstream_upgrade.await) else { return };
+        let (Ok(agent), Ok(up)) = (client_upgrade.await, upstream_upgrade.await) else {
+            return;
+        };
         relay(TokioIo::new(agent), TokioIo::new(up), judge, max_msg).await;
         drop(flow2);
     });
@@ -112,7 +140,11 @@ where
 }
 
 fn judge_flow_deny(judge: &ContentJudge, d: &Decision) {
-    judge.state.metrics.denied_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    judge
+        .state
+        .metrics
+        .denied_total
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     judge.state.alerts.on_deny(d.agent_id);
 }
 
@@ -175,7 +207,12 @@ async fn read_frame<R: AsyncRead + Unpin>(r: &mut R, max: usize) -> Result<RawFr
     })
 }
 
-async fn agent_to_upstream<R, W>(ar: &mut R, uw: &mut W, judge: &ContentJudge, max_msg: usize) -> End
+async fn agent_to_upstream<R, W>(
+    ar: &mut R,
+    uw: &mut W,
+    judge: &ContentJudge,
+    max_msg: usize,
+) -> End
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,

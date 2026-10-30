@@ -29,7 +29,8 @@ pub async fn serve(state: Arc<GatewayState>, listener: TcpListener) {
         let state = state.clone();
         tokio::spawn(async move {
             let _ = stream.set_nodelay(true);
-            let svc = hyper::service::service_fn(move |req| proxy_request(state.clone(), peer, req));
+            let svc =
+                hyper::service::service_fn(move |req| proxy_request(state.clone(), peer, req));
             let _ = hyper::server::conn::http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), svc)
                 .with_upgrades()
@@ -40,16 +41,33 @@ pub async fn serve(state: Arc<GatewayState>, listener: TcpListener) {
 
 fn split_authority(a: &str, default_port: u16) -> Option<(String, u16)> {
     let uri: http::uri::Authority = a.parse().ok()?;
-    Some((host_only(uri.host()), uri.port_u16().unwrap_or(default_port)))
+    Some((
+        host_only(uri.host()),
+        uri.port_u16().unwrap_or(default_port),
+    ))
 }
 
-async fn proxy_request(state: Arc<GatewayState>, peer: SocketAddr, mut req: Request<Incoming>) -> Result<Response<GwBody>, Infallible> {
+async fn proxy_request(
+    state: Arc<GatewayState>,
+    peer: SocketAddr,
+    mut req: Request<Incoming>,
+) -> Result<Response<GwBody>, Infallible> {
     if req.method() == Method::CONNECT {
-        let Some((host, port)) = req.uri().authority().and_then(|a| split_authority(a.as_str(), 443)) else {
+        let Some((host, port)) = req
+            .uri()
+            .authority()
+            .and_then(|a| split_authority(a.as_str(), 443))
+        else {
             return Ok(simple(StatusCode::BAD_REQUEST, "invalid CONNECT target"));
         };
         // Early refusal with the EF-21 message when no application-level rule could allow it.
-        let flow = Flow::new(state.clone(), peer, Target::Name(host.clone(), port), Some(host.clone()), None);
+        let flow = Flow::new(
+            state.clone(),
+            peer,
+            Target::Name(host.clone(), port),
+            Some(host.clone()),
+            None,
+        );
         let dst = resolve(&state, &host, port).await;
         if let Some(d) = dst {
             flow.set_dst(d);
@@ -81,19 +99,34 @@ async fn proxy_request(state: Arc<GatewayState>, peer: SocketAddr, mut req: Requ
                 crate::flow::handle(state, TokioIo::new(up), peer, Target::Name(host, port)).await;
             }
         });
-        return Ok(Response::builder().status(StatusCode::OK).body(full("")).expect("static response"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body(full(""))
+            .expect("static response"));
     }
     // Absolute-form request: one flow per request (a proxy connection may change hosts).
     let Some(authority) = req.uri().authority().map(|a| a.as_str().to_string()) else {
-        return Ok(simple(StatusCode::BAD_REQUEST, "this is agents-firewall's proxy: absolute URI expected"));
+        return Ok(simple(
+            StatusCode::BAD_REQUEST,
+            "this is agents-firewall's proxy: absolute URI expected",
+        ));
     };
     if req.uri().scheme_str() != Some("http") {
-        return Ok(simple(StatusCode::BAD_REQUEST, "only http:// URIs are proxied; use CONNECT for https"));
+        return Ok(simple(
+            StatusCode::BAD_REQUEST,
+            "only http:// URIs are proxied; use CONNECT for https",
+        ));
     }
     let Some((host, port)) = split_authority(&authority, 80) else {
         return Ok(simple(StatusCode::BAD_REQUEST, "invalid request target"));
     };
-    let flow = Flow::new(state.clone(), peer, Target::Name(host.clone(), port), Some(host.clone()), None);
+    let flow = Flow::new(
+        state.clone(),
+        peer,
+        Target::Name(host.clone(), port),
+        Some(host.clone()),
+        None,
+    );
     flow.set_app(AppProto::Http);
     let dst = resolve(&state, &host, port).await;
     if let Some(d) = dst {

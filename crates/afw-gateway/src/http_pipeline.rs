@@ -42,8 +42,26 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type GwBody = BoxBody<Bytes, BoxError>;
 
 /// Headers whose value is always redacted in logs.
-const SENSITIVE_HEADERS: &[&str] = &["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key", "x-auth-token"];
-const HOP_BY_HOP: &[&str] = &["connection", "proxy-connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade", "proxy-authorization", "proxy-authenticate"];
+const SENSITIVE_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "api-key",
+    "x-auth-token",
+];
+const HOP_BY_HOP: &[&str] = &[
+    "connection",
+    "proxy-connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "proxy-authorization",
+    "proxy-authenticate",
+];
 
 pub fn full(b: impl Into<Bytes>) -> GwBody {
     Full::new(b.into()).map_err(|never| match never {}).boxed()
@@ -90,7 +108,11 @@ impl HttpFlow {
     }
 
     fn app(&self) -> AppProto {
-        if self.tls { AppProto::Https } else { AppProto::Http }
+        if self.tls {
+            AppProto::Https
+        } else {
+            AppProto::Http
+        }
     }
 
     /// Name every request of this flow must carry in `Host` (or the IP for nameless flows).
@@ -103,14 +125,23 @@ impl HttpFlow {
 
     fn authority(&self) -> String {
         let host = self.expected_host().unwrap_or_default();
-        let host = if host.contains(':') { format!("[{host}]") } else { host };
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host
+        };
         format!("{host}:{}", self.flow.port())
     }
 
     fn client(&self, addr: SocketAddr) -> &Client<Connector, GwBody> {
         self.client.get_or_init(|| {
             let st = &self.flow.state;
-            let tls = self.tls.then(|| (self.expected_host().unwrap_or_default(), st.upstream_tls.clone()));
+            let tls = self.tls.then(|| {
+                (
+                    self.expected_host().unwrap_or_default(),
+                    st.upstream_tls.clone(),
+                )
+            });
             Client::builder(TokioExecutor::new())
                 .pool_max_idle_per_host(8)
                 .set_host(false)
@@ -137,7 +168,10 @@ pub async fn serve_plain<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     if let Some(a) = upstream {
         state.alerts.on_connection(d0.agent_id, a, d0.internal);
     }
-    let capture = state.captures.for_agent(d0.agent_id).map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
+    let capture = state
+        .captures
+        .for_agent(d0.agent_id)
+        .map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
     let io = Tap::new(stream, flow.counters.clone(), capture);
     serve_conn(HttpFlow::new(flow, false, upstream), io).await;
 }
@@ -149,29 +183,50 @@ where
 {
     let svc = hyper::service::service_fn(move |req| handle_request(hf.clone(), req));
     let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-    let _ = builder.serve_connection_with_upgrades(TokioIo::new(io), svc).await;
+    let _ = builder
+        .serve_connection_with_upgrades(TokioIo::new(io), svc)
+        .await;
 }
 
 fn header_pairs(h: &HeaderMap) -> Vec<(String, String)> {
     h.iter()
-        .map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).into_owned()))
+        .map(|(k, v)| {
+            (
+                k.as_str().to_string(),
+                String::from_utf8_lossy(v.as_bytes()).into_owned(),
+            )
+        })
         .collect()
 }
 
-fn masked_headers(scanner: &Scanner, h: &HeaderMap, location: &str) -> (Vec<(String, String)>, Vec<DlpFinding>) {
+fn masked_headers(
+    scanner: &Scanner,
+    h: &HeaderMap,
+    location: &str,
+) -> (Vec<(String, String)>, Vec<DlpFinding>) {
     let pairs = header_pairs(h);
     let mut found = scanner.scan_headers(&pairs);
     let mut out = Vec::with_capacity(pairs.len());
     for (name, value) in pairs {
         let lname = name.to_ascii_lowercase();
         let loc = format!("header:{lname}");
-        let mine: Vec<DlpFinding> = found.iter().filter(|f| f.location == loc).cloned().collect();
+        let mine: Vec<DlpFinding> = found
+            .iter()
+            .filter(|f| f.location == loc)
+            .cloned()
+            .collect();
         let shown = if SENSITIVE_HEADERS.contains(&lname.as_str()) {
-            format!("[REDACTED:{}]", &hex::encode(Sha256::digest(value.as_bytes()))[..12])
+            format!(
+                "[REDACTED:{}]",
+                &hex::encode(Sha256::digest(value.as_bytes()))[..12]
+            )
         } else {
             String::from_utf8_lossy(&mask_bytes(value.as_bytes(), &mine)).into_owned()
         };
-        let shown_name = if found.iter().any(|f| f.location == format!("header_name:{lname}")) {
+        let shown_name = if found
+            .iter()
+            .any(|f| f.location == format!("header_name:{lname}"))
+        {
             "[MASKED-HEADER-NAME]".to_string()
         } else {
             name
@@ -186,7 +241,13 @@ fn masked_headers(scanner: &Scanner, h: &HeaderMap, location: &str) -> (Vec<(Str
 
 /// Stored body: masked, truncated to `max_stored` (never cutting through a finding), hash of
 /// the full original content.
-pub fn stored_body(data: &[u8], total: u64, findings: &[DlpFinding], max_stored: usize, sha256: String) -> Body {
+pub fn stored_body(
+    data: &[u8],
+    total: u64,
+    findings: &[DlpFinding],
+    max_stored: usize,
+    sha256: String,
+) -> Body {
     let mut cut = data.len().min(max_stored);
     for f in findings {
         if f.start < cut && f.end > cut {
@@ -198,7 +259,10 @@ pub fn stored_body(data: &[u8], total: u64, findings: &[DlpFinding], max_stored:
     let truncated = (cut as u64) < total;
     let (encoding, data) = match String::from_utf8(masked) {
         Ok(s) => (BodyEncoding::Utf8, s),
-        Err(e) => (BodyEncoding::Base64, base64::engine::general_purpose::STANDARD.encode(e.into_bytes())),
+        Err(e) => (
+            BodyEncoding::Base64,
+            base64::engine::general_purpose::STANDARD.encode(e.into_bytes()),
+        ),
     };
     Body {
         encoding,
@@ -210,7 +274,10 @@ pub fn stored_body(data: &[u8], total: u64, findings: &[DlpFinding], max_stored:
 }
 
 fn class_ids(findings: &[DlpFinding]) -> Vec<Uuid> {
-    let set: BTreeSet<Uuid> = findings.iter().filter_map(|f| f.class_id.parse().ok()).collect();
+    let set: BTreeSet<Uuid> = findings
+        .iter()
+        .filter_map(|f| f.class_id.parse().ok())
+        .collect();
     set.into_iter().collect()
 }
 
@@ -236,10 +303,15 @@ impl ContentJudge {
             .into_iter()
             .collect();
         if !secrets.is_empty() {
-            self.state.alerts.secret(d.agent_id, &self.destination, &secrets, blocked);
+            self.state
+                .alerts
+                .secret(d.agent_id, &self.destination, &secrets, blocked);
         }
         if blocked {
-            self.state.metrics.content_blocks.fetch_add(1, Ordering::Relaxed);
+            self.state
+                .metrics
+                .content_blocks
+                .fetch_add(1, Ordering::Relaxed);
         }
         (d, blocked)
     }
@@ -276,7 +348,13 @@ impl HttpLog {
         if self.track != Track::Log {
             if req.present {
                 let sha = req.sha256.clone().unwrap_or_default();
-                self.ev.request_body = Some(stored_body(&req.data, req.total, &req.findings, self.max_stored, sha));
+                self.ev.request_body = Some(stored_body(
+                    &req.data,
+                    req.total,
+                    &req.findings,
+                    self.max_stored,
+                    sha,
+                ));
             }
             self.ev.response_body = response;
         }
@@ -293,7 +371,11 @@ impl HttpLog {
 }
 
 fn hop_by_hop_strip(h: &mut HeaderMap) {
-    if let Some(list) = h.get(header::CONNECTION).and_then(|v| v.to_str().ok()).map(str::to_string) {
+    if let Some(list) = h
+        .get(header::CONNECTION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+    {
         for name in list.split(',') {
             if let Ok(n) = HeaderName::from_bytes(name.trim().as_bytes()) {
                 h.remove(n);
@@ -314,7 +396,10 @@ pub fn is_websocket(req: &Request<Incoming>) -> bool {
 }
 
 /// Handles one request of an agent.
-pub async fn handle_request(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Result<Response<GwBody>, Infallible> {
+pub async fn handle_request(
+    hf: Arc<HttpFlow>,
+    req: Request<Incoming>,
+) -> Result<Response<GwBody>, Infallible> {
     Ok(handle(hf, req).await)
 }
 
@@ -333,9 +418,18 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
         .uri()
         .host()
         .map(str::to_string)
-        .or_else(|| req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_string))
+        .or_else(|| {
+            req.headers()
+                .get(header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        })
         .map(|h| host_only(&h));
-    let path_q = req.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_else(|| "/".into());
+    let path_q = req
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| "/".into());
     let path = req.uri().path().to_string();
     let upstream_ip = hf.upstream.map(|a| a.ip());
 
@@ -370,7 +464,8 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
         hf.authority(),
         String::from_utf8_lossy(&mask_bytes(path_q.as_bytes(), &url_findings))
     );
-    let (masked_req_headers, header_findings) = masked_headers(&scanner, req.headers(), "request.header");
+    let (masked_req_headers, header_findings) =
+        masked_headers(&scanner, req.headers(), "request.header");
     ev.request_headers = masked_req_headers;
 
     // 1. Host must match the flow's name (domain fronting, SNI/Host or CONNECT/Host mismatch).
@@ -384,7 +479,10 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             ev.agent_id = d.agent_id;
             flow.emit_deny(&d);
             emit_denied_http(&state, ev);
-            let agent = d.agent_name.clone().unwrap_or_else(|| "unknown-agent".into());
+            let agent = d
+                .agent_name
+                .clone()
+                .unwrap_or_else(|| "unknown-agent".into());
             let shown = req_host.unwrap_or_else(|| "<no host>".into());
             return deny_response(format!(
                 "blocked by agents-firewall: {shown} not allowed for {agent} (rule host-mismatch)"
@@ -441,7 +539,10 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             ev,
             track: decision.track,
             max_stored,
-            req: Arc::new(Mutex::new(ReqCapture { findings, ..Default::default() })),
+            req: Arc::new(Mutex::new(ReqCapture {
+                findings,
+                ..Default::default()
+            })),
         };
         return crate::websocket::handle(hf.clone(), req, upstream, decision, judge, log).await;
     }
@@ -530,12 +631,25 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
                 return content_denied(d2, &first, ev);
             }
         }
-        scanning_body(body, buf.freeze(), scanner.clone(), judge.clone(), blocked_by.clone(), capture.clone(), max_stored + 4096)
+        scanning_body(
+            body,
+            buf.freeze(),
+            scanner.clone(),
+            judge.clone(),
+            blocked_by.clone(),
+            capture.clone(),
+            max_stored + 4096,
+        )
     };
     {
         let mut c = capture.lock().unwrap_or_else(|e| e.into_inner());
         let mut f = std::mem::take(&mut c.findings);
-        f.extend(findings.iter().filter(|x| x.location != "request.body").cloned());
+        f.extend(
+            findings
+                .iter()
+                .filter(|x| x.location != "request.body")
+                .cloned(),
+        );
         c.findings = f;
     }
 
@@ -577,7 +691,12 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             let blocked = blocked_by.lock().unwrap_or_else(|e| e.into_inner()).take();
             match blocked {
                 Some(d) => {
-                    let f = log.req.lock().unwrap_or_else(|e| e.into_inner()).findings.clone();
+                    let f = log
+                        .req
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .findings
+                        .clone();
                     flow.emit_deny(&d);
                     emit_denied_http_findings(&state, log.ev, &f);
                     deny_response(d.deny_message(&host))
@@ -593,7 +712,10 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
 }
 
 fn content_failure_message(d: &Decision, host: &str) -> String {
-    let agent = d.agent_name.clone().unwrap_or_else(|| "unknown-agent".into());
+    let agent = d
+        .agent_name
+        .clone()
+        .unwrap_or_else(|| "unknown-agent".into());
     format!("blocked by agents-firewall: {host} not allowed for {agent} (rule content-inspection)")
 }
 
@@ -678,7 +800,8 @@ fn scanning_body(
                 }
             }
         }
-        capture.lock().unwrap_or_else(|e| e.into_inner()).sha256 = Some(hex::encode(hasher.finalize()));
+        capture.lock().unwrap_or_else(|e| e.into_inner()).sha256 =
+            Some(hex::encode(hasher.finalize()));
         let found = ss.finish();
         if !check(found, &mut all) {
             let _ = tx.send(Err(Box::new(ContentBlocked))).await;
@@ -699,7 +822,10 @@ impl hyper::body::Body for ChannelBody {
     type Data = Bytes;
     type Error = BoxError;
 
-    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
         self.rx.poll_recv(cx).map(|o| o.map(|r| r.map(Frame::data)))
     }
 }
@@ -729,7 +855,13 @@ struct RespTap {
 }
 
 impl RespTap {
-    fn new(inner: Incoming, log: HttpLog, scanner: Arc<Scanner>, max_buf: usize, max_stored: usize) -> Self {
+    fn new(
+        inner: Incoming,
+        log: HttpLog,
+        scanner: Arc<Scanner>,
+        max_buf: usize,
+        max_stored: usize,
+    ) -> Self {
         Self {
             inner,
             log: Some(log),
@@ -748,7 +880,8 @@ impl RespTap {
         let n = self.captured.len().min(self.scan_max);
         let findings = self.scanner.scan(&self.captured[..n], "response.body");
         let sha = hex::encode(self.hasher.clone().finalize());
-        let body = (self.total > 0).then(|| stored_body(&self.captured, self.total, &findings, log.max_stored, sha));
+        let body = (self.total > 0)
+            .then(|| stored_body(&self.captured, self.total, &findings, log.max_stored, sha));
         log.emit(body, findings);
     }
 }
@@ -763,7 +896,10 @@ impl hyper::body::Body for RespTap {
     type Data = Bytes;
     type Error = BoxError;
 
-    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
         let r = ready!(Pin::new(&mut self.inner).poll_frame(cx));
         match r {
             None => {
@@ -777,7 +913,8 @@ impl hyper::body::Body for RespTap {
                     self.hasher.update(&data);
                     self.total += data.len() as u64;
                     let room = self.capture_max.saturating_sub(self.captured.len());
-                    self.captured.extend_from_slice(&data[..data.len().min(room)]);
+                    self.captured
+                        .extend_from_slice(&data[..data.len().min(room)]);
                 }
                 Poll::Ready(Some(Ok(frame)))
             }
@@ -808,7 +945,11 @@ pub struct UpConn {
 }
 
 impl AsyncRead for UpStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
             UpStream::Plain(s) => Pin::new(s).poll_read(cx, buf),
             UpStream::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
@@ -817,7 +958,11 @@ impl AsyncRead for UpStream {
 }
 
 impl AsyncWrite for UpStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {
             UpStream::Plain(s) => Pin::new(s).poll_write(cx, buf),
             UpStream::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
@@ -838,13 +983,21 @@ impl AsyncWrite for UpStream {
 }
 
 impl hyper::rt::Read for UpConn {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: hyper::rt::ReadBufCursor<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.io).poll_read(cx, buf)
     }
 }
 
 impl hyper::rt::Write for UpConn {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         Pin::new(&mut self.io).poll_write(cx, buf)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
@@ -863,15 +1016,24 @@ impl Connection for UpConn {
 }
 
 /// Opens an upstream connection (TLS when `tls` is set, verified on `name`).
-pub async fn open_upstream(addr: SocketAddr, tls: Option<(String, Arc<rustls::ClientConfig>)>) -> std::io::Result<(UpStream, bool)> {
+pub async fn open_upstream(
+    addr: SocketAddr,
+    tls: Option<(String, Arc<rustls::ClientConfig>)>,
+) -> std::io::Result<(UpStream, bool)> {
     let tcp = crate::upstream::connect(addr).await?;
     match tls {
         None => Ok((UpStream::Plain(tcp), false)),
         Some((name, cfg)) => {
-            let server = ServerName::try_from(name).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-            let s = tokio::time::timeout(crate::upstream::CONNECT_TIMEOUT, tokio_rustls::TlsConnector::from(cfg).connect(server, tcp))
-                .await
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "upstream TLS timeout"))??;
+            let server = ServerName::try_from(name)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+            let s = tokio::time::timeout(
+                crate::upstream::CONNECT_TIMEOUT,
+                tokio_rustls::TlsConnector::from(cfg).connect(server, tcp),
+            )
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "upstream TLS timeout")
+            })??;
             let h2 = s.get_ref().1.alpn_protocol() == Some(b"h2");
             Ok((UpStream::Tls(Box::new(s)), h2))
         }
@@ -891,7 +1053,10 @@ impl tower::Service<Uri> for Connector {
         let (addr, tls) = (self.addr, self.tls.clone());
         Box::pin(async move {
             let (s, h2) = open_upstream(addr, tls).await?;
-            Ok(UpConn { io: TokioIo::new(s), h2 })
+            Ok(UpConn {
+                io: TokioIo::new(s),
+                h2,
+            })
         })
     }
 }
@@ -905,4 +1070,3 @@ pub fn headers_of(req: &Request<Incoming>) -> Vec<(String, String)> {
 pub fn denied(d: &Decision, destination: &str) -> Response<GwBody> {
     deny_response(d.deny_message(destination))
 }
-

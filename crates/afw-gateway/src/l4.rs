@@ -27,7 +27,9 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     }
     let meta = state.metadata_blocked(&d, dst.map(|a| a.ip()), flow.name.as_deref());
     if meta {
-        state.alerts.cloud_metadata(d.agent_id, &dst.map(|a| a.to_string()).unwrap_or_default());
+        state
+            .alerts
+            .cloud_metadata(d.agent_id, &dst.map(|a| a.to_string()).unwrap_or_default());
     }
     let Some(dst) = dst.filter(|_| d.verdict == Verdict::Allow && !meta) else {
         let mut d = d;
@@ -46,7 +48,10 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
         }
     };
     flow.mark_allowed(&d);
-    let capture = state.captures.for_agent(d.agent_id).map(|c| (c, flow.src, dst));
+    let capture = state
+        .captures
+        .for_agent(d.agent_id)
+        .map(|c| (c, flow.src, dst));
     let mut agent = Tap::new(stream, flow.counters.clone(), capture);
     let _ = crate::io::splice(&mut agent, &mut upstream).await;
 }

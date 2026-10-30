@@ -17,7 +17,9 @@ pub enum Sniff {
     Other,
 }
 
-const METHODS: &[&str] = &["GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ", "PATCH ", "CONNECT ", "TRACE "];
+const METHODS: &[&str] = &[
+    "GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ", "PATCH ", "CONNECT ", "TRACE ",
+];
 
 pub fn classify(buf: &[u8]) -> Sniff {
     if buf.is_empty() {
@@ -74,7 +76,9 @@ pub fn header(head: &[u8], name: &str) -> Option<String> {
     let text = std::str::from_utf8(head).ok()?;
     text.split("\r\n").skip(1).find_map(|line| {
         let (k, v) = line.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(name).then(|| v.trim().to_string())
+        k.trim()
+            .eq_ignore_ascii_case(name)
+            .then(|| v.trim().to_string())
     })
 }
 
@@ -158,7 +162,10 @@ impl<'a> Parser<'a> {
 
 /// Reads until the protocol is recognised, `timeout` elapses without data (server-first
 /// protocols) or [`MAX_SNIFF`] bytes are read.
-pub async fn read_initial<S: AsyncRead + Unpin>(s: &mut S, timeout: Duration) -> std::io::Result<(Vec<u8>, Sniff)> {
+pub async fn read_initial<S: AsyncRead + Unpin>(
+    s: &mut S,
+    timeout: Duration,
+) -> std::io::Result<(Vec<u8>, Sniff)> {
     let mut buf = Vec::with_capacity(2048);
     let deadline = tokio::time::Instant::now() + timeout;
     let mut chunk = [0u8; 4096];
@@ -186,9 +193,17 @@ mod tests {
 
     #[test]
     fn http_host_detected() {
-        assert_eq!(classify(b"GET / HTTP/1.1\r\nHost: Example.COM.:8080\r\n\r\n"), Sniff::Http { host: Some("Example.COM.:8080".into()) });
+        assert_eq!(
+            classify(b"GET / HTTP/1.1\r\nHost: Example.COM.:8080\r\n\r\n"),
+            Sniff::Http {
+                host: Some("Example.COM.:8080".into())
+            }
+        );
         assert_eq!(classify(b"GE"), Sniff::NeedMore);
-        assert_eq!(classify(b"GET / HTTP/1.0\r\n\r\n"), Sniff::Http { host: None });
+        assert_eq!(
+            classify(b"GET / HTTP/1.0\r\n\r\n"),
+            Sniff::Http { host: None }
+        );
         assert_eq!(classify(b"\x00\x01"), Sniff::Other);
         assert_eq!(classify(b"SSH-2.0-OpenSSH"), Sniff::Ssh);
         assert_eq!(host_only("Example.COM.:8080"), "example.com");
@@ -199,6 +214,9 @@ mod tests {
     #[test]
     fn garbage_hello_has_no_sni() {
         assert_eq!(parse_sni(&[1, 0, 0, 5, 3, 3]), None);
-        assert_eq!(classify(&[0x16, 0x03, 0x01, 0x00, 0x02, 1, 0]), Sniff::Tls { sni: None });
+        assert_eq!(
+            classify(&[0x16, 0x03, 0x01, 0x00, 0x02, 1, 0]),
+            Sniff::Tls { sni: None }
+        );
     }
 }

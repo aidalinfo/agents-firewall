@@ -69,7 +69,15 @@ fn obj(n: u128, name: &str, category: Option<DestCategory>, spec: NetObjectSpec)
     }
 }
 
-fn rule(n: u128, name: &str, layer: Layer, position: u32, dst: &[u128], classes: &[u128], action: Action) -> Rule {
+fn rule(
+    n: u128,
+    name: &str,
+    layer: Layer,
+    position: u32,
+    dst: &[u128],
+    classes: &[u128],
+    action: Action,
+) -> Rule {
     Rule {
         id: id(n),
         name: name.into(),
@@ -91,7 +99,15 @@ fn rule(n: u128, name: &str, layer: Layer, position: u32, dst: &[u128], classes:
     }
 }
 
-fn rule_svc(n: u128, name: &str, layer: Layer, position: u32, dst: &[u128], svc: u128, action: Action) -> Rule {
+fn rule_svc(
+    n: u128,
+    name: &str,
+    layer: Layer,
+    position: u32,
+    dst: &[u128],
+    svc: u128,
+    action: Action,
+) -> Rule {
     Rule {
         services: vec![id(svc)],
         ..rule(n, name, layer, position, dst, &[], action)
@@ -118,24 +134,73 @@ fn path_service(n: u128, name: &str, prefix: &str) -> Service {
 pub fn document(mode: ZoneMode) -> PolicyDocument {
     let zone = Layer::Zone { zone_id: id(ZONE) };
     let mut settings = PolicySettings::default();
-    settings.internal_networks.push(format!("{INTERNAL_IP}/32").parse().unwrap());
+    settings
+        .internal_networks
+        .push(format!("{INTERNAL_IP}/32").parse().unwrap());
     settings.max_buffered_body = 64 * 1024;
     PolicyDocument {
         objects: vec![
-            obj(OBJ_ALLOWED, "allowed.test", None, NetObjectSpec::Domain { pattern: "allowed.test".into() }),
-            obj(OBJ_LLM, "llm.test", Some(DestCategory::LlmProvider), NetObjectSpec::Domain { pattern: "llm.test".into() }),
-            obj(OBJ_META, "metadata", Some(DestCategory::CloudMetadata), NetObjectSpec::Host { ip: "169.254.169.254".parse().unwrap() }),
-            obj(OBJ_K8S, "k8s.test", None, NetObjectSpec::Domain { pattern: "k8s.test".into() }),
-            obj(OBJ_IP, "trusted ip", None, NetObjectSpec::Host { ip: TRUSTED_IP.parse().unwrap() }),
-            obj(OBJ_PATH, "path.test", None, NetObjectSpec::Domain { pattern: "path.test".into() }),
+            obj(
+                OBJ_ALLOWED,
+                "allowed.test",
+                None,
+                NetObjectSpec::Domain {
+                    pattern: "allowed.test".into(),
+                },
+            ),
+            obj(
+                OBJ_LLM,
+                "llm.test",
+                Some(DestCategory::LlmProvider),
+                NetObjectSpec::Domain {
+                    pattern: "llm.test".into(),
+                },
+            ),
+            obj(
+                OBJ_META,
+                "metadata",
+                Some(DestCategory::CloudMetadata),
+                NetObjectSpec::Host {
+                    ip: "169.254.169.254".parse().unwrap(),
+                },
+            ),
+            obj(
+                OBJ_K8S,
+                "k8s.test",
+                None,
+                NetObjectSpec::Domain {
+                    pattern: "k8s.test".into(),
+                },
+            ),
+            obj(
+                OBJ_IP,
+                "trusted ip",
+                None,
+                NetObjectSpec::Host {
+                    ip: TRUSTED_IP.parse().unwrap(),
+                },
+            ),
+            obj(
+                OBJ_PATH,
+                "path.test",
+                None,
+                NetObjectSpec::Domain {
+                    pattern: "path.test".into(),
+                },
+            ),
         ],
-        services: vec![path_service(SVC_ADMIN, "admin paths", "/admin"), path_service(SVC_V1, "v1 api", "/v1/")],
+        services: vec![
+            path_service(SVC_ADMIN, "admin paths", "/admin"),
+            path_service(SVC_V1, "v1 api", "/v1/"),
+        ],
         data_classes: vec![DataClass {
             id: id(CLASS_SECRETS),
             name: "secrets".into(),
             comment: String::new(),
             category: DataCategory::Secret,
-            detectors: vec![Detector::Builtin { id: "aws_access_key".into() }],
+            detectors: vec![Detector::Builtin {
+                id: "aws_access_key".into(),
+            }],
         }],
         zones: vec![Zone {
             id: id(ZONE),
@@ -156,14 +221,78 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
             mcp_admin: false,
         }],
         rules: vec![
-            rule(RULE_META, "cloud metadata", Layer::Baseline, 1, &[OBJ_META], &[], Action::Deny),
-            rule(RULE_SECRETS, "outbound secrets", Layer::Baseline, 2, &[], &[CLASS_SECRETS], Action::Deny),
-            rule(RULE_LLM, "llm providers", Layer::Baseline, 3, &[OBJ_LLM], &[], Action::Accept),
-            rule_svc(RULE_NO_ADMIN, "no admin paths", zone, 0, &[OBJ_ALLOWED], SVC_ADMIN, Action::Deny),
-            rule(RULE_ALLOWED, "allowed api", zone, 1, &[OBJ_ALLOWED], &[], Action::Accept),
-            rule(RULE_K8S, "kubernetes", zone, 2, &[OBJ_K8S], &[], Action::Accept),
-            rule(RULE_IP, "trusted ip", zone, 3, &[OBJ_IP], &[], Action::Accept),
-            rule_svc(RULE_PATH, "v1 only", zone, 4, &[OBJ_PATH], SVC_V1, Action::Accept),
+            rule(
+                RULE_META,
+                "cloud metadata",
+                Layer::Baseline,
+                1,
+                &[OBJ_META],
+                &[],
+                Action::Deny,
+            ),
+            rule(
+                RULE_SECRETS,
+                "outbound secrets",
+                Layer::Baseline,
+                2,
+                &[],
+                &[CLASS_SECRETS],
+                Action::Deny,
+            ),
+            rule(
+                RULE_LLM,
+                "llm providers",
+                Layer::Baseline,
+                3,
+                &[OBJ_LLM],
+                &[],
+                Action::Accept,
+            ),
+            rule_svc(
+                RULE_NO_ADMIN,
+                "no admin paths",
+                zone,
+                0,
+                &[OBJ_ALLOWED],
+                SVC_ADMIN,
+                Action::Deny,
+            ),
+            rule(
+                RULE_ALLOWED,
+                "allowed api",
+                zone,
+                1,
+                &[OBJ_ALLOWED],
+                &[],
+                Action::Accept,
+            ),
+            rule(
+                RULE_K8S,
+                "kubernetes",
+                zone,
+                2,
+                &[OBJ_K8S],
+                &[],
+                Action::Accept,
+            ),
+            rule(
+                RULE_IP,
+                "trusted ip",
+                zone,
+                3,
+                &[OBJ_IP],
+                &[],
+                Action::Accept,
+            ),
+            rule_svc(
+                RULE_PATH,
+                "v1 only",
+                zone,
+                4,
+                &[OBJ_PATH],
+                SVC_V1,
+                Action::Accept,
+            ),
         ],
         inspection_rules: vec![],
         settings,
@@ -194,7 +323,9 @@ impl Log {
     pub fn contains_bytes(&self, needle: &[u8]) -> bool {
         self.all().iter().any(|s| {
             s.body.windows(needle.len()).any(|w| w == needle)
-                || s.ws_messages.iter().any(|m| m.windows(needle.len()).any(|w| w == needle))
+                || s.ws_messages
+                    .iter()
+                    .any(|m| m.windows(needle.len()).any(|w| w == needle))
         })
     }
 }
@@ -217,23 +348,51 @@ pub async fn harness(policy: Option<InstalledPolicy>) -> Harness {
     harness_with(policy, |_| {}).await
 }
 
-pub async fn harness_with(policy: Option<InstalledPolicy>, tweak: impl FnOnce(&mut GatewayOptions)) -> Harness {
+pub async fn harness_with(
+    policy: Option<InstalledPolicy>,
+    tweak: impl FnOnce(&mut GatewayOptions),
+) -> Harness {
     let dir = tempfile::tempdir().unwrap();
     let up_dir = tempfile::tempdir().unwrap();
-    let up_ca = afw_tls::GatewayCa::load_or_create(&up_dir.path().join("ca"), "upstream test CA").unwrap();
+    let up_ca =
+        afw_tls::GatewayCa::load_or_create(&up_dir.path().join("ca"), "upstream test CA").unwrap();
     let log = Log::default();
-    let upstream_addr = spawn_upstream(format!("{UPSTREAM_IP}:0").parse().unwrap(), Some(up_ca.clone()), log.clone()).await;
-    let plain_addr = spawn_upstream(format!("{UPSTREAM_IP}:0").parse().unwrap(), None, log.clone()).await;
+    let upstream_addr = spawn_upstream(
+        format!("{UPSTREAM_IP}:0").parse().unwrap(),
+        Some(up_ca.clone()),
+        log.clone(),
+    )
+    .await;
+    let plain_addr = spawn_upstream(
+        format!("{UPSTREAM_IP}:0").parse().unwrap(),
+        None,
+        log.clone(),
+    )
+    .await;
     let internal_addr = spawn_echo(format!("{INTERNAL_IP}:0").parse().unwrap()).await;
 
     if let Some(p) = &policy {
-        std::fs::write(dir.path().join("policy.json"), serde_json::to_vec(p).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("policy.json"),
+            serde_json::to_vec(p).unwrap(),
+        )
+        .unwrap();
     }
     let mut hosts: HashMap<String, Vec<IpAddr>> = HashMap::new();
-    for h in ["allowed.test", "llm.test", "denied.test", "k8s.test", "other.test", "path.test"] {
+    for h in [
+        "allowed.test",
+        "llm.test",
+        "denied.test",
+        "k8s.test",
+        "other.test",
+        "path.test",
+    ] {
         hosts.insert(h.into(), vec![UPSTREAM_IP.parse().unwrap()]);
     }
-    hosts.insert("metadata.test".into(), vec!["169.254.169.254".parse().unwrap()]);
+    hosts.insert(
+        "metadata.test".into(),
+        vec!["169.254.169.254".parse().unwrap()],
+    );
     let orig = Arc::new(MapOrigDst::default());
     let mut opts = GatewayOptions::for_tests(dir.path().to_path_buf());
     opts.resolver = Arc::new(StaticResolver::new(hosts));
@@ -271,7 +430,9 @@ impl Harness {
         sock.bind(format!("{src_ip}:0").parse().unwrap()).unwrap();
         let local = sock.local_addr().unwrap();
         self.orig.insert(local, dst);
-        sock.connect(self.gw.addrs.transparent.unwrap()).await.unwrap()
+        sock.connect(self.gw.addrs.transparent.unwrap())
+            .await
+            .unwrap()
     }
 
     pub fn inspection_ca(&self) -> String {
@@ -279,7 +440,11 @@ impl Harness {
     }
 
     /// TLS client to the gateway trusting only its inspection CA.
-    pub async fn tls<S: AsyncRead + AsyncWrite + Unpin>(&self, tcp: S, sni: &str) -> std::io::Result<tokio_rustls::client::TlsStream<S>> {
+    pub async fn tls<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        tcp: S,
+        sni: &str,
+    ) -> std::io::Result<tokio_rustls::client::TlsStream<S>> {
         tls_with(tcp, sni, &self.inspection_ca(), vec![b"http/1.1".to_vec()]).await
     }
 
@@ -316,11 +481,13 @@ pub async fn tls_with<S: AsyncRead + AsyncWrite + Unpin>(
     for c in rustls_pemfile::certs(&mut ca_pem.as_bytes()) {
         roots.add(c.unwrap()).unwrap();
     }
-    let mut cfg = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let mut cfg = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     cfg.alpn_protocols = alpn;
     let connector = tokio_rustls::TlsConnector::from(Arc::new(cfg));
     connector
@@ -364,26 +531,42 @@ pub fn post(host: &str, path: &str, body: &str) -> Vec<u8> {
 
 /// Upstream HTTP(S) server recording what it receives; answers `ok:<path>`; echoes WebSocket
 /// messages.
-pub async fn spawn_upstream(addr: SocketAddr, ca: Option<afw_tls::GatewayCa>, log: Log) -> SocketAddr {
+pub async fn spawn_upstream(
+    addr: SocketAddr,
+    ca: Option<afw_tls::GatewayCa>,
+    log: Log,
+) -> SocketAddr {
     let listener = TcpListener::bind(addr).await.unwrap();
     let local = listener.local_addr().unwrap();
-    let acceptor = ca.map(|ca| tokio_rustls::TlsAcceptor::from(ca.server_config_for_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])));
+    let acceptor = ca.map(|ca| {
+        tokio_rustls::TlsAcceptor::from(
+            ca.server_config_for_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()]),
+        )
+    });
     tokio::spawn(async move {
         loop {
-            let Ok((tcp, _)) = listener.accept().await else { return };
+            let Ok((tcp, _)) = listener.accept().await else {
+                return;
+            };
             let acceptor = acceptor.clone();
             let log = log.clone();
             tokio::spawn(async move {
                 let svc = hyper::service::service_fn(move |req| upstream_handler(req, log.clone()));
-                let builder = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+                let builder = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                );
                 match acceptor {
                     Some(a) => {
                         if let Ok(tls) = a.accept(tcp).await {
-                            let _ = builder.serve_connection_with_upgrades(TokioIo::new(tls), svc).await;
+                            let _ = builder
+                                .serve_connection_with_upgrades(TokioIo::new(tls), svc)
+                                .await;
                         }
                     }
                     None => {
-                        let _ = builder.serve_connection_with_upgrades(TokioIo::new(tcp), svc).await;
+                        let _ = builder
+                            .serve_connection_with_upgrades(TokioIo::new(tcp), svc)
+                            .await;
                     }
                 }
             });
@@ -392,7 +575,10 @@ pub async fn spawn_upstream(addr: SocketAddr, ca: Option<afw_tls::GatewayCa>, lo
     local
 }
 
-async fn upstream_handler(mut req: Request<Incoming>, log: Log) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn upstream_handler(
+    mut req: Request<Incoming>,
+    log: Log,
+) -> Result<Response<Full<Bytes>>, Infallible> {
     let host = req
         .headers()
         .get("host")
@@ -402,11 +588,25 @@ async fn upstream_handler(mut req: Request<Incoming>, log: Log) -> Result<Respon
         .unwrap_or_default();
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
-    if req.headers().get("upgrade").is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket")) {
-        let key = req.headers().get("sec-websocket-key").map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+    if req
+        .headers()
+        .get("upgrade")
+        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"))
+    {
+        let key = req
+            .headers()
+            .get("sec-websocket-key")
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
         let idx = {
             let mut l = log.0.lock().unwrap();
-            l.push(Seen { host, method, path, body: vec![], ws_messages: vec![] });
+            l.push(Seen {
+                host,
+                method,
+                path,
+                body: vec![],
+                ws_messages: vec![],
+            });
             l.len() - 1
         };
         let on = hyper::upgrade::on(&mut req);
@@ -418,7 +618,9 @@ async fn upstream_handler(mut req: Request<Incoming>, log: Log) -> Result<Respon
                     if op == 0x8 {
                         break;
                     }
-                    log2.0.lock().unwrap()[idx].ws_messages.push(payload.clone());
+                    log2.0.lock().unwrap()[idx]
+                        .ws_messages
+                        .push(payload.clone());
                     let _ = io.write_all(&ws_frame(op, &payload, false)).await;
                 }
             }
@@ -431,8 +633,19 @@ async fn upstream_handler(mut req: Request<Incoming>, log: Log) -> Result<Respon
             .body(Full::new(Bytes::new()))
             .unwrap());
     }
-    let body = req.into_body().collect().await.map(|b| b.to_bytes().to_vec()).unwrap_or_default();
-    log.0.lock().unwrap().push(Seen { host, method, path: path.clone(), body, ws_messages: vec![] });
+    let body = req
+        .into_body()
+        .collect()
+        .await
+        .map(|b| b.to_bytes().to_vec())
+        .unwrap_or_default();
+    log.0.lock().unwrap().push(Seen {
+        host,
+        method,
+        path: path.clone(),
+        body,
+        ws_messages: vec![],
+    });
     Ok(Response::new(Full::new(Bytes::from(format!("ok:{path}")))))
 }
 
@@ -441,7 +654,9 @@ pub async fn spawn_echo(addr: SocketAddr) -> SocketAddr {
     let local = listener.local_addr().unwrap();
     tokio::spawn(async move {
         loop {
-            let Ok((mut tcp, _)) = listener.accept().await else { return };
+            let Ok((mut tcp, _)) = listener.accept().await else {
+                return;
+            };
             tokio::spawn(async move {
                 let (mut r, mut w) = tcp.split();
                 let _ = tokio::io::copy(&mut r, &mut w).await;

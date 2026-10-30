@@ -31,7 +31,11 @@ pub struct Prefixed<S> {
 
 impl<S> Prefixed<S> {
     pub fn new(prefix: Vec<u8>, inner: S) -> Self {
-        Self { prefix, pos: 0, inner }
+        Self {
+            prefix,
+            pos: 0,
+            inner,
+        }
     }
     pub fn get_ref(&self) -> &S {
         &self.inner
@@ -43,7 +47,11 @@ impl<S> Prefixed<S> {
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Prefixed<S> {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         if self.pos < self.prefix.len() {
             let n = (self.prefix.len() - self.pos).min(buf.remaining());
             let start = self.pos;
@@ -60,7 +68,11 @@ impl<S: AsyncRead + Unpin> AsyncRead for Prefixed<S> {
 }
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for Prefixed<S> {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.inner).poll_write(cx, buf)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -97,7 +109,11 @@ pub struct Tap<S> {
 }
 
 impl<S> Tap<S> {
-    pub fn new(inner: S, counters: Arc<Counters>, capture: Option<(Arc<CaptureSession>, SocketAddr, SocketAddr)>) -> Self {
+    pub fn new(
+        inner: S,
+        counters: Arc<Counters>,
+        capture: Option<(Arc<CaptureSession>, SocketAddr, SocketAddr)>,
+    ) -> Self {
         Self {
             inner,
             counters,
@@ -109,13 +125,19 @@ impl<S> Tap<S> {
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Tap<S> {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         let before = buf.filled().len();
         let r = Pin::new(&mut self.inner).poll_read(cx, buf);
         if let Poll::Ready(Ok(())) = r {
             let data = &buf.filled()[before..];
             if !data.is_empty() {
-                self.counters.bytes_out.fetch_add(data.len() as u64, Ordering::Relaxed);
+                self.counters
+                    .bytes_out
+                    .fetch_add(data.len() as u64, Ordering::Relaxed);
                 if let Some((cap, src, dst)) = &self.capture {
                     cap.record(*src, *dst, self.seq_out, self.seq_in, data);
                 }
@@ -128,12 +150,18 @@ impl<S: AsyncRead + Unpin> AsyncRead for Tap<S> {
 }
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for Tap<S> {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         let r = Pin::new(&mut self.inner).poll_write(cx, buf);
         if let Poll::Ready(Ok(n)) = r
             && n > 0
         {
-            self.counters.bytes_in.fetch_add(n as u64, Ordering::Relaxed);
+            self.counters
+                .bytes_in
+                .fetch_add(n as u64, Ordering::Relaxed);
             if let Some((cap, src, dst)) = &self.capture {
                 cap.record(*dst, *src, self.seq_in, self.seq_out, &buf[..n]);
             }

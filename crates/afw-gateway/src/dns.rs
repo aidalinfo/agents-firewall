@@ -43,12 +43,18 @@ pub async fn serve_udp(state: Arc<GatewayState>, sock: Arc<UdpSocket>) {
 
 pub async fn serve_tcp(state: Arc<GatewayState>, listener: TcpListener) {
     loop {
-        let Ok((mut s, src)) = listener.accept().await else { continue };
+        let Ok((mut s, src)) = listener.accept().await else {
+            continue;
+        };
         let state = state.clone();
         tokio::spawn(async move {
             loop {
                 let mut len = [0u8; 2];
-                let read = tokio::time::timeout(std::time::Duration::from_secs(10), s.read_exact(&mut len)).await;
+                let read = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    s.read_exact(&mut len),
+                )
+                .await;
                 if !matches!(read, Ok(Ok(_))) {
                     return;
                 }
@@ -56,8 +62,14 @@ pub async fn serve_tcp(state: Arc<GatewayState>, listener: TcpListener) {
                 if s.read_exact(&mut q).await.is_err() {
                     return;
                 }
-                let Some(resp) = answer(&state, src, &q).await else { return };
-                if s.write_all(&(resp.len() as u16).to_be_bytes()).await.is_err() || s.write_all(&resp).await.is_err() {
+                let Some(resp) = answer(&state, src, &q).await else {
+                    return;
+                };
+                if s.write_all(&(resp.len() as u16).to_be_bytes())
+                    .await
+                    .is_err()
+                    || s.write_all(&resp).await.is_err()
+                {
                     return;
                 }
             }
@@ -78,7 +90,14 @@ fn reply(query: &Message, code: ResponseCode, answers: Vec<Record>) -> Option<Ve
     m.to_vec().ok()
 }
 
-fn ctx(agent: IpAddr, name: &str, l4: L4Proto, port: u16, app: Option<AppProto>, ip: Option<IpAddr>) -> FlowContext {
+fn ctx(
+    agent: IpAddr,
+    name: &str,
+    l4: L4Proto,
+    port: u16,
+    app: Option<AppProto>,
+    ip: Option<IpAddr>,
+) -> FlowContext {
     FlowContext {
         agent_ip: agent,
         dst_ip: ip,
@@ -95,8 +114,19 @@ fn ctx(agent: IpAddr, name: &str, l4: L4Proto, port: u16, app: Option<AppProto>,
 }
 
 /// Policy decision for resolving `name` (see module docs).
-async fn decide_name(state: &GatewayState, agent: IpAddr, name: &str) -> (Decision, Option<Vec<IpAddr>>) {
-    let (d, active) = state.decide(&ctx(agent, name, L4Proto::Udp, 53, Some(AppProto::Dns), None));
+async fn decide_name(
+    state: &GatewayState,
+    agent: IpAddr,
+    name: &str,
+) -> (Decision, Option<Vec<IpAddr>>) {
+    let (d, active) = state.decide(&ctx(
+        agent,
+        name,
+        L4Proto::Udp,
+        53,
+        Some(AppProto::Dns),
+        None,
+    ));
     if d.verdict == Verdict::Allow || d.implicit != Some(Implicit::Cleanup) {
         return (d, None);
     }
@@ -104,7 +134,11 @@ async fn decide_name(state: &GatewayState, agent: IpAddr, name: &str) -> (Decisi
     // a connection to this name?
     if let Some(p) = &active.installed {
         for svc in &p.document.services {
-            let l4 = if svc.protocol == L4Proto::Any { L4Proto::Tcp } else { svc.protocol };
+            let l4 = if svc.protocol == L4Proto::Any {
+                L4Proto::Tcp
+            } else {
+                svc.protocol
+            };
             let port = svc.ports.first().map(|r| r.start).unwrap_or(443);
             let app = svc.app.as_ref().map(|a| a.proto);
             let (d2, _) = state.decide(&ctx(agent, name, l4, port, app, None));
@@ -125,7 +159,14 @@ async fn decide_name(state: &GatewayState, agent: IpAddr, name: &str) -> (Decisi
     {
         let mut last = None;
         for ip in &ips {
-            let (d2, _) = state.decide(&ctx(agent, name, L4Proto::Udp, 53, Some(AppProto::Dns), Some(*ip)));
+            let (d2, _) = state.decide(&ctx(
+                agent,
+                name,
+                L4Proto::Udp,
+                53,
+                Some(AppProto::Dns),
+                Some(*ip),
+            ));
             if d2.verdict != Verdict::Allow {
                 return (d, None);
             }
@@ -197,7 +238,13 @@ pub async fn answer(state: &GatewayState, src: SocketAddr, raw: &[u8]) -> Option
             };
             // A metadata address behind a name is never handed out (ADR 0018).
             let meta = ips.iter().any(|i| is_cloud_metadata(*i));
-            if meta && state.metadata_blocked(&d, ips.iter().copied().find(|i| is_cloud_metadata(*i)), None) {
+            if meta
+                && state.metadata_blocked(
+                    &d,
+                    ips.iter().copied().find(|i| is_cloud_metadata(*i)),
+                    None,
+                )
+            {
                 state.alerts.cloud_metadata(d.agent_id, &qname);
                 let mut dd = d.clone();
                 dd.verdict = Verdict::Deny;
@@ -209,7 +256,9 @@ pub async fn answer(state: &GatewayState, src: SocketAddr, raw: &[u8]) -> Option
             for ip in ips {
                 let rdata = match (ip, qtype) {
                     (IpAddr::V4(v4), RecordType::A | RecordType::ANY) => RData::A(rdata::A(v4)),
-                    (IpAddr::V6(v6), RecordType::AAAA | RecordType::ANY) => RData::AAAA(rdata::AAAA(v6)),
+                    (IpAddr::V6(v6), RecordType::AAAA | RecordType::ANY) => {
+                        RData::AAAA(rdata::AAAA(v6))
+                    }
                     _ => continue,
                 };
                 state.dns_cache.insert(agent, ip, &qname);

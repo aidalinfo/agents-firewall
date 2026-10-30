@@ -49,7 +49,9 @@ impl CaptureSession {
             if data.len() + 16 + pkt.len() > MAX_CAPTURE_BYTES {
                 return;
             }
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
             data.extend_from_slice(&(now.as_secs() as u32).to_le_bytes());
             data.extend_from_slice(&now.subsec_micros().to_le_bytes());
             data.extend_from_slice(&(pkt.len() as u32).to_le_bytes());
@@ -79,7 +81,11 @@ pub fn pcap_header() -> Vec<u8> {
 fn checksum(data: &[u8]) -> u16 {
     let mut sum: u32 = 0;
     for c in data.chunks(2) {
-        let w = if c.len() == 2 { u16::from_be_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], 0]) };
+        let w = if c.len() == 2 {
+            u16::from_be_bytes([c[0], c[1]])
+        } else {
+            u16::from_be_bytes([c[0], 0])
+        };
         sum += w as u32;
     }
     while sum >> 16 != 0 {
@@ -145,8 +151,15 @@ pub struct Captures {
 impl Captures {
     pub fn start(&self, id: Uuid, agent_id: Uuid, duration_secs: u32) -> Arc<CaptureSession> {
         let secs = duration_secs.clamp(1, MAX_CAPTURE_SECS);
-        let s = Arc::new(CaptureSession::new(id, agent_id, Duration::from_secs(secs as u64)));
-        self.active.lock().unwrap_or_else(|e| e.into_inner()).insert(agent_id, s.clone());
+        let s = Arc::new(CaptureSession::new(
+            id,
+            agent_id,
+            Duration::from_secs(secs as u64),
+        ));
+        self.active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(agent_id, s.clone());
         s
     }
 
@@ -171,7 +184,13 @@ mod tests {
     #[test]
     fn pcap_records_are_well_formed() {
         let s = CaptureSession::new(Uuid::nil(), Uuid::nil(), Duration::from_secs(5));
-        s.record("10.0.0.2:4000".parse().unwrap(), "1.2.3.4:443".parse().unwrap(), 1, 1, b"hello");
+        s.record(
+            "10.0.0.2:4000".parse().unwrap(),
+            "1.2.3.4:443".parse().unwrap(),
+            1,
+            1,
+            b"hello",
+        );
         let b = s.bytes();
         assert_eq!(&b[..4], &0xa1b2c3d4u32.to_le_bytes());
         assert_eq!(u32::from_le_bytes(b[20..24].try_into().unwrap()), 101);

@@ -78,18 +78,25 @@ impl PolicyStore {
         match std::fs::read(&path) {
             Ok(bytes) => match parse(&bytes).and_then(|p| store.build(p)) {
                 Ok(active) => store.swap(active),
-                Err(e) => tracing::error!(path = %path.display(), error = %e, "persisted policy rejected: denying everything"),
+                Err(e) => {
+                    tracing::error!(path = %path.display(), error = %e, "persisted policy rejected: denying everything")
+                }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 tracing::warn!(path = %path.display(), "no persisted policy: denying everything")
             }
-            Err(e) => tracing::error!(path = %path.display(), error = %e, "cannot read policy: denying everything"),
+            Err(e) => {
+                tracing::error!(path = %path.display(), error = %e, "cannot read policy: denying everything")
+            }
         }
         store
     }
 
     pub fn current(&self) -> Arc<ActivePolicy> {
-        self.active.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.active
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn revision(&self) -> Option<u64> {
@@ -110,7 +117,10 @@ impl PolicyStore {
         let rev = policy.revision;
         let active = self.build(policy)?;
         if let (Some(path), Some(p)) = (&self.path, &active.installed) {
-            write_atomic(path, &serde_json::to_vec_pretty(p).expect("policy serializes"))?;
+            write_atomic(
+                path,
+                &serde_json::to_vec_pretty(p).expect("policy serializes"),
+            )?;
         }
         self.swap(active);
         Ok(rev)
@@ -123,7 +133,8 @@ impl PolicyStore {
 
     fn build(&self, policy: InstalledPolicy) -> Result<ActivePolicy, InstallError> {
         policy.verify()?;
-        let engine = CompiledPolicy::compile(&policy, Utc::now()).map_err(|e| InstallError::Compile(e.to_string()))?;
+        let engine = CompiledPolicy::compile(&policy, Utc::now())
+            .map_err(|e| InstallError::Compile(e.to_string()))?;
         let scanner = build_scanner(engine.data_class_specs()).map_err(InstallError::Scanner)?;
         Ok(ActivePolicy {
             engine,

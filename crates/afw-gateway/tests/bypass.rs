@@ -28,7 +28,6 @@ fn http(ev: &GatewayEvent) -> Option<&afw_core::events::HttpEvent> {
     }
 }
 
-
 #[tokio::test]
 async fn no_policy_denies_everything() {
     let mut h = harness(None).await;
@@ -47,9 +46,18 @@ async fn no_policy_denies_everything() {
     let mut t = h.transparent(AGENT_IP, h.internal_addr).await;
     let _ = t.write_all(b"hello").await;
     let mut buf = [0u8; 16];
-    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut buf)).await.unwrap();
-    assert!(matches!(r, Ok(0) | Err(_)), "connection must be refused: {r:?}");
-    let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.decision.revision.is_none())).await;
+    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut buf))
+        .await
+        .unwrap();
+    assert!(
+        matches!(r, Ok(0) | Err(_)),
+        "connection must be refused: {r:?}"
+    );
+    let ev = h
+        .wait_event(|e| {
+            flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.decision.revision.is_none())
+        })
+        .await;
     assert_eq!(flow(&ev).unwrap().decision.rule_name, "no-policy");
     assert!(h.log.all().is_empty(), "nothing may reach an upstream");
 }
@@ -89,7 +97,8 @@ async fn unknown_agent_denied() {
     let resp = http_raw(&mut tls, &get("allowed.test", "/")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
     assert!(resp.contains("(rule unknown-agent)"), "{resp}");
-    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.agent_id.is_none())).await;
+    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.agent_id.is_none()))
+        .await;
     assert!(h.log.all().is_empty());
 }
 
@@ -100,13 +109,19 @@ async fn denied_https_gets_explicit_403_message() {
     let mut tls = h.tls(s, "denied.test").await.unwrap();
     let resp = http_raw(&mut tls, &get("denied.test", "/v1/data")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
-    assert!(resp.to_ascii_lowercase().contains("x-agents-firewall: denied"), "{resp}");
+    assert!(
+        resp.to_ascii_lowercase()
+            .contains("x-agents-firewall: denied"),
+        "{resp}"
+    );
     let body = resp.split("\r\n\r\n").nth(1).unwrap();
     assert_eq!(
         body.trim_end(),
         "blocked by agents-firewall: denied.test not allowed for daniel-bot (rule default-deny)"
     );
-    let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
+    let ev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny))
+        .await;
     let f = flow(&ev).unwrap();
     assert_eq!(f.sni.as_deref(), Some("denied.test"));
     assert_eq!(f.agent_id, Some(id(AGENT)));
@@ -121,12 +136,16 @@ async fn denied_tcp_is_reset_and_logged() {
     let mut t = h.transparent(AGENT_IP, dst).await;
     let _ = t.write_all(b"\x00\x01binary").await;
     let mut buf = [0u8; 16];
-    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut buf)).await.unwrap();
+    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut buf))
+        .await
+        .unwrap();
     match r {
         Err(e) => assert_eq!(e.kind(), std::io::ErrorKind::ConnectionReset, "{e}"),
         Ok(n) => panic!("expected RST, read {n} bytes"),
     }
-    let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
+    let ev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny))
+        .await;
     let f = flow(&ev).unwrap();
     assert_eq!(f.dst, dst);
     assert_eq!(f.decision.rule_name, "default-deny");
@@ -140,8 +159,18 @@ async fn connect_to_denied_host_refused() {
     let req = format!("CONNECT denied.test:{port} HTTP/1.1\r\nHost: denied.test:{port}\r\n\r\n");
     let resp = http_raw(&mut s, req.as_bytes()).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
-    assert!(resp.contains("blocked by agents-firewall: denied.test not allowed for daniel-bot (rule default-deny)"), "{resp}");
-    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.domain.as_deref() == Some("denied.test"))).await;
+    assert!(
+        resp.contains(
+            "blocked by agents-firewall: denied.test not allowed for daniel-bot (rule default-deny)"
+        ),
+        "{resp}"
+    );
+    h.wait_event(|e| {
+        flow(e).is_some_and(|f| {
+            f.verdict == Verdict::Deny && f.domain.as_deref() == Some("denied.test")
+        })
+    })
+    .await;
     assert!(h.log.all().is_empty());
 }
 
@@ -150,14 +179,23 @@ async fn connect_to_allowed_host_is_inspected() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     let mut s = tokio::net::TcpStream::connect(h.proxy()).await.unwrap();
     let port = h.upstream_addr.port();
-    s.write_all(format!("CONNECT allowed.test:{port} HTTP/1.1\r\nHost: allowed.test:{port}\r\n\r\n").as_bytes()).await.unwrap();
+    s.write_all(
+        format!("CONNECT allowed.test:{port} HTTP/1.1\r\nHost: allowed.test:{port}\r\n\r\n")
+            .as_bytes(),
+    )
+    .await
+    .unwrap();
     let mut head = vec![0u8; 0];
     let mut b = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
         s.read_exact(&mut b).await.unwrap();
         head.push(b[0]);
     }
-    assert!(head.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&head));
+    assert!(
+        head.starts_with(b"HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&head)
+    );
     let mut tls = h.tls(s, "allowed.test").await.unwrap();
     let resp = http_raw(&mut tls, &get("allowed.test", "/hello")).await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
@@ -177,7 +215,8 @@ async fn host_header_mismatch_with_sni_denied() {
     let resp = http_raw(&mut tls, &get("denied.test", "/")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
     assert!(resp.contains("x-agents-firewall: denied"), "{resp}");
-    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
+    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny))
+        .await;
     assert!(h.log.all().is_empty(), "fronted request reached upstream");
 }
 
@@ -186,7 +225,9 @@ async fn agent_supplied_ip_ignored_when_name_present() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     // The agent targets an address of its choice; nothing listens there. The gateway must
     // connect to the address it resolved itself for the SNI name.
-    let dst: SocketAddr = format!("{EVIL_IP}:{}", h.upstream_addr.port()).parse().unwrap();
+    let dst: SocketAddr = format!("{EVIL_IP}:{}", h.upstream_addr.port())
+        .parse()
+        .unwrap();
     let s = h.transparent(AGENT_IP, dst).await;
     let mut tls = h.tls(s, "allowed.test").await.unwrap();
     let resp = http_raw(&mut tls, &get("allowed.test", "/pinned")).await;
@@ -198,14 +239,23 @@ async fn agent_supplied_ip_ignored_when_name_present() {
 #[tokio::test]
 async fn plain_http_transparent_uses_host_name() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let dst: SocketAddr = format!("{EVIL_IP}:{}", h.plain_addr.port()).parse().unwrap();
+    let dst: SocketAddr = format!("{EVIL_IP}:{}", h.plain_addr.port())
+        .parse()
+        .unwrap();
     let mut s = h.transparent(AGENT_IP, dst).await;
-    let resp = http_raw(&mut s, &get(&format!("allowed.test:{}", h.plain_addr.port()), "/plain")).await;
+    let resp = http_raw(
+        &mut s,
+        &get(&format!("allowed.test:{}", h.plain_addr.port()), "/plain"),
+    )
+    .await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
     // HTTP/1.0 without Host: no name, the agent's IP target is judged by the policy (denied).
     let mut s = h.transparent(AGENT_IP, dst).await;
     let resp = http_raw(&mut s, b"GET /old HTTP/1.0\r\n\r\n").await;
-    assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.0 403"), "{resp}");
+    assert!(
+        resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.0 403"),
+        "{resp}"
+    );
 }
 
 async fn post_tls(h: &Harness, host: &str, raw: Vec<u8>) -> String {
@@ -217,11 +267,18 @@ async fn post_tls(h: &Harness, host: &str, raw: Vec<u8>) -> String {
 #[tokio::test]
 async fn secret_in_body_blocked() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let resp = post_tls(&h, "allowed.test", post("allowed.test", "/upload", &format!("key={AWS_KEY}"))).await;
+    let resp = post_tls(
+        &h,
+        "allowed.test",
+        post("allowed.test", "/upload", &format!("key={AWS_KEY}")),
+    )
+    .await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
     assert!(resp.contains("(rule 2)"), "{resp}");
     assert!(!h.log.contains_bytes(AWS_KEY.as_bytes()));
-    let ev = h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected)).await;
+    let ev = h
+        .wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected))
+        .await;
     assert!(!serde_json::to_string(&ev).unwrap().contains(AWS_KEY));
     // A clean body still goes through.
     let resp = post_tls(&h, "allowed.test", post("allowed.test", "/upload", "hello")).await;
@@ -231,9 +288,16 @@ async fn secret_in_body_blocked() {
 #[tokio::test]
 async fn secret_in_url_or_header_blocked() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let resp = post_tls(&h, "allowed.test", get("allowed.test", &format!("/q?k={AWS_KEY}"))).await;
+    let resp = post_tls(
+        &h,
+        "allowed.test",
+        get("allowed.test", &format!("/q?k={AWS_KEY}")),
+    )
+    .await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
-    let raw = format!("GET / HTTP/1.1\r\nHost: allowed.test\r\nX-Key: {AWS_KEY}\r\nConnection: close\r\n\r\n");
+    let raw = format!(
+        "GET / HTTP/1.1\r\nHost: allowed.test\r\nX-Key: {AWS_KEY}\r\nConnection: close\r\n\r\n"
+    );
     let resp = post_tls(&h, "allowed.test", raw.into_bytes()).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
     assert!(h.log.all().is_empty());
@@ -276,7 +340,9 @@ async fn secret_split_across_chunks_blocked() {
     let mut tail = b" ".to_vec();
     tail.extend_from_slice(&[b'z'; 1024]);
     for chunk in [first, b.as_bytes().to_vec(), tail] {
-        tls.write_all(format!("{:x}\r\n", chunk.len()).as_bytes()).await.unwrap();
+        tls.write_all(format!("{:x}\r\n", chunk.len()).as_bytes())
+            .await
+            .unwrap();
         tls.write_all(&chunk).await.unwrap();
         tls.write_all(b"\r\n").await.unwrap();
         tls.flush().await.unwrap();
@@ -285,10 +351,16 @@ async fn secret_split_across_chunks_blocked() {
     let _ = tls.write_all(b"0\r\n\r\n").await;
     let resp = read_all(&mut tls).await;
     assert!(!resp.starts_with("HTTP/1.1 200"), "{resp}");
-    assert!(!h.log.contains_bytes(AWS_KEY.as_bytes()), "secret reached the upstream");
+    assert!(
+        !h.log.contains_bytes(AWS_KEY.as_bytes()),
+        "secret reached the upstream"
+    );
 }
 
-async fn ws_connect(h: &Harness, host: &str) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+async fn ws_connect(
+    h: &Harness,
+    host: &str,
+) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
     let s = h.transparent(AGENT_IP, h.upstream_addr).await;
     let mut tls = h.tls(s, host).await.unwrap();
     let req = format!(
@@ -301,7 +373,11 @@ async fn ws_connect(h: &Harness, host: &str) -> tokio_rustls::client::TlsStream<
         tls.read_exact(&mut b).await.unwrap();
         head.push(b[0]);
     }
-    assert!(head.starts_with(b"HTTP/1.1 101"), "{}", String::from_utf8_lossy(&head));
+    assert!(
+        head.starts_with(b"HTTP/1.1 101"),
+        "{}",
+        String::from_utf8_lossy(&head)
+    );
     tls
 }
 
@@ -312,12 +388,20 @@ async fn secret_in_websocket_frame_cuts_connection() {
     ws.write_all(&ws_frame(0x1, b"hello", true)).await.unwrap();
     let (op, echo) = read_frame(&mut ws).await.expect("echo");
     assert_eq!((op, echo.as_slice()), (0x1, b"hello".as_slice()));
-    ws.write_all(&ws_frame(0x1, format!("leak {AWS_KEY}").as_bytes(), true)).await.unwrap();
+    ws.write_all(&ws_frame(0x1, format!("leak {AWS_KEY}").as_bytes(), true))
+        .await
+        .unwrap();
     // Connection cut: no echo of the secret, stream closed.
-    let r = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut ws)).await.unwrap();
-    assert!(r.is_none() || r.is_some_and(|(op, _)| op == 0x8), "connection must be cut");
+    let r = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut ws))
+        .await
+        .unwrap();
+    assert!(
+        r.is_none() || r.is_some_and(|(op, _)| op == 0x8),
+        "connection must be cut"
+    );
     assert!(!h.log.contains_bytes(AWS_KEY.as_bytes()));
-    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected)).await;
+    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected))
+        .await;
 }
 
 #[tokio::test]
@@ -325,40 +409,77 @@ async fn secret_split_across_websocket_messages_cut() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     let mut ws = ws_connect(&h, "allowed.test").await;
     let (a, b) = AWS_KEY.split_at(10);
-    ws.write_all(&ws_frame(0x1, a.as_bytes(), true)).await.unwrap();
+    ws.write_all(&ws_frame(0x1, a.as_bytes(), true))
+        .await
+        .unwrap();
     let _ = read_frame(&mut ws).await;
-    ws.write_all(&ws_frame(0x1, b.as_bytes(), true)).await.unwrap();
-    let r = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut ws)).await.unwrap();
-    assert!(r.is_none() || r.is_some_and(|(op, _)| op == 0x8), "connection must be cut");
-    assert!(!h.log.all().iter().any(|s| s.ws_messages.iter().any(|m| m == b.as_bytes())));
+    ws.write_all(&ws_frame(0x1, b.as_bytes(), true))
+        .await
+        .unwrap();
+    let r = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut ws))
+        .await
+        .unwrap();
+    assert!(
+        r.is_none() || r.is_some_and(|(op, _)| op == 0x8),
+        "connection must be cut"
+    );
+    assert!(
+        !h.log
+            .all()
+            .iter()
+            .any(|s| s.ws_messages.iter().any(|m| m == b.as_bytes()))
+    );
 }
 
 #[tokio::test]
 async fn secret_to_llm_provider_allowed_but_masked_in_logs() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let resp = post_tls(&h, "llm.test", post("llm.test", "/v1/messages", &format!("context {AWS_KEY}"))).await;
+    let resp = post_tls(
+        &h,
+        "llm.test",
+        post("llm.test", "/v1/messages", &format!("context {AWS_KEY}")),
+    )
+    .await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
-    assert!(h.log.contains_bytes(AWS_KEY.as_bytes()), "LLM provider receives the content");
+    assert!(
+        h.log.contains_bytes(AWS_KEY.as_bytes()),
+        "LLM provider receives the content"
+    );
     let ev = h.wait_event(|e| http(e).is_some()).await;
     let json = serde_json::to_string(&ev).unwrap();
-    assert!(!json.contains(AWS_KEY), "secret must be masked in logs: {json}");
+    assert!(
+        !json.contains(AWS_KEY),
+        "secret must be masked in logs: {json}"
+    );
     let ev = http(&ev).unwrap();
-    assert!(ev.request_body.as_ref().unwrap().data.contains("[SECRET:aws_access_key:"));
+    assert!(
+        ev.request_body
+            .as_ref()
+            .unwrap()
+            .data
+            .contains("[SECRET:aws_access_key:")
+    );
     assert_eq!(ev.findings.len(), 1);
-    let fev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Allow)).await;
+    let fev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Allow))
+        .await;
     assert!(flow(&fev).unwrap().llm_provider);
     // And it is still alerted.
-    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected)).await;
+    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::SecretDetected))
+        .await;
 }
 
 #[tokio::test]
 async fn cloud_metadata_denied_even_in_observe_mode() {
     let mut h = harness(Some(installed(1, ZoneMode::Observe))).await;
     // Direct IP.
-    let mut t = h.transparent(AGENT_IP, "169.254.169.254:80".parse().unwrap()).await;
+    let mut t = h
+        .transparent(AGENT_IP, "169.254.169.254:80".parse().unwrap())
+        .await;
     let resp = http_raw(&mut t, &get("169.254.169.254", "/latest/meta-data/")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
-    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::CloudMetadata)).await;
+    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::CloudMetadata))
+        .await;
     // Through a name resolving to the metadata address.
     let mut s = tokio::net::TcpStream::connect(h.proxy()).await.unwrap();
     let resp = http_raw(&mut s, b"GET http://metadata.test/latest HTTP/1.1\r\nHost: metadata.test\r\nConnection: close\r\n\r\n").await;
@@ -382,33 +503,63 @@ async fn dns_query_for_denied_name_refused_and_logged() {
     use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
     use hickory_proto::rr::{Name, RecordType};
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0")).await.unwrap();
+    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0"))
+        .await
+        .unwrap();
     let ask = |name: &str, id: u16| {
         let mut m = Message::new();
-        m.set_id(id).set_message_type(MessageType::Query).set_op_code(OpCode::Query).set_recursion_desired(true);
+        m.set_id(id)
+            .set_message_type(MessageType::Query)
+            .set_op_code(OpCode::Query)
+            .set_recursion_desired(true);
         m.add_query(Query::query(Name::from_ascii(name).unwrap(), RecordType::A));
         m.to_vec().unwrap()
     };
-    sock.send_to(&ask("denied.test.", 1), h.dns()).await.unwrap();
+    sock.send_to(&ask("denied.test.", 1), h.dns())
+        .await
+        .unwrap();
     let mut buf = [0u8; 1500];
-    let (n, _) = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await.unwrap().unwrap();
+    let (n, _) = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
     let resp = Message::from_vec(&buf[..n]).unwrap();
     assert_eq!(resp.response_code(), ResponseCode::Refused);
     assert!(resp.answers().is_empty());
-    let ev = h.wait_event(|e| matches!(e, GatewayEvent::Dns(d) if d.qname == "denied.test")).await;
-    let GatewayEvent::Dns(d) = ev else { unreachable!() };
+    let ev = h
+        .wait_event(|e| matches!(e, GatewayEvent::Dns(d) if d.qname == "denied.test"))
+        .await;
+    let GatewayEvent::Dns(d) = ev else {
+        unreachable!()
+    };
     assert_eq!(d.verdict, Verdict::Deny);
     // An allowed name resolves (through the gateway's own resolver).
-    sock.send_to(&ask("allowed.test.", 2), h.dns()).await.unwrap();
-    let (n, _) = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await.unwrap().unwrap();
+    sock.send_to(&ask("allowed.test.", 2), h.dns())
+        .await
+        .unwrap();
+    let (n, _) = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
     let resp = Message::from_vec(&buf[..n]).unwrap();
     assert_eq!(resp.response_code(), ResponseCode::NoError);
     assert_eq!(resp.answers().len(), 1);
     // Unknown agent: refused.
-    let other = tokio::net::UdpSocket::bind(format!("{UNKNOWN_IP}:0")).await.unwrap();
-    other.send_to(&ask("allowed.test.", 3), h.dns()).await.unwrap();
-    let (n, _) = tokio::time::timeout(Duration::from_secs(5), other.recv_from(&mut buf)).await.unwrap().unwrap();
-    assert_eq!(Message::from_vec(&buf[..n]).unwrap().response_code(), ResponseCode::Refused);
+    let other = tokio::net::UdpSocket::bind(format!("{UNKNOWN_IP}:0"))
+        .await
+        .unwrap();
+    other
+        .send_to(&ask("allowed.test.", 3), h.dns())
+        .await
+        .unwrap();
+    let (n, _) = tokio::time::timeout(Duration::from_secs(5), other.recv_from(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        Message::from_vec(&buf[..n]).unwrap().response_code(),
+        ResponseCode::Refused
+    );
 }
 
 #[tokio::test]
@@ -418,7 +569,10 @@ async fn internal_flow_allowed_and_logged_detailed() {
     // Server-first or binary protocol: no HTTP/TLS, relayed at L4 after the sniff delay.
     t.write_all(b"\x00ping").await.unwrap();
     let mut buf = [0u8; 5];
-    tokio::time::timeout(Duration::from_secs(5), t.read_exact(&mut buf)).await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), t.read_exact(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(&buf, b"\x00ping");
     drop(t);
     let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.internal)).await;
@@ -426,20 +580,31 @@ async fn internal_flow_allowed_and_logged_detailed() {
     assert_eq!(f.verdict, Verdict::Allow);
     assert_eq!(f.decision.rule_name, "internal-monitor");
     assert!(f.bytes_out >= 5 && f.bytes_in >= 5, "{f:?}");
-    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::NewInternalHost)).await;
+    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::NewInternalHost))
+        .await;
 }
 
 #[tokio::test]
 async fn admin_api_exec_recognized() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    let resp = post_tls(&h, "k8s.test", post("k8s.test", "/api/v1/namespaces/prod/pods/web-0/exec", "")).await;
+    let resp = post_tls(
+        &h,
+        "k8s.test",
+        post("k8s.test", "/api/v1/namespaces/prod/pods/web-0/exec", ""),
+    )
+    .await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
-    let ev = h.wait_event(|e| http(e).is_some_and(|h| h.admin_action.is_some())).await;
+    let ev = h
+        .wait_event(|e| http(e).is_some_and(|h| h.admin_action.is_some()))
+        .await;
     let a = http(&ev).unwrap().admin_action.clone().unwrap();
     assert_eq!(a.system, AdminSystem::Kubernetes);
     assert_eq!(a.action, "exec");
     assert_eq!(a.resource, "namespaces/prod/pods/web-0");
-    h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::UnusualAdminAction)).await;
+    h.wait_event(
+        |e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::UnusualAdminAction),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -467,7 +632,10 @@ async fn sni_flood_is_rate_limited() {
             refused += 1;
         }
     }
-    assert!(refused >= 5, "leaf minting must be rate limited per agent ({refused})");
+    assert!(
+        refused >= 5,
+        "leaf minting must be rate limited per agent ({refused})"
+    );
     h.wait_event(|e| matches!(e, GatewayEvent::Alert(_))).await;
 }
 
@@ -476,13 +644,19 @@ async fn denied_sni_towards_allowed_ip_is_denied() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     // The agent targets an IP accepted by an IP object, but names a denied host: the name
     // decides (the gateway would connect to the name's address, not to the agent's choice).
-    let dst: SocketAddr = format!("{TRUSTED_IP}:{}", h.upstream_addr.port()).parse().unwrap();
+    let dst: SocketAddr = format!("{TRUSTED_IP}:{}", h.upstream_addr.port())
+        .parse()
+        .unwrap();
     let s = h.transparent(AGENT_IP, dst).await;
     let mut tls = h.tls(s, "denied.test").await.unwrap();
     let resp = http_raw(&mut tls, &get("denied.test", "/")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
-    assert!(resp.contains("denied.test not allowed for daniel-bot (rule default-deny)"), "{resp}");
-    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
+    assert!(
+        resp.contains("denied.test not allowed for daniel-bot (rule default-deny)"),
+        "{resp}"
+    );
+    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny))
+        .await;
     assert!(h.log.all().is_empty());
 }
 
@@ -491,14 +665,18 @@ async fn rewritten_host_or_absolute_uri_denied() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     for raw in [
         // Absolute URI towards another host behind an allowed SNI.
-        b"GET https://denied.test/ HTTP/1.1\r\nHost: allowed.test\r\nConnection: close\r\n\r\n".to_vec(),
+        b"GET https://denied.test/ HTTP/1.1\r\nHost: allowed.test\r\nConnection: close\r\n\r\n"
+            .to_vec(),
         // Host with a trailing label.
         get("allowed.test.denied.test", "/"),
         // Host with userinfo-like trick.
         get("allowed.test@denied.test", "/"),
     ] {
         let resp = post_tls(&h, "allowed.test", raw).await;
-        assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+        assert!(
+            resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"),
+            "{resp}"
+        );
     }
     assert!(h.log.all().is_empty());
 }
@@ -508,7 +686,14 @@ async fn denied_path_behind_allowed_connection() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     let resp = post_tls(&h, "allowed.test", get("allowed.test", "/data")).await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
-    for path in ["/admin", "/admin/users", "/x/../admin", "/x/..;/admin", "/%61dmin", "//admin"] {
+    for path in [
+        "/admin",
+        "/admin/users",
+        "/x/../admin",
+        "/x/..;/admin",
+        "/%61dmin",
+        "//admin",
+    ] {
         let resp = post_tls(&h, "allowed.test", get("allowed.test", path)).await;
         assert!(resp.starts_with("HTTP/1.1 403"), "{path}: {resp}");
         assert!(resp.contains("(rule 4)"), "{path}: {resp}");
@@ -529,7 +714,22 @@ async fn path_accept_rule_is_evaluated_per_request() {
     let mut tls = h.tls(s, "path.test").await.unwrap();
     let both = b"GET /v1/a HTTP/1.1\r\nHost: path.test\r\n\r\nGET /admin HTTP/1.1\r\nHost: path.test\r\nConnection: close\r\n\r\n";
     let resp = http_raw(&mut tls, both).await;
-    assert!(resp.contains("HTTP/1.1 200") && resp.contains("HTTP/1.1 403"), "{resp}");
-    assert_eq!(h.log.all().iter().filter(|s| s.path.starts_with("/v1/")).count(), 2);
-    assert!(!h.log.all().iter().any(|s| s.path == "/admin" || s.path == "/other"));
+    assert!(
+        resp.contains("HTTP/1.1 200") && resp.contains("HTTP/1.1 403"),
+        "{resp}"
+    );
+    assert_eq!(
+        h.log
+            .all()
+            .iter()
+            .filter(|s| s.path.starts_with("/v1/"))
+            .count(),
+        2
+    );
+    assert!(
+        !h.log
+            .all()
+            .iter()
+            .any(|s| s.path == "/admin" || s.path == "/other")
+    );
 }

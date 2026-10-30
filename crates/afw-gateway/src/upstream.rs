@@ -28,7 +28,10 @@ pub fn is_cloud_metadata(ip: IpAddr) -> bool {
         v4 => v4,
     };
     match ip {
-        IpAddr::V4(v4) => (v4.octets()[0] == 169 && v4.octets()[1] == 254) || v4 == Ipv4Addr::new(100, 100, 100, 200),
+        IpAddr::V4(v4) => {
+            (v4.octets()[0] == 169 && v4.octets()[1] == 254)
+                || v4 == Ipv4Addr::new(100, 100, 100, 200)
+        }
         IpAddr::V6(v6) => v6 == Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254),
     }
 }
@@ -36,7 +39,11 @@ pub fn is_cloud_metadata(ip: IpAddr) -> bool {
 /// Well-known metadata host names.
 pub fn is_cloud_metadata_name(name: &str) -> bool {
     let n = name.trim_end_matches('.').to_ascii_lowercase();
-    n == "metadata.google.internal" || n == "metadata.goog" || n == "metadata" || n == "instance-data" || n == "instance-data.ec2.internal"
+    n == "metadata.google.internal"
+        || n == "metadata.goog"
+        || n == "metadata"
+        || n == "instance-data"
+        || n == "instance-data.ec2.internal"
 }
 
 pub trait Resolver: Send + Sync {
@@ -60,10 +67,9 @@ impl StaticResolver {
 impl Resolver for StaticResolver {
     fn lookup<'a>(&'a self, name: &'a str) -> BoxFuture<'a, io::Result<Vec<IpAddr>>> {
         Box::pin(async move {
-            self.0
-                .get(&normalize(name))
-                .cloned()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no address for {name}")))
+            self.0.get(&normalize(name)).cloned().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, format!("no address for {name}"))
+            })
         })
     }
 }
@@ -75,7 +81,13 @@ pub struct DnsResolver {
 
 impl DnsResolver {
     async fn exchange(&self, query: &[u8]) -> io::Result<Vec<u8>> {
-        let bind: SocketAddr = if self.server.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" }.parse().unwrap();
+        let bind: SocketAddr = if self.server.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        }
+        .parse()
+        .unwrap();
         let sock = UdpSocket::bind(bind).await?;
         sock.connect(self.server).await?;
         sock.send(query).await?;
@@ -109,7 +121,8 @@ impl DnsResolver {
 
     async fn query(&self, name: &str, rtype: RecordType) -> io::Result<Vec<IpAddr>> {
         let fqdn = format!("{}.", name.trim_end_matches('.'));
-        let qname = Name::from_ascii(&fqdn).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let qname =
+            Name::from_ascii(&fqdn).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         let mut m = Message::new();
         m.set_id(rand_id())
             .set_message_type(MessageType::Query)
@@ -117,7 +130,8 @@ impl DnsResolver {
             .set_recursion_desired(true);
         m.add_query(Query::query(qname, rtype));
         let raw = m.to_vec().map_err(|e| io::Error::other(e.to_string()))?;
-        let resp = Message::from_vec(&self.exchange(&raw).await?).map_err(|e| io::Error::other(e.to_string()))?;
+        let resp = Message::from_vec(&self.exchange(&raw).await?)
+            .map_err(|e| io::Error::other(e.to_string()))?;
         if resp.id() != m.id() {
             return Err(io::Error::other("DNS response id mismatch"));
         }
@@ -141,7 +155,10 @@ impl Resolver for DnsResolver {
                 ips = self.query(name, RecordType::AAAA).await?;
             }
             if ips.is_empty() {
-                return Err(io::Error::new(io::ErrorKind::NotFound, format!("no address for {name}")));
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("no address for {name}"),
+                ));
             }
             Ok(ips)
         })
@@ -163,7 +180,10 @@ impl Resolver for SystemResolver {
                 .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "resolution timeout"))??;
             let ips: Vec<IpAddr> = addrs.map(|a| a.ip()).collect();
             if ips.is_empty() {
-                return Err(io::Error::new(io::ErrorKind::NotFound, format!("no address for {name}")));
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("no address for {name}"),
+                ));
             }
             Ok(ips)
         })
@@ -197,7 +217,9 @@ pub fn normalize(name: &str) -> String {
 
 fn rand_id() -> u16 {
     let mut b = [0u8; 2];
-    let _ = rustls::crypto::ring::default_provider().secure_random.fill(&mut b);
+    let _ = rustls::crypto::ring::default_provider()
+        .secure_random
+        .fill(&mut b);
     u16::from_ne_bytes(b)
 }
 

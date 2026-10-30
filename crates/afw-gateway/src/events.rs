@@ -76,17 +76,22 @@ impl EventSink {
 
     fn spill(&self, events: Vec<GatewayEvent>) {
         let Some(path) = &self.spool else {
-            self.dropped.fetch_add(events.len() as u64, Ordering::Relaxed);
+            self.dropped
+                .fetch_add(events.len() as u64, Ordering::Relaxed);
             return;
         };
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         if size >= SPOOL_MAX_BYTES {
-            self.dropped.fetch_add(events.len() as u64, Ordering::Relaxed);
+            self.dropped
+                .fetch_add(events.len() as u64, Ordering::Relaxed);
             tracing::warn!(n = events.len(), "event spool full: dropping events");
             return;
         }
         let res = (|| -> std::io::Result<()> {
-            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
             let mut buf = Vec::new();
             for e in &events {
                 serde_json::to_writer(&mut buf, e)?;
@@ -97,11 +102,13 @@ impl EventSink {
         })();
         match res {
             Ok(()) => {
-                self.spooled.fetch_add(events.len() as u64, Ordering::Relaxed);
+                self.spooled
+                    .fetch_add(events.len() as u64, Ordering::Relaxed);
             }
             Err(e) => {
                 tracing::error!(error = %e, "cannot spool events");
-                self.dropped.fetch_add(events.len() as u64, Ordering::Relaxed);
+                self.dropped
+                    .fetch_add(events.len() as u64, Ordering::Relaxed);
             }
         }
     }
@@ -164,6 +171,7 @@ impl EventSink {
     }
 
     pub fn queued(&self) -> u64 {
-        self.queue.lock().unwrap_or_else(|e| e.into_inner()).len() as u64 + self.spooled.load(Ordering::Relaxed)
+        self.queue.lock().unwrap_or_else(|e| e.into_inner()).len() as u64
+            + self.spooled.load(Ordering::Relaxed)
     }
 }

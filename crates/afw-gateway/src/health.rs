@@ -15,7 +15,9 @@ use crate::state::GatewayState;
 
 pub async fn serve(state: Arc<GatewayState>, listener: TcpListener) {
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
+        let Ok((stream, _)) = listener.accept().await else {
+            continue;
+        };
         let state = state.clone();
         tokio::spawn(async move {
             let svc = hyper::service::service_fn(move |req| route(state.clone(), req));
@@ -26,7 +28,10 @@ pub async fn serve(state: Arc<GatewayState>, listener: TcpListener) {
     }
 }
 
-async fn route(state: Arc<GatewayState>, req: Request<Incoming>) -> Result<Response<GwBody>, Infallible> {
+async fn route(
+    state: Arc<GatewayState>,
+    req: Request<Incoming>,
+) -> Result<Response<GwBody>, Infallible> {
     let (status, ctype, body) = match req.uri().path() {
         "/healthz" => {
             let rev = state.store.revision();
@@ -47,7 +52,11 @@ async fn route(state: Arc<GatewayState>, req: Request<Incoming>) -> Result<Respo
                 state.events.dropped.load(Ordering::Relaxed),
             ),
         ),
-        "/ca.crt" => (StatusCode::OK, "application/x-pem-file", state.ca.ca_cert_pem()),
+        "/ca.crt" => (
+            StatusCode::OK,
+            "application/x-pem-file",
+            state.ca.ca_cert_pem(),
+        ),
         _ => (StatusCode::NOT_FOUND, "text/plain", "not found\n".into()),
     };
     Ok(Response::builder()

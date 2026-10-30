@@ -15,7 +15,11 @@ use crate::io::{Prefixed, Tap};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: Prefixed<S>, connect_sni_mismatch: bool) {
+pub async fn handle<S: AgentStream>(
+    flow: Arc<Flow>,
+    stream: Prefixed<S>,
+    connect_sni_mismatch: bool,
+) {
     let state = flow.state.clone();
     // The name (SNI or CONNECT host) is resolved by the gateway; the agent's address is only
     // used for nameless flows.
@@ -32,7 +36,9 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: Prefixed<S>, connec
     }
     let meta = state.metadata_blocked(&d0, upstream.map(|a| a.ip()), flow.name.as_deref());
     if meta {
-        state.alerts.cloud_metadata(d0.agent_id, flow.name.as_deref().unwrap_or_default());
+        state
+            .alerts
+            .cloud_metadata(d0.agent_id, flow.name.as_deref().unwrap_or_default());
     }
     if connect_sni_mismatch {
         let mut d = d0;
@@ -54,7 +60,10 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: Prefixed<S>, connec
             return;
         };
         flow.mark_allowed(&d0);
-        let capture = state.captures.for_agent(d0.agent_id).map(|c| (c, flow.src, dst));
+        let capture = state
+            .captures
+            .for_agent(d0.agent_id)
+            .map(|c| (c, flow.src, dst));
         let mut agent = Tap::new(stream, flow.counters.clone(), capture);
         let _ = crate::io::splice(&mut agent, &mut up).await;
         return;
@@ -69,7 +78,10 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: Prefixed<S>, connec
             return;
         }
     };
-    if !state.alerts.allow_sni(flow.src.ip(), d0.agent_id, &leaf_name) {
+    if !state
+        .alerts
+        .allow_sni(flow.src.ip(), d0.agent_id, &leaf_name)
+    {
         let mut d = d0;
         d.verdict = Verdict::Deny;
         flow.emit_deny(&d);
@@ -94,7 +106,10 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: Prefixed<S>, connec
     };
     flow.tls_inspected.store(true, Ordering::Relaxed);
     flow.set_app(AppProto::Https);
-    let capture = state.captures.for_agent(d0.agent_id).map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
+    let capture = state
+        .captures
+        .for_agent(d0.agent_id)
+        .map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
     let io = Tap::new(tls, flow.counters.clone(), capture);
     serve_conn(HttpFlow::new(flow, true, upstream), io).await;
 }

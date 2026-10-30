@@ -10,13 +10,26 @@ use clap::Parser;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .init();
     let cli = Cli::parse();
     match cli.cmd {
         Some(Cmd::Register(a)) => {
-            let ca = a.console_ca_file.as_ref().map(std::fs::read_to_string).transpose()?;
-            let id = register(&a.console, &a.token, &a.name.unwrap_or_else(hostname), ca, &a.state_dir).await?;
+            let ca = a
+                .console_ca_file
+                .as_ref()
+                .map(std::fs::read_to_string)
+                .transpose()?;
+            let id = register(
+                &a.console,
+                &a.token,
+                &a.name.unwrap_or_else(hostname),
+                ca,
+                &a.state_dir,
+            )
+            .await?;
             println!("registered as gateway {id}");
             Ok(())
         }
@@ -26,8 +39,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run(a: RunArgs) -> anyhow::Result<()> {
-    if let (Some(url), Some(token)) = (&a.console_url, a.registration_token.as_deref().filter(|t| !t.is_empty()))
-        && !is_registered(&a.state_dir)
+    if let (Some(url), Some(token)) = (
+        &a.console_url,
+        a.registration_token.as_deref().filter(|t| !t.is_empty()),
+    ) && !is_registered(&a.state_dir)
     {
         let ca = a
             .console_ca_file
@@ -38,7 +53,9 @@ async fn run(a: RunArgs) -> anyhow::Result<()> {
         let name = a.gateway_name.clone().unwrap_or_else(hostname);
         match register(url, token, &name, ca, &a.state_dir).await {
             Ok(id) => tracing::info!(%id, "registered with the console"),
-            Err(e) => tracing::error!(error = %e, "registration failed: enforcing the local policy (deny all if none)"),
+            Err(e) => {
+                tracing::error!(error = %e, "registration failed: enforcing the local policy (deny all if none)")
+            }
         }
     }
     let mut o = GatewayOptions::new(a.state_dir.clone());
@@ -78,7 +95,9 @@ fn local_addresses() -> Vec<std::net::IpAddr> {
                 match (*addr).sa_family as i32 {
                     libc::AF_INET => {
                         let sin = &*(addr as *const libc::sockaddr_in);
-                        out.push(std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)).into());
+                        out.push(
+                            std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)).into(),
+                        );
                     }
                     libc::AF_INET6 => {
                         let sin6 = &*(addr as *const libc::sockaddr_in6);

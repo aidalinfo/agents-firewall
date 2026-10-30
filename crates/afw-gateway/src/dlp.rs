@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use afw_core::policy::{DataCategory, DataClass, Detector};
-pub use afw_dlp::{Finding as DlpFinding, Scanner, decode_content, mask_bytes};
 use afw_dlp::{ClassSpec, DetectorSpec, ScannerOptions};
+pub use afw_dlp::{Finding as DlpFinding, Scanner, decode_content, mask_bytes};
 
 fn category(c: DataCategory) -> afw_dlp::DataCategory {
     match c {

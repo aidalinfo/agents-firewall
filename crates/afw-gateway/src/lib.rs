@@ -29,4 +29,7 @@ pub mod transparent;
 pub mod upstream;
 pub mod websocket;
 
-pub use state::{BoundAddrs, Gateway, GatewayOptions, GatewayState, MapOrigDst, OrigDst, RunningGateway, SoOriginalDst};
+pub use state::{
+    BoundAddrs, Gateway, GatewayOptions, GatewayState, MapOrigDst, OrigDst, RunningGateway,
+    SoOriginalDst,
+};

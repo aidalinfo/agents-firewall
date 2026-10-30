@@ -43,7 +43,14 @@ impl OrigDst for SoOriginalDst {
             if local.is_ipv4() {
                 let mut addr: libc::sockaddr_in = std::mem::zeroed();
                 let mut len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-                if libc::getsockopt(fd, libc::SOL_IP, SO_ORIGINAL_DST, &mut addr as *mut _ as *mut libc::c_void, &mut len) != 0 {
+                if libc::getsockopt(
+                    fd,
+                    libc::SOL_IP,
+                    SO_ORIGINAL_DST,
+                    &mut addr as *mut _ as *mut libc::c_void,
+                    &mut len,
+                ) != 0
+                {
                     return Err(io::Error::last_os_error());
                 }
                 let ip = std::net::Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr));
@@ -51,18 +58,31 @@ impl OrigDst for SoOriginalDst {
             } else {
                 let mut addr: libc::sockaddr_in6 = std::mem::zeroed();
                 let mut len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
-                if libc::getsockopt(fd, libc::SOL_IPV6, SO_ORIGINAL_DST, &mut addr as *mut _ as *mut libc::c_void, &mut len) != 0 {
+                if libc::getsockopt(
+                    fd,
+                    libc::SOL_IPV6,
+                    SO_ORIGINAL_DST,
+                    &mut addr as *mut _ as *mut libc::c_void,
+                    &mut len,
+                ) != 0
+                {
                     return Err(io::Error::last_os_error());
                 }
                 let ip = std::net::Ipv6Addr::from(addr.sin6_addr.s6_addr);
-                Ok(SocketAddr::new(IpAddr::V6(ip), u16::from_be(addr.sin6_port)))
+                Ok(SocketAddr::new(
+                    IpAddr::V6(ip),
+                    u16::from_be(addr.sin6_port),
+                ))
             }
         }
     }
 
     #[cfg(not(target_os = "linux"))]
     fn original_dst(&self, _stream: &TcpStream) -> io::Result<SocketAddr> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "SO_ORIGINAL_DST requires Linux"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "SO_ORIGINAL_DST requires Linux",
+        ))
     }
 }
 
@@ -158,12 +178,17 @@ impl DnsCache {
             let now = Instant::now();
             m.retain(|_, v| v.1 > now);
         }
-        m.insert((agent, ip), (name.to_string(), Instant::now() + DNS_CACHE_TTL));
+        m.insert(
+            (agent, ip),
+            (name.to_string(), Instant::now() + DNS_CACHE_TTL),
+        );
     }
 
     pub fn name_for(&self, agent: IpAddr, ip: IpAddr) -> Option<String> {
         let m = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        m.get(&(agent, ip)).filter(|v| v.1 > Instant::now()).map(|v| v.0.clone())
+        m.get(&(agent, ip))
+            .filter(|v| v.1 > Instant::now())
+            .map(|v| v.0.clone())
     }
 }
 
@@ -194,7 +219,8 @@ impl GatewayState {
         let active = self.store.current();
         let t = Instant::now();
         let d = active.engine.evaluate(ctx);
-        self.metrics.decision_latency(t.elapsed().as_micros() as u64);
+        self.metrics
+            .decision_latency(t.elapsed().as_micros() as u64);
         if let (Some(rule), Some(rev)) = (d.rule_id, active.revision()) {
             self.events.rule_hit(rule, rev);
         }
@@ -203,8 +229,12 @@ impl GatewayState {
 
     /// Cloud metadata may only be reached through an explicit baseline accept rule.
     pub fn metadata_blocked(&self, d: &Decision, ip: Option<IpAddr>, name: Option<&str>) -> bool {
-        let meta = ip.is_some_and(is_cloud_metadata) || name.is_some_and(crate::upstream::is_cloud_metadata_name);
-        meta && !(d.verdict == Verdict::Allow && d.layer == DecisionLayer::Baseline && d.rule_id.is_some() && !d.observed)
+        let meta = ip.is_some_and(is_cloud_metadata)
+            || name.is_some_and(crate::upstream::is_cloud_metadata_name);
+        meta && !(d.verdict == Verdict::Allow
+            && d.layer == DecisionLayer::Baseline
+            && d.rule_id.is_some()
+            && !d.observed)
     }
 }
 
@@ -250,9 +280,11 @@ pub fn stored_gateway_id(state_dir: &std::path::Path) -> Option<Uuid> {
 
 impl Gateway {
     pub async fn start(opts: GatewayOptions) -> anyhow::Result<RunningGateway> {
-        std::fs::create_dir_all(&opts.state_dir).with_context(|| format!("state dir {}", opts.state_dir.display()))?;
-        let ca = GatewayCa::load_or_create(&opts.state_dir.join("ca"), "agents-firewall inspection CA")
-            .context("inspection CA")?;
+        std::fs::create_dir_all(&opts.state_dir)
+            .with_context(|| format!("state dir {}", opts.state_dir.display()))?;
+        let ca =
+            GatewayCa::load_or_create(&opts.state_dir.join("ca"), "agents-firewall inspection CA")
+                .context("inspection CA")?;
         if let Some(path) = &opts.ca_export {
             crate::policy_store::write_atomic(path, ca.ca_cert_pem().as_bytes())
                 .with_context(|| format!("export inspection CA to {}", path.display()))?;
@@ -264,15 +296,24 @@ impl Gateway {
         }
         let store = Arc::new(PolicyStore::load(opts.state_dir.join("policy.json")));
         if let Some(p) = &opts.standalone_policy {
-            match std::fs::read(p).map_err(|e| e.to_string()).and_then(|b| store.install_bytes(&b).map_err(|e| e.to_string())) {
+            match std::fs::read(p)
+                .map_err(|e| e.to_string())
+                .and_then(|b| store.install_bytes(&b).map_err(|e| e.to_string()))
+            {
                 Ok(rev) => tracing::info!(revision = rev, "standalone policy installed"),
-                Err(e) => tracing::error!(error = %e, file = %p.display(), "standalone policy rejected: keeping the last valid policy"),
+                Err(e) => {
+                    tracing::error!(error = %e, file = %p.display(), "standalone policy rejected: keeping the last valid policy")
+                }
             }
         }
         let alpn = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        let upstream_tls = afw_tls::upstream_client_config(&opts.extra_roots, alpn).context("upstream TLS")?;
-        let upstream_tls_h1 = afw_tls::upstream_client_config(&opts.extra_roots, vec![b"http/1.1".to_vec()])?;
-        let events = Arc::new(EventSink::new(Some(opts.state_dir.join("events.spool.jsonl"))));
+        let upstream_tls =
+            afw_tls::upstream_client_config(&opts.extra_roots, alpn).context("upstream TLS")?;
+        let upstream_tls_h1 =
+            afw_tls::upstream_client_config(&opts.extra_roots, vec![b"http/1.1".to_vec()])?;
+        let events = Arc::new(EventSink::new(Some(
+            opts.state_dir.join("events.spool.jsonl"),
+        )));
         let gateway_id = opts
             .gateway_id
             .or_else(|| stored_gateway_id(&opts.state_dir))
@@ -298,38 +339,58 @@ impl Gateway {
         let mut addrs = BoundAddrs::default();
         let mut tasks = Vec::new();
         if let Some(a) = opts.transparent {
-            let l = TcpListener::bind(a).await.with_context(|| format!("bind transparent {a}"))?;
+            let l = TcpListener::bind(a)
+                .await
+                .with_context(|| format!("bind transparent {a}"))?;
             addrs.transparent = Some(l.local_addr()?);
             tasks.push(tokio::spawn(crate::transparent::serve(state.clone(), l)));
         }
         if let Some(a) = opts.proxy {
-            let l = TcpListener::bind(a).await.with_context(|| format!("bind proxy {a}"))?;
+            let l = TcpListener::bind(a)
+                .await
+                .with_context(|| format!("bind proxy {a}"))?;
             addrs.proxy = Some(l.local_addr()?);
             tasks.push(tokio::spawn(crate::explicit_proxy::serve(state.clone(), l)));
         }
         if let Some(a) = opts.dns {
             let (udp, tcp) = bind_dns(a).await?;
             addrs.dns = Some(udp.local_addr()?);
-            tasks.push(tokio::spawn(crate::dns::serve_udp(state.clone(), Arc::new(udp))));
+            tasks.push(tokio::spawn(crate::dns::serve_udp(
+                state.clone(),
+                Arc::new(udp),
+            )));
             tasks.push(tokio::spawn(crate::dns::serve_tcp(state.clone(), tcp)));
         }
         if let Some(a) = opts.health {
-            let l = TcpListener::bind(a).await.with_context(|| format!("bind health {a}"))?;
+            let l = TcpListener::bind(a)
+                .await
+                .with_context(|| format!("bind health {a}"))?;
             addrs.health = Some(l.local_addr()?);
             tasks.push(tokio::spawn(crate::health::serve(state.clone(), l)));
         }
         match &opts.console_url {
-            Some(url) => tasks.push(tokio::spawn(crate::console_client::run(state.clone(), url.clone()))),
-            None => tasks.push(tokio::spawn(crate::console_client::write_local(state.clone()))),
+            Some(url) => tasks.push(tokio::spawn(crate::console_client::run(
+                state.clone(),
+                url.clone(),
+            ))),
+            None => tasks.push(tokio::spawn(crate::console_client::write_local(
+                state.clone(),
+            ))),
         }
-        Ok(RunningGateway { state, addrs, tasks })
+        Ok(RunningGateway {
+            state,
+            addrs,
+            tasks,
+        })
     }
 }
 
 /// Binds UDP and TCP on the same DNS port (an ephemeral port is retried until both bind).
 async fn bind_dns(a: SocketAddr) -> anyhow::Result<(UdpSocket, TcpListener)> {
     for _ in 0..20 {
-        let udp = UdpSocket::bind(a).await.with_context(|| format!("bind DNS/udp {a}"))?;
+        let udp = UdpSocket::bind(a)
+            .await
+            .with_context(|| format!("bind DNS/udp {a}"))?;
         let port = udp.local_addr()?.port();
         match TcpListener::bind(SocketAddr::new(a.ip(), port)).await {
             Ok(tcp) => return Ok((udp, tcp)),

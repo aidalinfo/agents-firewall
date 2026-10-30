@@ -59,7 +59,13 @@ impl Metrics {
 
     /// (p50, p95) of the recent decision latencies, in microseconds.
     pub fn percentiles(&self) -> (u64, u64) {
-        let mut v: Vec<u64> = self.latencies_us.lock().unwrap_or_else(|e| e.into_inner()).iter().copied().collect();
+        let mut v: Vec<u64> = self
+            .latencies_us
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .copied()
+            .collect();
         if v.is_empty() {
             return (0, 0);
         }

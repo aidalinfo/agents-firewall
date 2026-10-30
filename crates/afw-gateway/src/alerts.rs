@@ -20,7 +20,9 @@ pub const SCAN_HOSTS: usize = 10;
 pub const INTERNAL_BURST: usize = 100;
 /// New leaf names (SNI) per agent and minute before refusing (leaf cache exhaustion).
 pub const SNI_PER_MINUTE: usize = 20;
-pub const SENSITIVE_PORTS: &[u16] = &[22, 2375, 2376, 3306, 5432, 6379, 6443, 8006, 9200, 10250, 27017];
+pub const SENSITIVE_PORTS: &[u16] = &[
+    22, 2375, 2376, 3306, 5432, 6379, 6443, 8006, 9200, 10250, 27017,
+];
 const COOLDOWN: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
@@ -45,7 +47,10 @@ pub struct Alerts {
 }
 
 fn prune<T>(q: &mut VecDeque<T>, now: Instant, at: impl Fn(&T) -> Instant) {
-    while q.front().is_some_and(|x| now.duration_since(at(x)) > WINDOW) {
+    while q
+        .front()
+        .is_some_and(|x| now.duration_since(at(x)) > WINDOW)
+    {
         q.pop_front();
     }
 }
@@ -62,10 +67,24 @@ impl Alerts {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn raise(&self, st: &mut State, kind: AlertKind, severity: Severity, agent: Option<Uuid>, key: String, summary: String, details: serde_json::Value) {
+    #[allow(clippy::too_many_arguments)] // private helper: one call per alert kind
+    fn raise(
+        &self,
+        st: &mut State,
+        kind: AlertKind,
+        severity: Severity,
+        agent: Option<Uuid>,
+        key: String,
+        summary: String,
+        details: serde_json::Value,
+    ) {
         let now = Instant::now();
         let k = (kind, agent, key);
-        if st.last.get(&k).is_some_and(|t| now.duration_since(*t) < COOLDOWN) {
+        if st
+            .last
+            .get(&k)
+            .is_some_and(|t| now.duration_since(*t) < COOLDOWN)
+        {
             return;
         }
         st.last.insert(k, now);
@@ -90,7 +109,12 @@ impl Alerts {
         let w = st.agents.entry(agent).or_default();
         w.conns.push_back((now, dst.ip(), dst.port()));
         prune(&mut w.conns, now, |x| x.0);
-        let ports: HashSet<u16> = w.conns.iter().filter(|c| c.1 == dst.ip()).map(|c| c.2).collect();
+        let ports: HashSet<u16> = w
+            .conns
+            .iter()
+            .filter(|c| c.1 == dst.ip())
+            .map(|c| c.2)
+            .collect();
         let internal_hosts: HashSet<IpAddr> = if internal {
             w.internal.push_back(now);
             w.conns.iter().map(|c| c.1).collect()
@@ -104,24 +128,59 @@ impl Alerts {
             w.internal_hosts.clear();
         }
         if ports.len() >= SCAN_PORTS {
-            self.raise(&mut st, AlertKind::PortScan, Severity::Warning, agent, dst.ip().to_string(),
-                format!("{} ports of {} contacted in 60 s", ports.len(), dst.ip()), json!({"host": dst.ip(), "ports": ports.len()}));
+            self.raise(
+                &mut st,
+                AlertKind::PortScan,
+                Severity::Warning,
+                agent,
+                dst.ip().to_string(),
+                format!("{} ports of {} contacted in 60 s", ports.len(), dst.ip()),
+                json!({"host": dst.ip(), "ports": ports.len()}),
+            );
         }
         if internal_hosts.len() >= SCAN_HOSTS {
-            self.raise(&mut st, AlertKind::PortScan, Severity::Warning, agent, "hosts".into(),
-                format!("{} hosts contacted in 60 s", internal_hosts.len()), json!({"hosts": internal_hosts.len()}));
+            self.raise(
+                &mut st,
+                AlertKind::PortScan,
+                Severity::Warning,
+                agent,
+                "hosts".into(),
+                format!("{} hosts contacted in 60 s", internal_hosts.len()),
+                json!({"hosts": internal_hosts.len()}),
+            );
         }
         if burst >= INTERNAL_BURST {
-            self.raise(&mut st, AlertKind::InternalBurst, Severity::Warning, agent, String::new(),
-                format!("{burst} internal connections in 60 s"), json!({"connections": burst}));
+            self.raise(
+                &mut st,
+                AlertKind::InternalBurst,
+                Severity::Warning,
+                agent,
+                String::new(),
+                format!("{burst} internal connections in 60 s"),
+                json!({"connections": burst}),
+            );
         }
         if new_host {
-            self.raise(&mut st, AlertKind::NewInternalHost, Severity::Info, agent, dst.ip().to_string(),
-                format!("first connection to internal host {}", dst.ip()), json!({"host": dst.ip(), "port": dst.port()}));
+            self.raise(
+                &mut st,
+                AlertKind::NewInternalHost,
+                Severity::Info,
+                agent,
+                dst.ip().to_string(),
+                format!("first connection to internal host {}", dst.ip()),
+                json!({"host": dst.ip(), "port": dst.port()}),
+            );
         }
         if SENSITIVE_PORTS.contains(&dst.port()) {
-            self.raise(&mut st, AlertKind::SensitivePort, Severity::Warning, agent, dst.to_string(),
-                format!("connection to sensitive port {dst}"), json!({"destination": dst.to_string()}));
+            self.raise(
+                &mut st,
+                AlertKind::SensitivePort,
+                Severity::Warning,
+                agent,
+                dst.to_string(),
+                format!("connection to sensitive port {dst}"),
+                json!({"destination": dst.to_string()}),
+            );
         }
     }
 
@@ -133,23 +192,49 @@ impl Alerts {
         prune(&mut w.denies, now, |x| *x);
         let n = w.denies.len();
         if n >= DENY_BURST {
-            self.raise(&mut st, AlertKind::DenyBurst, Severity::Warning, agent, String::new(),
-                format!("{n} denied connections in 60 s"), json!({"denied": n}));
+            self.raise(
+                &mut st,
+                AlertKind::DenyBurst,
+                Severity::Warning,
+                agent,
+                String::new(),
+                format!("{n} denied connections in 60 s"),
+                json!({"denied": n}),
+            );
         }
     }
 
     pub fn cloud_metadata(&self, agent: Option<Uuid>, destination: &str) {
         let mut st = self.lock();
-        self.raise(&mut st, AlertKind::CloudMetadata, Severity::Critical, agent, destination.to_string(),
-            format!("attempt to reach cloud metadata ({destination})"), json!({"destination": destination}));
+        self.raise(
+            &mut st,
+            AlertKind::CloudMetadata,
+            Severity::Critical,
+            agent,
+            destination.to_string(),
+            format!("attempt to reach cloud metadata ({destination})"),
+            json!({"destination": destination}),
+        );
     }
 
     pub fn secret(&self, agent: Option<Uuid>, destination: &str, kinds: &[String], blocked: bool) {
         let mut st = self.lock();
-        self.raise(&mut st, AlertKind::SecretDetected, if blocked { Severity::Critical } else { Severity::Warning }, agent,
+        self.raise(
+            &mut st,
+            AlertKind::SecretDetected,
+            if blocked {
+                Severity::Critical
+            } else {
+                Severity::Warning
+            },
+            agent,
             format!("{destination}:{}", kinds.join(",")),
-            format!("secret detected towards {destination} ({})", if blocked { "blocked" } else { "allowed" }),
-            json!({"destination": destination, "kinds": kinds, "blocked": blocked}));
+            format!(
+                "secret detected towards {destination} ({})",
+                if blocked { "blocked" } else { "allowed" }
+            ),
+            json!({"destination": destination, "kinds": kinds, "blocked": blocked}),
+        );
     }
 
     pub fn admin_action(&self, agent: Option<Uuid>, a: &AdminAction) {
@@ -157,8 +242,15 @@ impl Alerts {
             return;
         }
         let mut st = self.lock();
-        self.raise(&mut st, AlertKind::UnusualAdminAction, Severity::Warning, agent, format!("{}:{}", a.action, a.resource),
-            format!("{:?} {} on {}", a.system, a.action, a.resource).to_lowercase(), json!({"system": a.system, "action": a.action, "resource": a.resource}));
+        self.raise(
+            &mut st,
+            AlertKind::UnusualAdminAction,
+            Severity::Warning,
+            agent,
+            format!("{}:{}", a.action, a.resource),
+            format!("{:?} {} on {}", a.system, a.action, a.resource).to_lowercase(),
+            json!({"system": a.system, "action": a.action, "resource": a.resource}),
+        );
     }
 
     /// Counts a new TLS server name for an agent; `false` when over [`SNI_PER_MINUTE`].
@@ -171,8 +263,17 @@ impl Alerts {
             return true;
         }
         if w.sni.len() >= SNI_PER_MINUTE {
-            self.raise(&mut st, AlertKind::NewDestination, Severity::Warning, agent, "sni-flood".into(),
-                format!("more than {SNI_PER_MINUTE} new TLS names per minute from {agent_ip}: refused"), json!({"source": agent_ip}));
+            self.raise(
+                &mut st,
+                AlertKind::NewDestination,
+                Severity::Warning,
+                agent,
+                "sni-flood".into(),
+                format!(
+                    "more than {SNI_PER_MINUTE} new TLS names per minute from {agent_ip}: refused"
+                ),
+                json!({"source": agent_ip}),
+            );
             return false;
         }
         w.sni.push_back((now, name.to_string()));

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { DestinationOption, FlowDetail, RuleView, Track, ZoneView } from '~/api/types'
 import { allowRuleCli, curlFor, httpReason } from '~/utils/cli'
-import { isBaselineLabel, shortFlowId, splitSocket, verdictTone } from '~/utils/format'
+import { shortFlowId, splitSocket, verdictTone } from '~/utils/format'
+import { bodyView } from '~/utils/security'
 
 const props = defineProps<{
   detail: FlowDetail | null
@@ -16,7 +17,7 @@ const fmt = useFmt()
 const api = useApi()
 const copy = useCopy()
 const toast = useToast()
-const { ensureOpen, refresh: refreshSession } = usePolicySession()
+const { session, ensureOpen, refresh: refreshSession } = usePolicySession()
 
 type Mode = 'tabs' | 'allow' | 'added'
 const mode = ref<Mode>('tabs')
@@ -26,7 +27,7 @@ const expiry = ref<number | null>(30)
 const track = ref<Track>('detailed')
 const busy = ref(false)
 const added = ref<RuleView | null>(null)
-const nextRevision = ref<number | null>(null)
+const nextRevision = computed(() => session.value?.next_revision ?? null)
 const zoneGateways = ref<string[]>([])
 
 watch(() => props.detail?.flow.id, () => {
@@ -44,7 +45,9 @@ const vColor = computed(() => (tone.value === 'ok' ? 'var(--ok)' : tone.value ==
 const vBg = computed(() => (tone.value === 'ok' ? 'var(--ok-bg)' : tone.value === 'obs' ? 'var(--obs-bg)' : 'var(--ko-bg)'))
 const vKey = computed(() => (tone.value === 'ok' ? 'allow' : tone.value === 'obs' ? 'observed' : 'deny'))
 const denied = computed(() => flow.value?.verdict === 'deny')
-const baselineLocked = computed(() => denied.value && !!flow.value && isBaselineLabel(flow.value.rule_label))
+const baselineLocked = computed(() => denied.value && flow.value?.decision.layer === 'baseline')
+const reqBody = computed(() => (http.value?.request_body ? bodyView(http.value.request_body) : null))
+const respBody = computed(() => (http.value?.response_body ? bodyView(http.value.response_body) : null))
 const proposal = computed(() => props.detail?.allow_proposal ?? null)
 const http = computed(() => props.detail?.http ?? null)
 const dst = computed(() => (flow.value ? splitSocket(flow.value.dst) : { host: '', port: '' }))
@@ -114,8 +117,7 @@ function openAllow() {
   if (!proposal.value) return
   mode.value = 'allow'
   void (async () => {
-    const [revs, zones] = await Promise.all([api.listRevisions(), api.listZones()])
-    nextRevision.value = (revs[0]?.number ?? 0) + 1
+    const zones = await api.listZones()
     zoneGateways.value = zones.find((z: ZoneView) => z.id === proposal.value?.zone.id)?.gateways ?? []
   })()
 }
@@ -494,15 +496,22 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
               </div>
               <div class="flex flex-col px-[10px] pb-2">
                 <span
-                  v-for="[k, v] in http.request_headers"
-                  :key="k"
+                  v-for="([k, v], i) in http.request_headers"
+                  :key="i"
                   class="break-all"
                 ><span class="text-syn-key">{{ k }}:</span> <span :class="v.startsWith('[secret:') ? 'text-obs' : k.startsWith('X-AFW') ? 'text-text2' : ''">{{ v }}</span></span>
               </div>
               <pre
-                v-if="http.request_body"
+                v-if="reqBody"
                 class="m-0 whitespace-pre-wrap break-all border-t border-dashed border-line2 px-[10px] py-2 font-mono text-syn-str"
-              >{{ http.request_body.data }}</pre>
+                data-testid="request-body"
+              >{{ reqBody.kind === 'text' ? reqBody.text : t('flow.binary', { size: fmt.bytes(reqBody.size) }) }}</pre>
+              <div
+                v-if="reqBody?.truncated"
+                class="border-t border-dashed border-line2 px-[10px] py-1 text-[10.5px] text-warn"
+              >
+                {{ t('flow.truncated', { size: fmt.bytes(reqBody.size) }) }}
+              </div>
             </template>
             <template v-else>
               <div class="flex flex-col px-[10px] py-2">
@@ -522,7 +531,23 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
                 :style="{ color: denied ? 'var(--ko)' : 'var(--ok)' }"
               >{{ statusLine }}</span>
             </div>
-            <pre class="m-0 whitespace-pre-wrap break-all px-[10px] pb-2 font-mono text-text2">{{ http?.response_body?.data ?? '' }}</pre>
+            <div
+              v-if="http?.response_headers.length"
+              class="flex flex-col px-[10px] pb-1"
+            >
+              <span
+                v-for="([k, v], i) in http.response_headers"
+                :key="i"
+                class="break-all"
+              ><span class="text-syn-key">{{ k }}:</span> <span :class="v.startsWith('[secret:') ? 'text-obs' : ''">{{ v }}</span></span>
+            </div>
+            <pre class="m-0 whitespace-pre-wrap break-all px-[10px] pb-2 font-mono text-text2">{{ respBody ? (respBody.kind === 'text' ? respBody.text : t('flow.binary', { size: fmt.bytes(respBody.size) })) : '' }}</pre>
+            <div
+              v-if="respBody?.truncated"
+              class="px-[10px] pb-1 text-[10.5px] text-warn"
+            >
+              {{ t('flow.truncated', { size: fmt.bytes(respBody.size) }) }}
+            </div>
           </div>
           <span class="flex items-center gap-1.5 text-[11px] text-text3">
             <UIcon

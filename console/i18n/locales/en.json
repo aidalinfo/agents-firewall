@@ -175,6 +175,7 @@
       "time": "Time"
     },
     "export": "Export",
+    "exportFailed": "Export failed",
     "full": "Full log",
     "iface": {
       "api": "API",
@@ -218,6 +219,7 @@
     },
     "backToJournal": "back to the log",
     "baselineLocked": "Baseline · cannot be overridden",
+    "binary": "[binary content · {size}]",
     "captureStarted": "Capture requested for {agent}",
     "closed": "connection closed",
     "connRefused": "connection refused · rule {rule}",
@@ -264,6 +266,7 @@
     },
     "toolCall": "tool call",
     "topDown": "top-down evaluation",
+    "truncated": "truncated for display · actual size {size}",
     "uncertain": "Uncertain attribution",
     "untrusted": "untrusted input · {source}",
     "why": "Why this verdict"
@@ -317,7 +320,8 @@
     "version": "Version",
     "warn": {
       "console_unreachable": "Console unreachable ({since}): the gateway keeps enforcing revision {n}."
-    }
+    },
+    "warnGeneric": "State reported by the gateway: {detail}"
   },
   "internal": {
     "admin": "Admin API calls",
@@ -405,6 +409,7 @@
     "kubernetes": "Kubernetes"
   },
   "login": {
+    "badState": "Identity provider answer refused (invalid state). Please sign in again.",
     "demo": "Demo mode: sample data, no call to the control plane. Any token is accepted.",
     "failed": "Sign-in refused",
     "intro": "Sign in with your identity provider, or use an API token.",
@@ -563,7 +568,6 @@
     "viewer": "viewer"
   },
   "rules": {
-    "activeRev": "active: rev. {n}",
     "all": "All",
     "any": "Any",
     "anyDest": "Any destination",
@@ -572,8 +576,6 @@
       "draftSub": "{who} · opened {when} · {locks} object(s) locked for other sessions",
       "idle": "No open session",
       "idleSub": "Revision {n} installed · any change opens a personal session, nothing applies before install",
-      "install": "Revision {n} published · choose gateways",
-      "installSub": "Install is atomic per gateway; on failure revision {prev} stays active",
       "installed": "Revision {n} installed on {ok}/{total} gateways",
       "installedSub": "Covered flows now go through · rollback available from Revisions",
       "publish": "Session “{name}” · verification",
@@ -607,16 +609,12 @@
     "defaultSessionName": "Changes",
     "diffWith": "Differences with revision {n}",
     "discard": "Discard",
-    "installAria": "Install the policy",
-    "installEllipsis": "Install…",
-    "installOn": "Install on {n} gateways | Install on {n} gateway | Install on {n} gateways",
-    "installRev": "Install revision {n}",
+    "installSummary": "Install rev. {n} on {gws} | Install rev. {n} on {gws} | Install rev. {n} on {count} gateways: {gws}",
     "noShadow": "No rule shadowed by a higher one",
     "nonBlocking": "Non-blocking warnings.",
     "notInstalled": "not installed yet",
     "observeText": "Since {since} · everything is logged, nothing is denied (except the baseline). {n} distinct destinations seen, {u} not covered by a rule.",
     "openSession": "Open a session",
-    "preselected": "Gateways carrying the changed zone are preselected",
     "proposeFromTraffic": "Suggest rules from traffic",
     "publishAria": "Publish the session",
     "publishFailed": "Publish failed",
@@ -663,7 +661,7 @@
   "status": {
     "ingestion": "ingestion {n}/min",
     "latency": "added latency p95 {ms} ms",
-    "revision": "policy rev. {n}"
+    "revision": "policy rev. {n} · {k}/{total} gateways"
   },
   "steps": {
     "install": "Install",

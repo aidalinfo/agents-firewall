@@ -8,11 +8,11 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { session, refresh: refreshSession } = usePolicySession()
-const { refreshShell } = useShell()
+const { refreshShell, policy } = useShell()
 
 useHead({ title: () => `${t('nav.rules')} — agents-firewall` })
 
-type Phase = 'idle' | 'draft' | 'publish' | 'published' | 'install' | 'installed'
+type Phase = 'idle' | 'draft' | 'publish' | 'published' | 'installed'
 const phase = ref<Phase>('idle')
 const search = ref('')
 const zones = ref<ZoneView[]>([])
@@ -21,10 +21,10 @@ const report = ref<VerifyReport | null>(null)
 const comment = ref('')
 const published = ref<Revision | null>(null)
 const gateways = ref<Gateway[]>([])
-const selectedGws = ref<string[]>([])
 const install = ref<Install | null>(null)
 const busy = ref(false)
-const currentRevision = ref<number | null>(null)
+/** Revision numbers are those the API reports: never predicted by the console. */
+const installedRevision = computed(() => policy.data.value?.installed_revision ?? null)
 
 const zoneId = computed(() => (typeof route.query.zone === 'string' ? route.query.zone : zones.value[0]?.id))
 const zone = computed(() => zones.value.find(z => z.id === zoneId.value) ?? null)
@@ -35,9 +35,8 @@ async function loadRules() {
 }
 
 async function loadAll() {
-  const [z, revs] = await Promise.all([api.listZones(), api.listRevisions(), refreshSession()])
+  const [z] = await Promise.all([api.listZones(), refreshSession(), policy.refresh()])
   zones.value = z
-  currentRevision.value = revs[0]?.number ?? null
   if (phase.value === 'idle' || phase.value === 'draft') phase.value = session.value ? 'draft' : 'idle'
   await loadRules()
 }
@@ -79,8 +78,8 @@ async function doPublish() {
   busy.value = true
   try {
     published.value = await api.publishSession(session.value.id, comment.value)
-    currentRevision.value = published.value.number
     comment.value = ''
+    gateways.value = await api.listGateways()
     await refreshSession()
     phase.value = 'published'
     await Promise.all([loadRules(), refreshShell()])
@@ -93,21 +92,14 @@ async function doPublish() {
   }
 }
 
-async function goInstall() {
-  gateways.value = await api.listGateways()
-  selectedGws.value = gateways.value.map(g => g.id)
-  phase.value = 'install'
-}
-
-function toggleGw(id: string) {
-  selectedGws.value = selectedGws.value.includes(id) ? selectedGws.value.filter(x => x !== id) : [...selectedGws.value, id]
-}
+/** Gateways carrying the zones of the published policy: all of them, as listed by the API. */
+const targets = computed(() => gateways.value)
 
 async function doInstall() {
-  if (!published.value || busy.value) return
+  if (!published.value || busy.value || !targets.value.length) return
   busy.value = true
   try {
-    install.value = await api.install(published.value.number, selectedGws.value)
+    install.value = await api.install(published.value.number, targets.value.map(g => g.id))
     phase.value = 'installed'
     await Promise.all([loadRules(), refreshShell()])
   }
@@ -117,10 +109,10 @@ async function doInstall() {
 }
 
 const steps = computed(() => {
-  const order: Phase[] = ['draft', 'publish', 'published', 'install', 'installed']
+  const order: Phase[] = ['draft', 'publish', 'published', 'installed']
   const idx = order.indexOf(phase.value)
-  const at = idx < 0 ? 0 : [0, 0, 1, 1, 2][idx]!
-  const done = idx < 0 ? -1 : [-1, -1, 0, 0, 2][idx]!
+  const at = idx < 0 ? 0 : [0, 0, 1, 2][idx]!
+  const done = idx < 0 ? -1 : [-1, -1, 0, 2][idx]!
   return (['modify', 'publish', 'install'] as const).map((k, i) => ({
     key: k,
     n: i <= done ? '✓' : String(i + 1),
@@ -138,13 +130,11 @@ const bar = computed(() => {
     case 'publish':
       return { title: t('rules.bar.publish', { name: s?.name ?? '' }), sub: t('rules.bar.publishSub'), bg: 'var(--warn-bg)', fg: 'var(--warn)' }
     case 'published':
-      return { title: t('rules.bar.published', { n: rev }), sub: t('rules.bar.publishedSub', { who: published.value?.author.name ?? '', at: fmt.hm(published.value?.published_at), prev: (rev ?? 1) - 1 }), bg: 'var(--pri-bg)', fg: 'var(--pri)' }
-    case 'install':
-      return { title: t('rules.bar.install', { n: rev }), sub: t('rules.bar.installSub', { prev: (rev ?? 1) - 1 }), bg: 'var(--pri-bg)', fg: 'var(--pri)' }
+      return { title: t('rules.bar.published', { n: rev }), sub: t('rules.bar.publishedSub', { who: published.value?.author.name ?? '', at: fmt.hm(published.value?.published_at), prev: installedRevision.value ?? '—' }), bg: 'var(--pri-bg)', fg: 'var(--pri)' }
     case 'installed':
-      return { title: t('rules.bar.installed', { n: rev, ok: install.value?.results.filter(r => r.ok).length ?? 0, total: install.value?.results.length ?? 0 }), sub: t('rules.bar.installedSub'), bg: 'var(--ok-bg)', fg: 'var(--ok)' }
+      return { title: t('rules.bar.installed', { n: policy.data.value?.installed_revision ?? rev, ok: policy.data.value?.gateways_on_revision ?? 0, total: policy.data.value?.gateways_total ?? 0 }), sub: t('rules.bar.installedSub'), bg: 'var(--ok-bg)', fg: 'var(--ok)' }
     default:
-      return { title: t('rules.bar.idle'), sub: t('rules.bar.idleSub', { n: currentRevision.value ?? '—' }), bg: 'var(--panel)', fg: 'var(--text3)' }
+      return { title: t('rules.bar.idle'), sub: t('rules.bar.idleSub', { n: installedRevision.value ?? '—' }), bg: 'var(--panel)', fg: 'var(--text3)' }
   }
 })
 
@@ -244,12 +234,15 @@ function notAvailable() {
             @click="goPublish"
           >{{ t('rules.verifyPublish') }}</UButton>
         </template>
-        <template v-else-if="phase === 'published' || phase === 'install'">
+        <template v-else-if="phase === 'published'">
           <UButton
             class="bg-pri font-[650] text-pri-fg hover:bg-pri/90"
-            data-testid="go-install"
-            @click="goInstall"
-          >{{ t('rules.installEllipsis') }}</UButton>
+            :loading="busy"
+            :disabled="!targets.length"
+            :title="targets.map(g => g.name).join(', ')"
+            data-testid="do-install"
+            @click="doInstall"
+          >{{ t('rules.installSummary', { n: published?.number, gws: targets.map(g => g.name).join(', ') }, targets.length) }}</UButton>
         </template>
         <template v-else>
           <UButton
@@ -270,7 +263,7 @@ function notAvailable() {
     >
       <div class="flex flex-[1_1_360px] flex-col gap-2">
         <h2 class="m-0 text-sm font-[650]">
-          {{ t('rules.diffWith', { n: currentRevision }) }}
+          {{ t('rules.diffWith', { n: session.base_revision }) }}
         </h2>
         <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px]">
           <li
@@ -332,64 +325,9 @@ function notAvailable() {
             :loading="busy"
             data-testid="do-publish"
             @click="doPublish"
-          >{{ t('rules.publishRev', { n: (currentRevision ?? 0) + 1 }) }}</UButton>
+          >{{ t('rules.publishRev', { n: session.next_revision }) }}</UButton>
         </span>
       </div>
-    </section>
-
-    <section
-      v-if="phase === 'install'"
-      :aria-label="t('rules.installAria')"
-      class="mx-4 mt-[14px] flex flex-col gap-3 rounded-[10px] border border-line2 bg-panel p-4"
-      data-testid="install-panel"
-    >
-      <div class="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 class="m-0 text-sm font-[650]">
-          {{ t('rules.installRev', { n: published?.number }) }}
-        </h2>
-        <span class="text-xs text-text3">{{ t('rules.preselected') }}</span>
-      </div>
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-[10px]">
-        <button
-          v-for="g in gateways"
-          :key="g.id"
-          type="button"
-          role="checkbox"
-          :aria-checked="selectedGws.includes(g.id)"
-          class="flex items-start gap-[10px] rounded-lg border border-line bg-transparent px-3 py-[10px] text-left"
-          @click="toggleGw(g.id)"
-        >
-          <span
-            class="mt-px flex size-[18px] flex-none items-center justify-center rounded-[5px] border-[1.5px] text-pri-fg"
-            :class="selectedGws.includes(g.id) ? 'border-pri bg-pri' : 'border-line2 bg-transparent'"
-          >
-            <UIcon
-              v-if="selectedGws.includes(g.id)"
-              name="i-lucide-check"
-              class="size-3"
-            />
-          </span>
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <strong class="font-mono text-[12.5px]">{{ g.name }}</strong>
-            <span class="text-xs text-text2">{{ g.zones.join(', ') }} · {{ g.agents.join(', ') }}</span>
-            <span class="text-[11.5px] text-text3">{{ g.environment.split(' · ')[0] }} · {{ t('rules.activeRev', { n: g.revision }) }}</span>
-          </span>
-        </button>
-      </div>
-      <span class="flex justify-end gap-2">
-        <UButton
-          color="neutral"
-          variant="outline"
-          @click="phase = 'published'"
-        >{{ t('common.cancel') }}</UButton>
-        <UButton
-          class="bg-pri font-[650] text-pri-fg hover:bg-pri/90"
-          :disabled="!selectedGws.length"
-          :loading="busy"
-          data-testid="do-install"
-          @click="doInstall"
-        >{{ t('rules.installOn', selectedGws.length) }}</UButton>
-      </span>
     </section>
 
     <section

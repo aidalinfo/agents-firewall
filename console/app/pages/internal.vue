@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AlertChannel, InternalMap, InternalNode } from '~/api/types'
+import { safeHref } from '~/utils/security'
 
 const { t } = useI18n()
 const api = useApi()
@@ -24,7 +25,7 @@ const layout = computed(() => {
   const agents = nodes.filter(n => n.kind === 'agent')
   const systems = nodes.filter(n => n.kind === 'system')
   const place = (list: InternalNode[], x: number, w: number, top: number, bottom: number) =>
-    list.map((n, i) => ({ ...n, x, w, y: list.length === 1 ? top : Math.round(top + (i * (bottom - top)) / (list.length - 1)) }))
+    list.map((n, i) => ({ ...n, href: safeHref(n.href), x, w, y: list.length === 1 ? top : Math.round(top + (i * (bottom - top)) / (list.length - 1)) }))
   return [...place(agents, 40, 170, 40, H - 90), ...place(systems, 600, 210, 20, H - 60)]
 })
 

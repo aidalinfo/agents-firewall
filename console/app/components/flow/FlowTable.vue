@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FlowSummary } from '~/api/types'
-import { isBaselineLabel, verdictTone } from '~/utils/format'
+import { verdictTone } from '~/utils/format'
 
 defineProps<{
   flows: FlowSummary[]
@@ -65,7 +65,7 @@ function tone(f: FlowSummary) {
         <span class="flex min-w-0 items-center gap-1.5">
           <span
             class="rounded bg-sub px-[5px] font-mono text-[11px] font-semibold"
-            :style="{ color: isBaselineLabel(f.rule_label) ? 'var(--obs)' : 'var(--text)' }"
+            :style="{ color: f.decision.layer === 'baseline' ? 'var(--obs)' : 'var(--text)' }"
           >#{{ f.rule_label }}</span>
           <span class="truncate text-[11.5px] text-text2">{{ f.decision.rule_name }}</span>
         </span>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { Gateway, GatewayCommandKind, Install, RegistrationToken } from '~/api/types'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
+const detail = (d: string) => (te(`gateways.detail.${d}`) ? t(`gateways.detail.${d}`) : d)
+const warnText = (g: Gateway) => (te(`gateways.warn.${g.status_detail}`) ? t(`gateways.warn.${g.status_detail}`, { since: fmt.rel(g.last_seen_at), n: g.revision ?? '—' }) : t('gateways.warnGeneric', { detail: g.status_detail ?? '' }))
 const api = useApi()
 const fmt = useFmt()
 const toast = useToast()
@@ -84,13 +86,13 @@ onMounted(() => void refreshShell())
             <span
               class="rounded-full px-2 py-px text-[11.5px] font-bold"
               :class="look(g).st"
-            >{{ g.status_detail ? t(`gateways.detail.${g.status_detail}`) : t(`gateways.status.${g.status}`) }}</span>
+            >{{ g.status_detail ? detail(g.status_detail) : t(`gateways.status.${g.status}`) }}</span>
           </div>
           <div
             v-if="g.status_detail"
             class="border-b border-line bg-warn-bg px-[14px] py-2 text-xs text-text"
           >
-            {{ t(`gateways.warn.${g.status_detail}`, { since: fmt.rel(g.last_seen_at), n: g.revision }) }}
+            {{ warnText(g) }}
           </div>
           <dl class="m-0 grid grid-cols-[136px_minmax(0,1fr)] gap-x-[10px] gap-y-1.5 px-[14px] py-3 text-[12.5px]">
             <dt class="text-text3">

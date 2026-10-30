@@ -60,12 +60,12 @@ describe('« Autoriser » journey (mock API)', () => {
     await until(() => journal.find('[data-testid="allow-form"]').exists(), 'allow form')
 
     const cli = journal.find('[data-testid="cli-snippet"]').text()
-    expect(cli).toContain('--zone bots-internes')
-    expect(cli).toContain('--dest dom-api.exemple.com --create-object')
-    expect(cli).toContain('--before 12 --expire 30d')
+    expect(cli).toContain("--zone 'bots-internes'")
+    expect(cli).toContain("--dest 'dom-api.exemple.com' --create-object")
+    expect(cli).toContain("--before '12' --expire 30d")
 
     await journal.find('[data-testid="allow-dest-group"]').trigger('click')
-    expect(journal.find('[data-testid="cli-snippet"]').text()).toContain('--dest grp-portails-partenaires \\')
+    expect(journal.find('[data-testid="cli-snippet"]').text()).toContain("--dest 'grp-portails-partenaires' \\")
     await journal.find('[data-testid="allow-dest-exact"]').trigger('click')
 
     await journal.find('[data-testid="allow-submit"]').trigger('click')
@@ -88,13 +88,13 @@ describe('« Autoriser » journey (mock API)', () => {
     expect(rules.find('[data-testid="publish-panel"]').text()).toContain('Différences avec la révision 42')
     expect(rules.find('[data-testid="publish-panel"]').text()).toContain('Règle expirée encore en place : 25')
 
+    expect(rules.find('[data-testid="do-publish"]').text()).toContain('Publier la révision 43')
     await rules.find('[data-testid="do-publish"]').trigger('click')
-    await until(() => rules.find('[data-testid="go-install"]').exists(), 'published')
+    await until(() => rules.find('[data-testid="do-install"]').exists(), 'published')
     expect(rules.find('[data-testid="session-bar-title"]').text()).toContain('Révision 43 publiée')
-
-    await rules.find('[data-testid="go-install"]').trigger('click')
-    await until(() => rules.find('[data-testid="do-install"]').exists(), 'install panel')
-    expect(rules.find('[data-testid="do-install"]').text()).toContain('Installer sur 3 passerelles')
+    expect(rules.find('[data-testid="session-bar"]').text()).toContain('appliquent toujours la révision 42')
+    // One click, the summary is in the button.
+    expect(rules.find('[data-testid="do-install"]').text()).toContain('Installer la rév. 43 sur 3 passerelles : gw-hermes-01, gw-hermes-02, gw-ops-01')
     await rules.find('[data-testid="do-install"]').trigger('click')
     await until(() => rules.find('[data-testid="install-result"]').exists(), 'installed')
     expect(rules.find('[data-testid="session-bar-title"]').text()).toContain('Révision 43 installée sur 3/3 passerelles')

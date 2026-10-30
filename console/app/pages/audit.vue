@@ -33,6 +33,32 @@ async function load(reset = true) {
   }
 }
 
+const exporting = ref(false)
+const toast = useToast()
+
+/** Fetches the export with the bearer token (never a token in a URL), then saves it as a file. */
+async function exportAudit() {
+  exporting.value = true
+  try {
+    const blob = await api.exportAudit()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.ndjson`
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  catch (e) {
+    toast.add({ title: t('audit.exportFailed'), description: e instanceof Error ? e.message : String(e), color: 'error' })
+  }
+  finally {
+    exporting.value = false
+  }
+}
+
 async function verify() {
   chain.value = await api.verifyAudit()
 }
@@ -52,13 +78,13 @@ const actorItems = computed(() => [{ label: t('audit.allAuthors'), value: 'all' 
     >
       <template #actions>
         <UButton
-          :to="api.auditExportUrl()"
-          target="_blank"
           color="neutral"
           variant="outline"
           size="sm"
           icon="i-lucide-download"
-          download="audit.ndjson"
+          :loading="exporting"
+          data-testid="audit-export"
+          @click="exportAudit"
         >
           {{ t('audit.export') }}
         </UButton>

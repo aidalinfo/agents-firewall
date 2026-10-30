@@ -14,6 +14,33 @@ describe('http API', () => {
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('https://afw.example/api/v1/logs/flows?agent=daniel-bot&verdict=deny&destination=*.exemple.com')
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer tok-1')
+    expect(new Headers(init.headers).get('x-afw-interface')).toBe('ui')
+  })
+
+  it('tags every request, including the SSE stream, with X-Afw-Interface: ui', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({}))
+    const api = createHttpApi({ baseUrl: '', getToken: () => null, fetch })
+    await api.openSession('s')
+    const stop = api.streamLogs(() => {})
+    await new Promise(r => setTimeout(r, 0))
+    stop()
+    for (const [, init] of fetch.mock.calls) expect(new Headers(init.headers).get('x-afw-interface')).toBe('ui')
+  })
+
+  it('downloads the audit export with the bearer token as a Blob', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{"seq":1}\n', { status: 200, headers: { 'content-type': 'application/x-ndjson' } }))
+    const api = createHttpApi({ baseUrl: 'https://afw.example', getToken: () => 'tok-9', fetch })
+    const blob = await api.exportAudit()
+    const [url, init] = fetch.mock.calls[0]!
+    expect(url).toBe('https://afw.example/api/v1/audit/export')
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer tok-9')
+    expect(blob).toBeInstanceOf(Blob)
+    expect(await blob.text()).toBe('{"seq":1}\n')
+  })
+
+  it('passes the OIDC state to the login entry point', () => {
+    const api = createHttpApi({ baseUrl: 'https://afw.example', getToken: () => null, fetch: vi.fn() })
+    expect(api.oidcLoginUrl('https://console.example/', 'abc123')).toBe('https://afw.example/api/v1/auth/oidc/login?redirect=https%3A%2F%2Fconsole.example%2F&state=abc123')
   })
 
   it('posts JSON bodies', async () => {

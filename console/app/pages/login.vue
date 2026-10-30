@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { createOidcState, safeRedirect, takeOidcState } from '~/utils/security'
+
 definePageMeta({ layout: 'auth' })
 
 const { t, locale } = useI18n()
@@ -14,17 +16,14 @@ const error = ref<string | null>(null)
 
 useHead({ title: () => `${t('login.title')} — agents-firewall` })
 
-const redirect = computed(() => {
-  const r = route.query.redirect
-  return typeof r === 'string' && r.startsWith('/') && !r.startsWith('//') ? r : '/'
-})
+const redirect = computed(() => safeRedirect(route.query.redirect, window.location.origin))
 
-async function withToken(value: string) {
+async function withToken(value: string, target = redirect.value) {
   busy.value = true
   error.value = null
   try {
     await login(value)
-    await navigateTo(redirect.value)
+    await navigateTo(safeRedirect(target, window.location.origin))
   }
   catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -35,20 +34,26 @@ async function withToken(value: string) {
 }
 
 function oidc() {
-  const url = api.oidcLoginUrl(`${window.location.origin}${redirect.value}`)
+  // Anti-CSRF: random state kept in sessionStorage, checked on the way back.
+  const state = createOidcState(redirect.value, sessionStorage)
+  const url = api.oidcLoginUrl(`${window.location.origin}/login`, state)
   if (url) window.location.href = url
   // Mock mode: no identity provider, the demo session stands for an OIDC login.
-  else void withToken('demo-oidc-session')
+  else void withToken('demo-oidc-session', takeOidcState(state, sessionStorage).redirect)
 }
 
-// OIDC callback: the control plane redirects back with #access_token=… (never in the query string).
+// OIDC callback: the control plane redirects back with #access_token=…&state=… (never in the query string).
 onMounted(() => {
   const hash = new URLSearchParams(window.location.hash.slice(1))
   const accessToken = hash.get('access_token')
-  if (accessToken) {
-    history.replaceState(null, '', window.location.pathname + window.location.search)
-    void withToken(accessToken)
+  if (!accessToken) return
+  history.replaceState(null, '', window.location.pathname + window.location.search)
+  const check = takeOidcState(hash.get('state'), sessionStorage)
+  if (!check.ok) {
+    error.value = t('login.badState')
+    return
   }
+  void withToken(accessToken, check.redirect)
 })
 </script>
 

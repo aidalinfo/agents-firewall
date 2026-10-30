@@ -56,7 +56,8 @@ export function createHttpApi(opts: HttpOptions): AfwApi {
   const root = `${opts.baseUrl.replace(/\/$/, '')}/api/v1`
 
   function headers(extra: Record<string, string> = {}): Headers {
-    const h = new Headers({ accept: 'application/json', ...extra })
+    // Every console call is tagged so that the audit log records the interface (§8).
+    const h = new Headers({ 'accept': 'application/json', 'x-afw-interface': 'ui', ...extra })
     const token = opts.getToken()
     if (token) h.set('authorization', `Bearer ${token}`)
     return h
@@ -100,7 +101,8 @@ export function createHttpApi(opts: HttpOptions): AfwApi {
 
   return {
     me: () => get('/me'),
-    oidcLoginUrl: redirect => `${root}/auth/oidc/login${qs({ redirect })}`,
+    oidcLoginUrl: (redirect, state) => `${root}/auth/oidc/login${qs({ redirect, state })}`,
+    policyStatus: () => get('/policy/status'),
 
     listFlows: q => get('/logs/flows', flowQuery(q)),
     flowStats: q => get('/logs/flows/stats', flowQuery(q)),
@@ -181,7 +183,18 @@ export function createHttpApi(opts: HttpOptions): AfwApi {
 
     listAudit: q => get('/audit', { ...q }),
     verifyAudit: () => get('/audit/verify'),
-    auditExportUrl: () => `${root}/audit/export`,
+    exportAudit: async () => {
+      let res: Response
+      try {
+        res = await doFetch(`${root}/audit/export`, { headers: headers({ accept: 'application/x-ndjson' }) })
+      }
+      catch (e) {
+        throw new ApiError(0, 'Network error', e instanceof Error ? e.message : String(e))
+      }
+      if (res.status === 401) opts.onUnauthorized?.()
+      if (!res.ok) throw new ApiError(res.status, res.statusText || `HTTP ${res.status}`)
+      return await res.blob()
+    },
 
     listGateways: async () => items(await get('/gateways')),
     listInstalls: async () => items(await get('/installs')),

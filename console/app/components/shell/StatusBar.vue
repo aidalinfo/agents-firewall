@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const { t } = useI18n()
-const { gateways, installedRevision, p95, stats } = useShell()
+const { t, te } = useI18n()
+const { gateways, policy, stats } = useShell()
+const detail = (d: string) => (te(`gateways.detail.${d}`) ? t(`gateways.detail.${d}`) : d)
 const emit = defineEmits<{ shortcuts: [] }>()
 </script>
 
@@ -21,11 +22,14 @@ const emit = defineEmits<{ shortcuts: [] }>()
           class="size-1.5 rounded-full"
           :class="g.status === 'online' ? 'bg-ok' : g.status === 'degraded' ? 'bg-warn' : 'bg-ko'"
         />
-        {{ g.name }}<template v-if="g.status_detail"> · {{ t(`gateways.detail.${g.status_detail}`) }}</template>
+        {{ g.name }}<template v-if="g.status_detail"> · {{ detail(g.status_detail) }}</template>
       </span>
     </NuxtLink>
-    <span v-if="installedRevision">{{ t('status.revision', { n: installedRevision }) }}</span>
-    <span v-if="p95 != null">{{ t('status.latency', { ms: p95 }) }}</span>
+    <span
+      v-if="policy.data.value?.installed_revision != null"
+      data-testid="status-revision"
+    >{{ t('status.revision', { n: policy.data.value.installed_revision, k: policy.data.value.gateways_on_revision, total: policy.data.value.gateways_total }) }}</span>
+    <span v-if="policy.data.value?.latency_p95_ms != null">{{ t('status.latency', { ms: policy.data.value.latency_p95_ms }) }}</span>
     <span v-if="stats.data.value">{{ t('status.ingestion', { n: stats.data.value.per_minute }) }}</span>
     <span class="flex-1" />
     <button

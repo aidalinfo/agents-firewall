@@ -79,7 +79,7 @@ const comment = (r: RuleView) => r.comment || (r.previous_number ? t('rules.wasR
         >
           <span
             class="font-mono text-xs font-semibold"
-            :class="r.number.startsWith('S') ? 'text-obs' : ''"
+            :class="r.layer.type === 'baseline' ? 'text-obs' : ''"
           >{{ r.number }}</span>
           <span class="flex min-w-0 flex-col leading-[1.3]">
             <span class="flex min-w-0 items-center gap-1.5">

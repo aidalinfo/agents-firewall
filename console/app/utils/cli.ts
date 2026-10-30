@@ -13,20 +13,25 @@ export interface AllowCliInput {
   flowId: string
 }
 
-/** "Équivalent CLI" of the pre-filled rule — same operation through the `afw` CLI, the API or the MCP. */
+/**
+ * "Équivalent CLI" of the pre-filled rule — same operation through the `afw` CLI, the API or the MCP.
+ * Every value comes from the API (and ultimately from agent traffic): all of them are single-quoted
+ * so that pasting the command in a shell can never run anything else.
+ */
 export function allowRuleCli(i: AllowCliInput): string {
+  const days = i.expiresInDays == null ? '' : ` --expire ${Math.trunc(Number(i.expiresInDays))}d`
   return [
     '$ afw rule add \\',
-    `    --zone ${i.zone} \\`,
-    `    --dest ${i.dest}${i.createObject ? ' --create-object' : ''} \\`,
-    `    --service ${i.service} --action accept \\`,
-    `    --before ${i.before}${i.expiresInDays == null ? '' : ` --expire ${i.expiresInDays}d`} \\`,
-    `    --comment "flux ${i.flowId}"`,
+    `    --zone ${sq(i.zone)} \\`,
+    `    --dest ${sq(i.dest)}${i.createObject ? ' --create-object' : ''} \\`,
+    `    --service ${sq(i.service)} --action accept \\`,
+    `    --before ${sq(i.before)}${days} \\`,
+    `    --comment ${sq(`flux ${i.flowId}`)}`,
   ].join('\n')
 }
 
 export function curlFor(req: { method: string, url: string, headers: [string, string][] }): string {
-  const lines = [`curl -X ${req.method} ${sq(req.url)}`, ...req.headers.map(([k, v]) => `  -H ${sq(`${k}: ${v}`)}`)]
+  const lines = [`curl -X ${sq(req.method)} ${sq(req.url)}`, ...req.headers.map(([k, v]) => `  -H ${sq(`${k}: ${v}`)}`)]
   return lines.join(' \\\n')
 }
 

@@ -110,10 +110,6 @@ export function ruleLabel(decision: Pick<DecisionRef, 'layer' | 'rule_number'>):
   return decision.layer === 'baseline' ? `S${decision.rule_number}` : String(decision.rule_number)
 }
 
-export function isBaselineLabel(label: string): boolean {
-  return label.startsWith('S')
-}
-
 /** Short flow identifier shown in the journal: "f-8c21e4". */
 export function shortFlowId(id: string): string {
   return `f-${id.replace(/-/g, '').slice(0, 6)}`

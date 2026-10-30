@@ -33,7 +33,10 @@ n'existent. Elle ne doit porter aucune logique métier : tout ce qu'elle affiche
      `previous_number`), `NetObjectView`, `ZoneView`, `AgentOverview`, `InternalMap`, `FlowStats` ;
    - `POST /sessions/{id}/allow-from-log` reçoit `{ flow_id, destination: exact|group|wildcard,
      expires_in_days, track }` ; les options proposées viennent de `allow_proposal` dans le détail du flux ;
-   - routes ajoutées : `GET /logs/flows/stats`, `POST /alerts/{id}/ack`, `GET /auth/oidc/login`.
+   - routes ajoutées : `GET /logs/flows/stats`, `GET /policy/status` (révision installée, k/n passerelles
+     sur cette révision, latence p95), `POST /alerts/{id}/ack`, `GET /auth/oidc/login?redirect&state` ;
+   - `Session` porte `base_revision` et `next_revision` : la console n'invente aucun numéro de révision ;
+     `AgentDestination.rule_layer` : le socle se reconnaît par la couche, jamais par le préfixe « S ».
    L3b remplace `types.ts` par les types générés (`openapi-typescript`) et adapte `http.ts`.
 4. **Thème.** Les jetons de la maquette (`--bg`, `--panel`, `--pri`, `--ok`, `--ko`, `--warn`, `--obs`…)
    sont définis en clair sur `:root` et en sombre sur `.dark` (sombre par défaut, `@nuxtjs/color-mode`),
@@ -44,7 +47,23 @@ n'existent. Elle ne doit porter aucune logique métier : tout ce qu'elle affiche
    disponible ; le choix est mémorisé localement. Un test vérifie la parité des clés et que chaque clé
    utilisée existe. Les textes libres renvoyés par l'API (commentaires, résumés) ne sont pas traduits.
    Le message de refus EF-21 (anglais côté protocole) est traduit par l'interface.
-6. **Actions de création hors parcours.** Les boutons « Nouvel objet », « Section », « Règle »,
+6. **Sécurité du client.**
+   - Toutes les requêtes portent `X-Afw-Interface: ui` (l'audit enregistre l'interface) ; l'export d'audit
+     est récupéré par `fetch` avec le jeton puis enregistré depuis un `Blob` (jamais de jeton dans une URL).
+   - OIDC : `state` aléatoire de 128 bits en `sessionStorage`, à usage unique, vérifié au retour ; la
+     redirection après connexion n'accepte qu'un chemin relatif ou une URL de la même origine. Les liens
+     reçus de l'API ne sont suivis que s'ils commencent par `/`.
+   - Les « équivalent CLI » et « copier en curl » entourent chaque valeur de guillemets simples
+     (valeurs issues du trafic des agents : pas d'injection de commande au collage).
+   - Nitro (plugin `server/plugins/security-headers.ts`) envoie `X-Content-Type-Options: nosniff`,
+     `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` et une CSP stricte calculée au démarrage de la
+     requête (origine de `NUXT_PUBLIC_API_BASE` dans `connect-src`) : `default-src 'self'`,
+     `img-src 'self' data:`, `style-src 'self' 'unsafe-inline'`, `font-src 'self'`,
+     `frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`, `form-action 'self'`. Seul
+     ajout nécessaire : les scripts en ligne émis par Nuxt (configuration d'exécution, mode de couleur)
+     sont autorisés **par empreinte sha256**, calculée sur la page servie. Les icônes sont toutes
+     embarquées (`fallbackToApi: false`) pour ne jamais appeler `api.iconify.design`.
+7. **Actions de création hors parcours.** Les boutons « Nouvel objet », « Section », « Règle »,
    « Changer de zone » renvoient pour l'instant vers la CLI (toast) : le seul parcours d'écriture
    complet de L3 est « Autoriser… » → session → publier → installer (EF-42), plus la réinstallation
    d'une révision, l'acquittement d'alerte et les commandes de passerelle.

@@ -495,6 +495,20 @@ export interface Session {
   changes: SessionChange[]
   locked_objects: number
   state: 'open' | 'published' | 'discarded'
+  /** Revision the session was opened on (differences are computed against it). */
+  base_revision: number
+  /** Number the revision will get if this session is published now (given by the API). */
+  next_revision: number
+}
+
+/** Installed policy as the control plane sees it (GET /policy/status). */
+export interface PolicyStatus {
+  latest_revision: number
+  installed_revision: number | null
+  gateways_on_revision: number
+  gateways_total: number
+  /** Added latency, p95 over all gateways, computed by the API. */
+  latency_p95_ms: number | null
 }
 
 export interface VerifyFinding {
@@ -646,6 +660,7 @@ export interface AgentListItem {
 export interface AgentDestination {
   destination: string
   rule_label: string
+  rule_layer: DecisionRef['layer']
   verdict: Verdict
   flows: number
   bytes_out: number | null
@@ -674,7 +689,7 @@ export interface AgentOverview {
   volume: { at: DateTime, allowed_bytes: number, denied_bytes: number }[]
   volume_note: string | null
   destinations: AgentDestination[]
-  recent_denials: { destination: string, count: number, last_at: DateTime, rule_label: string, reason: string, flow_id: Uuid, can_allow: boolean }[]
+  recent_denials: { destination: string, count: number, last_at: DateTime, rule_label: string, rule_layer: DecisionRef['layer'], reason: string, flow_id: Uuid, can_allow: boolean }[]
   top_tools: { tool: string, flows: number, bytes_out: number, denied: number }[]
 }
 

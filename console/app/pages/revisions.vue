@@ -6,7 +6,7 @@ const api = useApi()
 const fmt = useFmt()
 const toast = useToast()
 const { session } = usePolicySession()
-const { refreshShell } = useShell()
+const { refreshShell, policy } = useShell()
 
 useHead({ title: () => `${t('nav.revisions')} — agents-firewall` })
 
@@ -68,7 +68,7 @@ async function rollback() {
             >
               {{ t('revisions.title') }}
             </h2>
-            <span class="text-xs text-text3">{{ t('revisions.total', { n: revisions[0]?.number ?? 0 }) }}</span>
+            <span class="text-xs text-text3">{{ t('revisions.total', { n: policy.data.value?.latest_revision ?? '—' }) }}</span>
           </div>
           <NuxtLink
             v-if="session"

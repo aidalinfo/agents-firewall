@@ -289,7 +289,7 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
               </span>
               <span
                 class="font-mono text-[11.5px]"
-                :class="d.verdict === 'deny' ? 'text-ko' : d.rule_label.startsWith('S') ? 'text-obs' : 'text-text2'"
+                :class="d.verdict === 'deny' ? 'text-ko' : d.rule_layer === 'baseline' ? 'text-obs' : 'text-text2'"
               >{{ d.rule_label }}</span>
               <span class="flex items-center gap-2">
                 <span class="h-1.5 flex-1 overflow-hidden rounded-[3px] bg-sub"><span

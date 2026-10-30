@@ -175,6 +175,7 @@
       "time": "Heure"
     },
     "export": "Exporter",
+    "exportFailed": "Export impossible",
     "full": "Journal complet",
     "iface": {
       "api": "API",
@@ -218,6 +219,7 @@
     },
     "backToJournal": "retour au journal",
     "baselineLocked": "Socle commun · non contournable",
+    "binary": "[contenu binaire · {size}]",
     "captureStarted": "Capture demandée pour {agent}",
     "closed": "connexion terminée",
     "connRefused": "connexion refusée · règle {rule}",
@@ -235,7 +237,7 @@
     "meta": {
       "addresses": "Adresses",
       "conversation": "Conversation",
-      "dataClass": "Classe de donnée",
+      "dataClass": "Classe de données",
       "gateway": "Passerelle",
       "protocol": "Protocole",
       "rule": "Règle",
@@ -264,6 +266,7 @@
     },
     "toolCall": "appel d’outil",
     "topDown": "évaluation de haut en bas",
+    "truncated": "tronqué à l’affichage · taille réelle {size}",
     "uncertain": "Rattachement incertain",
     "untrusted": "entrée non fiable · {source}",
     "why": "Pourquoi ce verdict"
@@ -317,7 +320,8 @@
     "version": "Version",
     "warn": {
       "console_unreachable": "Console injoignable depuis {since} : la passerelle continue d’appliquer la révision {n}."
-    }
+    },
+    "warnGeneric": "État signalé par la passerelle : {detail}"
   },
   "internal": {
     "admin": "Appels aux API d’administration",
@@ -405,6 +409,7 @@
     "kubernetes": "Kubernetes"
   },
   "login": {
+    "badState": "Réponse du fournisseur d’identité refusée (state invalide). Recommencez la connexion.",
     "demo": "Mode démo : données fictives, aucun appel au plan de contrôle. N’importe quel jeton est accepté.",
     "failed": "Connexion refusée",
     "intro": "Connectez-vous avec votre fournisseur d’identité, ou utilisez un jeton d’API.",
@@ -462,7 +467,7 @@
     "kind": {
       "agent": "Agent",
       "any": "Tout",
-      "data_class": "Classe de donnée",
+      "data_class": "Classe de données",
       "domain": "Domaine",
       "group": "Groupe",
       "host": "Hôte",
@@ -563,7 +568,6 @@
     "viewer": "lecteur"
   },
   "rules": {
-    "activeRev": "active : rév. {n}",
     "all": "Toutes",
     "any": "Tout",
     "anyDest": "Toute destination",
@@ -572,8 +576,6 @@
       "draftSub": "{who} · ouverte {when} · {locks} objet(s) verrouillé(s) pour les autres sessions",
       "idle": "Aucune session ouverte",
       "idleSub": "Révision {n} installée · toute modification ouvre une session personnelle, rien n’est appliqué avant installation",
-      "install": "Révision {n} publiée · choix des passerelles",
-      "installSub": "L’installation est atomique par passerelle ; en cas d’échec la révision {prev} reste active",
       "installed": "Révision {n} installée sur {ok}/{total} passerelles",
       "installedSub": "Les flux couverts passent dès maintenant · retour arrière possible depuis Révisions",
       "publish": "Session « {name} » · vérification",
@@ -607,16 +609,12 @@
     "defaultSessionName": "Modifications",
     "diffWith": "Différences avec la révision {n}",
     "discard": "Abandonner",
-    "installAria": "Installer la politique",
-    "installEllipsis": "Installer…",
-    "installOn": "Installer sur {n} passerelle | Installer sur {n} passerelle | Installer sur {n} passerelles",
-    "installRev": "Installer la révision {n}",
+    "installSummary": "Installer la rév. {n} sur {gws} | Installer la rév. {n} sur {gws} | Installer la rév. {n} sur {count} passerelles : {gws}",
     "noShadow": "Aucune règle masquée par une règle plus haute",
     "nonBlocking": "Avertissements non bloquants.",
     "notInstalled": "pas encore installée",
     "observeText": "Depuis le {since} · tout est journalisé, rien n’est refusé (sauf le socle commun). {n} destinations distinctes observées, dont {u} non couvertes par une règle.",
     "openSession": "Ouvrir une session",
-    "preselected": "Les passerelles qui portent la zone modifiée sont présélectionnées",
     "proposeFromTraffic": "Proposer des règles depuis le trafic",
     "publishAria": "Publier la session",
     "publishFailed": "Publication impossible",
@@ -663,7 +661,7 @@
   "status": {
     "ingestion": "ingestion {n}/min",
     "latency": "latence ajoutée p95 {ms} ms",
-    "revision": "politique rév. {n}"
+    "revision": "politique rév. {n} · {k}/{total} passerelles"
   },
   "steps": {
     "install": "Installer",

@@ -20,6 +20,7 @@ import type {
   Me,
   NetObjectView,
   Page,
+  PolicyStatus,
   RegistrationToken,
   Revision,
   RuleQuery,
@@ -44,8 +45,10 @@ export interface AfwApi {
   // --- auth (`me`, `tokens`) ---
   /** GET /me — validates the bearer token. */
   me(): Promise<Me>
-  /** URL of the OIDC login entry point, or null when the mode does not use OIDC. */
-  oidcLoginUrl(redirect: string): string | null
+  /** URL of the OIDC login entry point (with the anti-CSRF `state`), or null when the mode does not use OIDC. */
+  oidcLoginUrl(redirect: string, state: string): string | null
+  /** GET /policy/status — installed revision and gateway coverage as reported by the control plane. */
+  policyStatus(): Promise<PolicyStatus>
 
   // --- logs ---
   /** GET /logs/flows */
@@ -114,8 +117,8 @@ export interface AfwApi {
   listAudit(query: AuditQuery): Promise<Page<AuditEntry>>
   /** GET /audit/verify */
   verifyAudit(): Promise<AuditVerify>
-  /** URL of GET /audit/export */
-  auditExportUrl(): string
+  /** GET /audit/export (NDJSON), fetched with the caller's token. */
+  exportAudit(): Promise<Blob>
 
   // --- gateways ---
   /** GET /gateways */

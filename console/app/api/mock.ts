@@ -250,7 +250,8 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
         ? {
             id: `${s.id.slice(0, 8)}-http`, flow_id: s.id, gateway_id: s.gateway_id, agent_id: s.agent_id, at: s.started_at,
             method: s.method!, url: `${s.app}://${s.domain}${s.path}`, host: s.domain!, request_headers: f.extra.request_headers,
-            request_body: body(f.extra.request_body, s.bytes_out), status: f.extra.status, response_headers: [],
+            request_body: body(f.extra.request_body, s.bytes_out), status: f.extra.status,
+            response_headers: s.verdict === 'deny' ? [['Content-Type', 'text/plain; charset=utf-8'], ['X-Agents-Firewall', 'denied'], ['X-AFW-Rule', s.rule_label]] : f.extra.status != null ? [['Content-Type', f.extra.content_type]] : [],
             response_body: body(f.extra.response_body, s.bytes_in),
             findings: s.data_classes.includes('secret') ? [{ class: 'secret', category: 'secret', kind: 'api_key', fingerprint: '51be3c9a002f', location: 'body' }] : [],
             admin_action: s.domain === 'coolify.interne.lan' ? { system: 'coolify', action: 'deploy', resource: 'studio-preprod' } : null,
@@ -309,16 +310,16 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
     const ago = (s: number) => new Date(end - s * 1000).toISOString()
     const destinations: AgentOverview['destinations'] = isDaniel
       ? [
-          { destination: 'api.anthropic.com', rule_label: 'S3', verdict: 'allow', flows: 1940, bytes_out: null, last_at: ago(2), tags: [] },
-          { destination: 'graph.microsoft.com', rule_label: '9', verdict: 'allow', flows: 612, bytes_out: 31_000_000, last_at: ago(46), tags: [] },
-          { destination: 's3.fr-par.scw.cloud', rule_label: '7', verdict: 'allow', flows: 212, bytes_out: 96_000_000, last_at: ago(15), tags: [] },
-          { destination: 'teams.microsoft.com', rule_label: '3', verdict: 'allow', flows: 188, bytes_out: 4_000_000, last_at: ago(180), tags: [] },
-          { destination: 'glpi.interne.lan', rule_label: '10', verdict: 'allow', flows: 96, bytes_out: 1_000_000, last_at: ago(1200), tags: ['internal'] },
-          { destination: 'pypi.org', rule_label: '2', verdict: 'allow', flows: 41, bytes_out: 200_000, last_at: ago(5 * 3600), tags: [] },
-          { destination: 'api.exemple.com', rule_label: '12', verdict: 'deny', flows: 9, bytes_out: 12_000_000, last_at: ago(120), tags: ['new', 'denied'] },
-          { destination: 'extranet.fournisseur-b.example', rule_label: '11', verdict: 'allow', flows: 4, bytes_out: 3_000_000, last_at: ago(2 * 86_400), tags: ['new'] },
+          { destination: 'api.anthropic.com', rule_label: 'S3', rule_layer: 'baseline', verdict: 'allow', flows: 1940, bytes_out: null, last_at: ago(2), tags: [] },
+          { destination: 'graph.microsoft.com', rule_label: '9', rule_layer: 'zone', verdict: 'allow', flows: 612, bytes_out: 31_000_000, last_at: ago(46), tags: [] },
+          { destination: 's3.fr-par.scw.cloud', rule_label: '7', rule_layer: 'zone', verdict: 'allow', flows: 212, bytes_out: 96_000_000, last_at: ago(15), tags: [] },
+          { destination: 'teams.microsoft.com', rule_label: '3', rule_layer: 'zone', verdict: 'allow', flows: 188, bytes_out: 4_000_000, last_at: ago(180), tags: [] },
+          { destination: 'glpi.interne.lan', rule_label: '10', rule_layer: 'zone', verdict: 'allow', flows: 96, bytes_out: 1_000_000, last_at: ago(1200), tags: ['internal'] },
+          { destination: 'pypi.org', rule_label: '2', rule_layer: 'zone', verdict: 'allow', flows: 41, bytes_out: 200_000, last_at: ago(5 * 3600), tags: [] },
+          { destination: 'api.exemple.com', rule_label: '12', rule_layer: 'zone', verdict: 'deny', flows: 9, bytes_out: 12_000_000, last_at: ago(120), tags: ['new', 'denied'] },
+          { destination: 'extranet.fournisseur-b.example', rule_label: '11', rule_layer: 'zone', verdict: 'allow', flows: 4, bytes_out: 3_000_000, last_at: ago(2 * 86_400), tags: ['new'] },
         ]
-      : own.map(f => ({ destination: f.domain ?? f.dst, rule_label: f.rule_label, verdict: f.verdict, flows: 1, bytes_out: f.bytes_out, last_at: f.started_at, tags: f.internal ? ['internal' as const] : [] }))
+      : own.map(f => ({ destination: f.domain ?? f.dst, rule_label: f.rule_label, rule_layer: f.decision.layer, verdict: f.verdict, flows: 1, bytes_out: f.bytes_out, last_at: f.started_at, tags: f.internal ? ['internal' as const] : [] }))
     const denials = own.filter(f => f.verdict === 'deny')
     return {
       agent: a,
@@ -342,11 +343,11 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
       destinations,
       recent_denials: isDaniel
         ? [
-            { destination: 'api.exemple.com', count: 6, last_at: ago(120), rule_label: '12', reason: 'no_rule', flow_id: state.flows[0]!.summary.id, can_allow: true },
-            { destination: 'transfer.sh', count: 2, last_at: ago(3 * 3600), rule_label: 'S2', reason: 'global_denylist', flow_id: state.flows[0]!.summary.id, can_allow: false },
-            { destination: 'docs.google.com', count: 1, last_at: ago(21 * 3600), rule_label: '12', reason: 'no_rule', flow_id: state.flows[0]!.summary.id, can_allow: true },
+            { destination: 'api.exemple.com', count: 6, last_at: ago(120), rule_label: '12', rule_layer: 'zone', reason: 'no_rule', flow_id: state.flows[0]!.summary.id, can_allow: true },
+            { destination: 'transfer.sh', count: 2, last_at: ago(3 * 3600), rule_label: 'S2', rule_layer: 'baseline', reason: 'global_denylist', flow_id: state.flows[0]!.summary.id, can_allow: false },
+            { destination: 'docs.google.com', count: 1, last_at: ago(21 * 3600), rule_label: '12', rule_layer: 'zone', reason: 'no_rule', flow_id: state.flows[0]!.summary.id, can_allow: true },
           ]
-        : denials.map(d => ({ destination: d.domain ?? d.dst, count: 1, last_at: d.started_at, rule_label: d.rule_label, reason: d.decision.layer === 'baseline' ? 'baseline' : 'no_rule', flow_id: d.id, can_allow: d.decision.layer === 'zone' })),
+        : denials.map(d => ({ destination: d.domain ?? d.dst, count: 1, last_at: d.started_at, rule_label: d.rule_label, rule_layer: d.decision.layer, reason: d.decision.layer === 'baseline' ? 'baseline' : 'no_rule', flow_id: d.id, can_allow: d.decision.layer === 'zone' })),
       top_tools: isDaniel
         ? [
             { tool: 'upload_document', flows: 212, bytes_out: 96_000_000, denied: 0 },
@@ -401,6 +402,18 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
   const api: AfwApi = {
     me: () => wait(() => ({ id: KILLIAN.id, name: KILLIAN.name, email: 'killian@example.org', role: 'admin' as const, auth: 'oidc' as const, tenant: 'pulse-myit / prod' })),
     oidcLoginUrl: () => null,
+    policyStatus: () => wait(() => {
+      const latest = Math.max(...state.revisions.map(r => r.number))
+      const installed = state.revisions.find(r => r.installed)?.number ?? null
+      const online = state.gateways.filter(g => g.status === 'online')
+      return {
+        latest_revision: latest,
+        installed_revision: installed,
+        gateways_on_revision: state.gateways.filter(g => g.revision === installed).length,
+        gateways_total: state.gateways.length,
+        latency_p95_ms: online.length ? Math.min(...online.map(g => g.stats.latency_p95_ms)) : null,
+      }
+    }),
 
     listFlows: q => wait(() => {
       const all = filterFlows(q)
@@ -472,7 +485,8 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
     openSession: name => wait(() => {
       if (state.session?.state === 'open') return state.session
       state.snapshot = { rules: clone(state.rules), objects: clone(state.objects) }
-      state.session = { id: crypto.randomUUID(), name, owner: KILLIAN, opened_at: now().toISOString(), changes: [], locked_objects: 0, state: 'open' }
+      const latest = Math.max(...state.revisions.map(r => r.number))
+      state.session = { id: crypto.randomUUID(), name, owner: KILLIAN, opened_at: now().toISOString(), changes: [], locked_objects: 0, state: 'open', base_revision: latest, next_revision: latest + 1 }
       audit('session_open', `« ${name} »`)
       return state.session
     }),
@@ -669,7 +683,7 @@ export function createMockApi(options: MockOptions = {}): AfwApi {
       anchor.setMinutes(0, 0, 0)
       return { ok, checked: state.audit.length, anchor_exported_at: anchor.toISOString() }
     }),
-    auditExportUrl: () => `data:application/x-ndjson;charset=utf-8,${encodeURIComponent(state.audit.map(e => JSON.stringify(e)).join('\n'))}`,
+    exportAudit: () => wait(() => state.audit.map(e => JSON.stringify(e)).join('\n')).then(text => new Blob([`${text}\n`], { type: 'application/x-ndjson' })),
 
     listGateways: () => wait(() => state.gateways),
     listInstalls: () => wait(() => state.revisions

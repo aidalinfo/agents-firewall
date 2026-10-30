@@ -120,6 +120,8 @@ describe('mock API — allow from log → publish → install', () => {
     expect(report.ok).toBe(true)
     expect(report.findings.map(f => f.code)).toEqual(['expired_rule', 'unused_object'])
 
+    expect((await api.currentSession())?.base_revision).toBe(42)
+    expect((await api.currentSession())?.next_revision).toBe(43)
     const rev = await api.publishSession(session.id, 'portail partenaire')
     expect(rev.number).toBe(43)
     expect(rev.installed).toBe(false)
@@ -132,6 +134,7 @@ describe('mock API — allow from log → publish → install', () => {
     expect((await api.listGateways()).every(g => g.revision === 43)).toBe(true)
     expect((await api.getRevision(43)).installed).toBe(true)
     expect((await api.getRevision(42)).installed).toBe(false)
+    expect(await api.policyStatus()).toMatchObject({ installed_revision: 43, latest_revision: 43, gateways_on_revision: 3, gateways_total: 3 })
 
     const audit = await api.listAudit({})
     expect(audit.items.slice(0, 2).map(a => a.action)).toEqual(['install', 'publish'])
@@ -171,6 +174,17 @@ describe('mock API — other screens', () => {
     const ov = await api.agentOverview(daniel.agent.id)
     expect(ov.volume).toHaveLength(24)
     expect(ov.recent_denials[0]?.destination).toBe('api.exemple.com')
+  })
+
+  it('reports the installed policy as the API sees it', async () => {
+    expect(await api.policyStatus()).toMatchObject({ installed_revision: 42, latest_revision: 42, gateways_on_revision: 3, gateways_total: 3, latency_p95_ms: 6 })
+  })
+
+  it('tells the layer of the destination rule on the agent view', async () => {
+    const daniel = (await api.listAgents()).find(a => a.agent.name === 'daniel-bot')!
+    const ov = await api.agentOverview(daniel.agent.id)
+    expect(ov.destinations.find(d => d.rule_label === 'S3')?.rule_layer).toBe('baseline')
+    expect(ov.destinations.find(d => d.rule_label === '9')?.rule_layer).toBe('zone')
   })
 
   it('serves alerts, the internal map, gateways and a valid audit chain', async () => {

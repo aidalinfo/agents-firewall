@@ -5,9 +5,9 @@
 **Pare-feu open source pour agents IA : contrôle centralisé des sorties réseau, visibilité complète des flux et audit pour des flottes d'agents LLM.**
 
 [![Licence : Apache 2.0](https://img.shields.io/badge/Licence-Apache_2.0-blue.svg)](LICENSE)
-[![Statut : conception](https://img.shields.io/badge/statut-conception-orange.svg)](#statut)
+[![Statut : V1 en construction](https://img.shields.io/badge/statut-V1%20en%20construction-orange.svg)](#statut)
 
-[English](README.md) · [Cahier des charges](docs/cahier-des-charges.md) · [Conception](docs/superpowers/specs/2026-10-30-agents-firewall-design.md) · [Contribuer](CONTRIBUTING.md) · [Sécurité](SECURITY.md)
+[English](README.md) · [Documentation](#documentation) · [Cahier des charges](docs/cahier-des-charges.md) · [Conception](docs/superpowers/specs/2026-10-30-agents-firewall-design.md) · [Contribuer](CONTRIBUTING.md) · [Sécurité](SECURITY.md)
 
 </div>
 
@@ -31,9 +31,66 @@ Le moyen le plus fiable de casser cette combinaison est de **contrôler ce qui s
 - **API d'abord** : tout ce que fait la console est faisable par l'API, la CLI `afw` et un **serveur MCP**, pour qu'un agent d'administration agréé puisse piloter le pare-feu. Chaque modification est auditée.
 - **Enrôlement en une commande** : Docker Compose, conteneurs gérés par Coolify, pods Kubernetes. Intégration native avec les agents [Hermes](https://github.com/NousResearch).
 
+## Architecture
+
+```
+          ┌────────────── Console (plan de contrôle) ──────────────────┐
+          │  afw-api : REST /api/v1 (OpenAPI) · passerelles /gw/v1     │
+          │  console web Nuxt · CLI `afw` · serveur MCP                │
+          │  PostgreSQL (config, audit, journaux) · ClickHouse (option)│
+          └──────────────▲─────────────────────────▲───────────────────┘
+     politique (tirée,   │ mTLS                    │ événements,
+     révision vérifiée)  │                         │ battement de cœur
+   ┌──── Hôte d'agents ──┴─────────────────────────┴───────────────────┐
+   │  afw-gateway (une par hôte, Rust)                                 │
+   │   proxy :3128 · TCP transparent :15001 · DNS :53                  │
+   │   inspection TLS · moteur de règles · masquage · capture pcap     │
+   │        ▲ seule sortie (réseau Docker interne ou NetworkPolicy) ;  │
+   │        │ passerelle arrêtée = plus de réseau                      │
+   │   [agent A]   [agent B]   [agent C]   + plugin Hermes (intention) │
+   └───────────────────────────────────────────────────────────────────┘
+```
+
+| Composant | Technologie | Emplacement |
+|---|---|---|
+| Passerelle (plan de données) | Rust | `crates/afw-gateway` |
+| API du plan de contrôle | Rust (axum, sqlx) | `crates/afw-api` |
+| CLI `afw`, serveur MCP | Rust | `crates/afw-cli`, `crates/afw-mcp` |
+| Moteur de règles, DLP, TLS, enrôlement | bibliothèques Rust | `crates/afw-engine`, `afw-dlp`, `afw-tls`, `afw-enroll` |
+| Console web | Nuxt 4 + Nuxt UI | `console/` |
+| Intégration agents | plugin Hermes (Python) ; mode réseau seul pour tout conteneur | `integrations/hermes/` |
+| Déploiement | Docker Compose, chart Helm | `deploy/` |
+
+Les choix d'architecture sont consignés dans les [ADR](docs/adr/README.md).
+
 ## Statut
 
-🚧 **Phase de conception.** Le cahier des charges et le document de conception sont rédigés ; la réalisation démarre.
+🚧 **V1 en construction.** Le cahier des charges, la conception, le plan d'implémentation et les décisions d'architecture sont écrits ; les composants sont construits en parallèle et fusionnés dans la branche `dev`. Rien n'est encore prêt pour la production, et aucune version ni image n'est publiée.
+
+## Démarrage rapide (démo locale, à venir)
+
+Dès la V1 livrée, un environnement de démonstration fera tout tourner sur un seul poste, sans accès Internet : console, API, une passerelle avec deux zones, trois agents factices dont un agent Hermes, un faux fournisseur LLM et une cible d'exfiltration.
+
+```sh
+demo/up.sh                 # construit les images, démarre, crée et installe la politique de démo
+# console : http://localhost:3000
+demo/scenarios/run-all.sh  # joue les scénarios de recette (contournements, « Autoriser » en moins de 2 min…)
+demo/down.sh
+```
+
+## Documentation
+
+| Guide | Contenu |
+|---|---|
+| [Installation](docs/installation.md) | console (Compose, Helm), passerelle, jeton d'enregistrement |
+| [Enrôlement](docs/enrolement.md) | Docker Compose, Coolify, Kubernetes, Hermes, désenrôlement |
+| [Modèle de politique](docs/modele-de-politique.md) | objets, zones, socle, ordre d'évaluation, inspection, classes de données, publication et installation |
+| [Exploitation](docs/exploitation.md) | journal, « Autoriser », alertes, captures, rétention, sauvegarde, mise à jour, pannes |
+| [Sécurité](docs/securite.md) | modèle de menace, fermeture par défaut, isolement, audit, limites connues |
+| [API](docs/api.md) · [CLI](docs/cli.md) · [MCP](docs/mcp.md) | interfaces d'automatisation |
+| [Migrer depuis l'egress-guard](docs/migration-egress-guard.md) | d'un hook dans l'agent au contrôle réseau |
+
+Pour aller plus loin : [cahier des charges](docs/cahier-des-charges.md), [conception](docs/superpowers/specs/2026-10-30-agents-firewall-design.md), [plan d'implémentation V1](docs/superpowers/plans/2026-10-30-agents-firewall-v1.md), [contribuer](CONTRIBUTING.md).
 
 ## Licence
 

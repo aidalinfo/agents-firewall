@@ -48,6 +48,7 @@ rustls-pemfile = "2"
 webpki-roots = "0.26"
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring", "x509-parser"] }
 x509-parser = "0.16"
+time = { version = "0.3", default-features = false, features = ["std"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 axum = { version = "0.8", features = ["macros", "ws"] }
 axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
@@ -62,3 +63,4 @@ rand = "0.8"
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 rmcp = { version = "0.8", features = ["server", "transport-io"] }
 tempfile = "3"
+libc = "0.2"

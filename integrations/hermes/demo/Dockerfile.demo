@@ -1,0 +1,23 @@
+# Fake Hermes agent for the agents-firewall acceptance demo.
+# Build from integrations/hermes:  docker build -f demo/Dockerfile.demo -t afw-demo-hermes .
+FROM python:3.12-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --home /var/lib/afw-hermes --create-home hermes
+
+WORKDIR /opt/afw-hermes
+COPY pyproject.toml README.md ./
+COPY afw_hermes ./afw_hermes
+RUN pip install --no-cache-dir . && rm -rf /opt/afw-hermes/build
+COPY demo/fake_hermes.py /opt/demo/fake_hermes.py
+
+ENV AFW_STATE_DIR=/var/lib/afw-hermes \
+    AFW_AGENT_NAME=daniel-bot \
+    DEMO_PORT=8080 \
+    PYTHONUNBUFFERED=1
+USER hermes
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+CMD ["python", "/opt/demo/fake_hermes.py"]

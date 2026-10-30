@@ -46,6 +46,7 @@ fn event_types_round_trip() {
     roundtrip(&tool_call());
     roundtrip(&audit_entry(1, GENESIS_HASH));
     roundtrip(&EventBatch {
+        batch_id: id(42),
         events: gateway_events(),
     });
 }
@@ -290,7 +291,9 @@ fn api_types_round_trip() {
             flows: 1,
             bytes: 2,
             alerts: 0,
+            first_seen_at: at(),
             last_seen_at: at(),
+            new: true,
         }],
     });
     roundtrip(&AuditVerifyResult {
@@ -345,15 +348,13 @@ fn api_types_round_trip() {
         writable_zones: Some(vec![id(11)]),
     });
     roundtrip(&IntentPolicy {
-        revision: 3,
-        agent: "daniel-bot".into(),
-        classes: vec![ActionClass {
-            name: "deletion".into(),
-            kind: ActionClassKind::Deletion,
+        version: 3,
+        action_classes: vec![ActionClass {
+            id: "irreversible".into(),
+            name: "Irreversible".into(),
             tools: vec!["*delete*".into()],
-            arg_patterns: vec![],
-            gate: true,
-            message: Some("ask a human".into()),
+            patterns: vec![],
+            decision: IntentDecision::Deny,
         }],
     });
     roundtrip(&EnrollmentRequest {
@@ -536,4 +537,84 @@ fn installed_policy_rejects_wrong_fingerprint_and_unknown_format() {
     let mut future = p;
     future.format = 2;
     assert_eq!(future.verify(), Err(PolicyIntegrityError::UnknownFormat(2)));
+}
+
+#[test]
+fn unknown_fields_are_rejected_on_policy_and_write_dtos() {
+    // Typo `destination` instead of `destinations` must not silently mean "any".
+    let mut v = serde_json::to_value(rule(1, Layer::Baseline, 1)).unwrap();
+    let dests = v.as_object_mut().unwrap().remove("destinations").unwrap();
+    v["destination"] = dests;
+    assert!(serde_json::from_value::<Rule>(v).is_err());
+
+    let spec = json!({"type": "domain", "pattern": "a.com", "patern": "b.com"});
+    assert!(serde_json::from_value::<NetObjectSpec>(spec).is_err());
+    let layer = json!({"type": "zone", "zone_id": id(1), "zone": id(2)});
+    assert!(serde_json::from_value::<Layer>(layer).is_err());
+
+    let mut doc = serde_json::to_value(document()).unwrap();
+    doc["rule"] = json!([]);
+    assert!(serde_json::from_value::<PolicyDocument>(doc).is_err());
+
+    let install = json!({"revision": 3, "gateway": [id(30)]});
+    assert!(serde_json::from_value::<InstallRequest>(install).is_err());
+    let token =
+        json!({"name": "x", "role": "admin", "agent_id": null, "expires_at": null, "scope": "all"});
+    assert!(serde_json::from_value::<CreateApiToken>(token).is_err());
+}
+
+#[test]
+fn rollback_flag_is_covered_by_the_fingerprint() {
+    let p = InstalledPolicy::new(5, "killian", document());
+    assert!(!p.rollback);
+    let r = InstalledPolicy::new(3, "killian", document()).as_rollback();
+    assert!(r.rollback);
+    assert_eq!(r.verify(), Ok(()));
+    // Same document, different fingerprint when only the flag differs.
+    assert_ne!(
+        r.sha256,
+        InstalledPolicy::new(3, "killian", document()).sha256
+    );
+
+    let mut forged = InstalledPolicy::new(3, "killian", document());
+    forged.rollback = true;
+    assert!(matches!(
+        forged.verify(),
+        Err(PolicyIntegrityError::FingerprintMismatch { .. })
+    ));
+    let mut renumbered = p.clone();
+    renumbered.revision = 9;
+    assert!(matches!(
+        renumbered.verify(),
+        Err(PolicyIntegrityError::FingerprintMismatch { .. })
+    ));
+}
+
+#[test]
+fn gateway_refuses_older_revision_unless_rollback() {
+    let older = InstalledPolicy::new(3, "k", document());
+    let same = InstalledPolicy::new(5, "k", document());
+    let newer = InstalledPolicy::new(6, "k", document());
+    let rollback = InstalledPolicy::new(3, "k", document()).as_rollback();
+    assert!(older.may_replace(None));
+    assert!(!older.may_replace(Some(5)));
+    assert!(same.may_replace(Some(5)));
+    assert!(newer.may_replace(Some(5)));
+    assert!(rollback.may_replace(Some(5)));
+}
+
+#[test]
+fn intent_policy_matches_the_hermes_plugin_format() {
+    // Format consumed by integrations/hermes (ADR 0015).
+    let wire = json!({
+        "version": 4,
+        "action_classes": [
+            {"id": "infra_destructive", "name": "Infra", "tools": ["terminal"],
+             "patterns": ["(?i)kubectl\\s+delete"], "decision": "gate"},
+            {"id": "paid_generation", "name": "Paid", "tools": [], "patterns": [], "decision": "log"}
+        ]
+    });
+    let p: IntentPolicy = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(p.action_classes[0].decision, IntentDecision::Gate);
+    assert_eq!(serde_json::to_value(&p).unwrap(), wire);
 }

@@ -20,7 +20,7 @@ pub const POLICY_LONG_POLL_SECS: u64 = 25;
 pub const REGISTRATION_TOKEN_TTL_SECS: u64 = 15 * 60;
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct RegisterRequest {
     pub token: String,
     pub name: String,
@@ -46,7 +46,7 @@ pub struct PolicyQuery {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct PolicyAck {
     pub revision: u64,
     pub ok: bool,
@@ -56,6 +56,8 @@ pub struct PolicyAck {
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct EventBatch {
+    /// Idempotency key: a batch re-sent after a timeout is ingested once.
+    pub batch_id: Uuid,
     pub events: Vec<GatewayEvent>,
 }
 

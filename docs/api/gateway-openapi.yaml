@@ -259,6 +259,7 @@ components:
       - proxmox
       type: string
     Agent:
+      additionalProperties: false
       properties:
         addresses:
           default: []
@@ -321,6 +322,7 @@ components:
       - unusual_admin_action
       type: string
     AppMatch:
+      additionalProperties: false
       description: Application-level match (method and path prefixes apply to HTTP/HTTPS only).
       properties:
         methods:
@@ -385,6 +387,7 @@ components:
       - custom
       type: string
     DataClass:
+      additionalProperties: false
       properties:
         category:
           $ref: '#/components/schemas/DataCategory'
@@ -414,6 +417,13 @@ components:
           type: string
         reason:
           type: string
+        revision:
+          description: Policy revision that took the decision; `None` when the gateway had no valid policy.
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         rule_id:
           format: uuid
           type:
@@ -441,7 +451,8 @@ components:
       type: string
     Detector:
       oneOf:
-      - description: Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
+      - additionalProperties: false
+        description: Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
         properties:
           id:
             type: string
@@ -453,7 +464,8 @@ components:
         - id
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           name:
             type: string
           pattern:
@@ -469,11 +481,16 @@ components:
         type: object
     EventBatch:
       properties:
+        batch_id:
+          description: 'Idempotency key: a batch re-sent after a timeout is ingested once.'
+          format: uuid
+          type: string
         events:
           items:
             $ref: '#/components/schemas/GatewayEvent'
           type: array
       required:
+      - batch_id
       - events
       type: object
     Finding:
@@ -664,6 +681,11 @@ components:
             type: string
           verdict:
             $ref: '#/components/schemas/Verdict'
+          zone_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
         required:
         - at
         - decision
@@ -887,6 +909,7 @@ components:
       - bypass
       type: string
     InspectionRule:
+      additionalProperties: false
       description: 'TLS inspection rule. Implicit default when nothing matches: `Inspect` (EF-09).'
       properties:
         action:
@@ -921,6 +944,7 @@ components:
       - position
       type: object
     InstalledPolicy:
+      additionalProperties: false
       properties:
         document:
           $ref: '#/components/schemas/PolicyDocument'
@@ -937,8 +961,12 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        rollback:
+          default: false
+          description: 'Set by the console when it deliberately installs an older revision: only then may a gateway replace its active policy by a lower revision number (see [`Self::may_replace`]).'
+          type: boolean
         sha256:
-          description: SHA-256 (lowercase hex) of the canonical JSON of `document`.
+          description: 'SHA-256 (lowercase hex) of the canonical JSON of `{"document": …, "revision": …, "rollback": …}` (see [`installed_sha256`]).'
           type: string
       required:
       - document
@@ -956,7 +984,8 @@ components:
       type: string
     Layer:
       oneOf:
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - baseline
@@ -964,7 +993,8 @@ components:
         required:
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - zone
@@ -977,6 +1007,7 @@ components:
         - zone_id
         type: object
     NetObject:
+      additionalProperties: false
       description: 'Network object: a destination (or group of destinations) referenced by rules.'
       properties:
         category:
@@ -1002,7 +1033,8 @@ components:
     NetObjectSpec:
       description: What a network object matches.
       oneOf:
-      - description: Exact domain or wildcard (`*.example.com` matches sub-domains only).
+      - additionalProperties: false
+        description: Exact domain or wildcard (`*.example.com` matches sub-domains only).
         properties:
           pattern:
             type: string
@@ -1014,7 +1046,8 @@ components:
         - pattern
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           ip:
             format: ip
             type: string
@@ -1026,7 +1059,8 @@ components:
         - ip
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           cidr:
             type: string
           type:
@@ -1037,7 +1071,8 @@ components:
         - cidr
         - type
         type: object
-      - description: Inclusive address range.
+      - additionalProperties: false
+        description: Inclusive address range.
         properties:
           end:
             format: ip
@@ -1054,7 +1089,8 @@ components:
         - start
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           members:
             items:
               format: uuid
@@ -1068,7 +1104,8 @@ components:
         - members
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - any
@@ -1077,6 +1114,7 @@ components:
         - type
         type: object
     PolicyAck:
+      additionalProperties: false
       properties:
         error:
           type:
@@ -1093,6 +1131,7 @@ components:
       - revision
       type: object
     PolicyDocument:
+      additionalProperties: false
       description: The complete publishable policy.
       properties:
         agents:
@@ -1146,6 +1185,7 @@ components:
           type: array
       type: object
     PolicySettings:
+      additionalProperties: false
       properties:
         internal_networks:
           items:
@@ -1168,6 +1208,7 @@ components:
       - retention_days
       type: object
     PortRange:
+      additionalProperties: false
       description: Inclusive port range.
       properties:
         end:
@@ -1208,6 +1249,7 @@ components:
       - title
       type: object
     RegisterRequest:
+      additionalProperties: false
       properties:
         csr_pem:
           type: string
@@ -1240,6 +1282,7 @@ components:
       - gateway_id
       type: object
     Retention:
+      additionalProperties: false
       description: Retention in days per kind of stored data.
       properties:
         captures:
@@ -1260,6 +1303,7 @@ components:
       - http
       type: object
     Rule:
+      additionalProperties: false
       properties:
         action:
           $ref: '#/components/schemas/Action'
@@ -1353,6 +1397,7 @@ components:
       - rule_id
       type: object
     Service:
+      additionalProperties: false
       properties:
         app:
           anyOf:
@@ -1399,6 +1444,7 @@ components:
       - deny
       type: string
     Zone:
+      additionalProperties: false
       description: A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.
       properties:
         comment:

@@ -82,12 +82,34 @@ async fn bearer_token_authenticates_principal() {
         eprintln!("AFW_TEST_DATABASE_URL not set: skipped");
         return;
     };
-    upsert_bootstrap_token(&pool, "first-secret").await.unwrap();
-    upsert_bootstrap_token(&pool, "boot-secret").await.unwrap();
+    // Unique secrets: the database is shared by concurrent tests and successive runs.
+    let n = uuid::Uuid::new_v4();
+    let (admin, expired, until, revoked) = (
+        format!("admin-{n}"),
+        format!("expired-{n}"),
+        format!("until-{n}"),
+        format!("revoked-{n}"),
+    );
+    insert_token(&pool, &admin, "admin", None, "NULL").await;
+    insert_token(
+        &pool,
+        &expired,
+        "admin",
+        None,
+        "now() - interval '1 second'",
+    )
+    .await;
+    insert_token(&pool, &until, "viewer", None, "now() + interval '1 hour'").await;
+    insert_token(&pool, &revoked, "admin", None, "NULL").await;
+    sqlx::query("UPDATE api_tokens SET revoked_at = now() WHERE name = $1")
+        .bind(&revoked)
+        .execute(&pool)
+        .await
+        .unwrap();
     let app: Router = Router::new()
         .route("/whoami", get(whoami))
         .with_state(AppState::new(Config::default(), Some(pool)));
-    let call = |auth: Option<&str>, iface: Option<&str>| {
+    let call = |auth: Option<String>, iface: Option<&str>| {
         let mut req = Request::get("/whoami");
         if let Some(a) = auth {
             req = req.header("authorization", a);
@@ -97,7 +119,9 @@ async fn bearer_token_authenticates_principal() {
         }
         app.clone().oneshot(req.body(Body::empty()).unwrap())
     };
-    let ok = call(Some("Bearer boot-secret"), Some("cli")).await.unwrap();
+    let ok = call(Some(format!("Bearer {admin}")), Some("cli"))
+        .await
+        .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
     let body = http_body_util::BodyExt::collect(ok.into_body())
         .await
@@ -107,31 +131,106 @@ async fn bearer_token_authenticates_principal() {
         &body[..],
         format!("{:?}/{:?}", Role::Admin, Interface::Cli).as_bytes()
     );
+    let lower = call(Some(format!("bearer {admin}")), None).await.unwrap();
+    assert_eq!(lower.status(), StatusCode::OK, "scheme is case-insensitive");
+    let res = call(Some(format!("Bearer {until}")), None).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 
     for auth in [
         None,
-        Some("Bearer wrong"),
-        Some("Bearer first-secret"),
-        Some("Basic boot-secret"),
+        Some("Bearer wrong".to_owned()),
+        Some(format!("Bearer {revoked}")),
+        Some(format!("Basic {admin}")),
+        Some(format!("Bearer {expired}")),
+        Some("Bearer".to_owned()),
     ] {
-        let res = call(auth, None).await.unwrap();
+        let res = call(auth.clone(), None).await.unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{auth:?}");
         assert_eq!(res.headers()["content-type"], "application/problem+json");
     }
 }
 
-#[test]
-fn roles_are_ordered() {
-    let viewer = Principal::for_tests(Role::Viewer);
-    assert!(viewer.require(Role::Viewer).is_ok());
-    assert!(viewer.require(Role::Auditor).is_err());
-    assert!(!viewer.can_see_content());
-    let auditor = Principal::for_tests(Role::Auditor);
-    assert!(auditor.require(Role::Auditor).is_ok());
-    assert!(auditor.require(Role::Admin).is_err());
-    assert!(auditor.can_see_content());
-    let mcp = Principal::for_tests(Role::McpAgent);
-    assert!(mcp.require(Role::Admin).is_ok());
-    assert_eq!(mcp.interface, Interface::Mcp);
-    assert!(!mcp.can_see_content());
+async fn insert_token(
+    pool: &PgPool,
+    secret: &str,
+    role: &str,
+    agent: Option<uuid::Uuid>,
+    expires: &str,
+) {
+    sqlx::query(&format!(
+        "INSERT INTO api_tokens (name, token_sha256, role, actor_kind, actor_name, agent_id, \
+         created_by, expires_at) VALUES ($1, $2, $3, 'human', $1, $4, '{{}}', {expires})"
+    ))
+    .bind(secret)
+    .bind(afw_core::sha256_hex(secret.as_bytes()))
+    .bind(role)
+    .bind(agent)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn revoked_bootstrap_token_is_not_reactivated() {
+    let Some(pool) = pool().await else {
+        eprintln!("AFW_TEST_DATABASE_URL not set: skipped");
+        return;
+    };
+    // A new bootstrap token revokes the previous one.
+    upsert_bootstrap_token(&pool, "previous-boot")
+        .await
+        .unwrap();
+    upsert_bootstrap_token(&pool, "revoked-boot").await.unwrap();
+    let previous_revoked: bool =
+        sqlx::query_scalar("SELECT revoked_at IS NOT NULL FROM api_tokens WHERE token_sha256 = $1")
+            .bind(afw_core::sha256_hex(b"previous-boot"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(previous_revoked);
+    sqlx::query("UPDATE api_tokens SET revoked_at = now() WHERE token_sha256 = $1")
+        .bind(afw_core::sha256_hex(b"revoked-boot"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    upsert_bootstrap_token(&pool, "revoked-boot").await.unwrap();
+    let revoked: bool =
+        sqlx::query_scalar("SELECT revoked_at IS NOT NULL FROM api_tokens WHERE token_sha256 = $1")
+            .bind(afw_core::sha256_hex(b"revoked-boot"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(revoked);
+}
+
+#[tokio::test]
+async fn only_one_active_mcp_agent_token() {
+    let Some(pool) = pool().await else {
+        eprintln!("AFW_TEST_DATABASE_URL not set: skipped");
+        return;
+    };
+    sqlx::query("UPDATE api_tokens SET revoked_at = now() WHERE role = 'mcp_agent'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let agent = Some(uuid::Uuid::new_v4());
+    insert_token(
+        &pool,
+        &format!("mcp-{}", uuid::Uuid::new_v4()),
+        "mcp_agent",
+        agent,
+        "NULL",
+    )
+    .await;
+    let second = sqlx::query(
+        "INSERT INTO api_tokens (name, token_sha256, role, actor_kind, actor_name, created_by) \
+         VALUES ('mcp2', $1, 'mcp_agent', 'agent', 'mcp2', '{}')",
+    )
+    .bind(afw_core::sha256_hex(uuid::Uuid::new_v4().as_bytes()))
+    .execute(&pool)
+    .await;
+    assert!(
+        second.is_err(),
+        "a second active mcp_agent token must be refused"
+    );
 }

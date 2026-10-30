@@ -73,7 +73,7 @@ pub struct WhereUsed {
 
 /// `POST /rules/{id}/move`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct MoveRuleRequest {
     pub position: u32,
     /// New layer; unchanged when absent.
@@ -115,14 +115,14 @@ pub struct Session {
 
 /// `POST /sessions/{id}/publish`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct PublishRequest {
     pub comment: String,
 }
 
 /// `POST /sessions/{id}/allow-from-log` (EF-42): creates a prefilled rule in the session.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct AllowFromLogRequest {
     pub flow_id: Uuid,
 }
@@ -145,7 +145,7 @@ pub struct Revision {
     pub interface: Interface,
     pub session_id: Option<Uuid>,
     pub comment: String,
-    /// Fingerprint of the document (same as `InstalledPolicy::sha256`).
+    /// SHA-256 of the canonical JSON of the document (`afw_core::installed::document_sha256`).
     pub sha256: String,
 }
 
@@ -211,7 +211,7 @@ pub struct VerifyReport {
 
 /// `POST /installs`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct InstallRequest {
     pub revision: u64,
     /// Target gateways; empty = all gateways.
@@ -278,7 +278,7 @@ pub struct Gateway {
 
 /// `POST /gateways/registration-tokens`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CreateRegistrationToken {
     /// Expected gateway name (informative).
     pub name: Option<String>,
@@ -356,7 +356,7 @@ pub struct ToolCallBatch {
 
 /// `POST /captures`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CaptureRequest {
     pub agent_id: Uuid,
     pub duration_secs: u32,
@@ -404,7 +404,7 @@ pub enum AlertChannelKind {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct AlertChannel {
     pub id: Uuid,
     pub name: String,
@@ -476,7 +476,10 @@ pub struct MapEdge {
     pub flows: u64,
     pub bytes: u64,
     pub alerts: u32,
+    pub first_seen_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
+    /// First seen within the requested period (lateral movement hint).
+    pub new: bool,
 }
 
 /// `GET /internal-map`.
@@ -528,7 +531,7 @@ pub struct Approval {
 
 /// `POST /approvals/{id}/decision`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ApprovalDecision {
     pub approve: bool,
     pub comment: Option<String>,
@@ -540,7 +543,11 @@ pub enum Role {
     Admin,
     Auditor,
     Viewer,
+    /// The single approved administration agent (MCP), restricted to delegated zones that are
+    /// not its own (EF-51).
     McpAgent,
+    /// Hermes plugin token: only `POST /ingest/tool-calls` and `GET /intent-policy`.
+    AgentPlugin,
 }
 
 /// API token (the secret is only returned once, at creation).
@@ -560,7 +567,7 @@ pub struct ApiToken {
 
 /// `POST /tokens`.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct CreateApiToken {
     pub name: String,
     pub role: Role,
@@ -592,44 +599,43 @@ pub struct Me {
 // ---------------------------------------------------------------------------------------------
 // Hermes intent policy and enrollment
 
+/// Decision of an action class (strictest wins: deny > gate > log > allow).
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
-pub enum ActionClassKind {
-    Deletion,
-    Access,
-    Infrastructure,
-    PaidGeneration,
-    Custom,
+pub enum IntentDecision {
+    Allow,
+    Log,
+    /// Blocked with a "submitted to human validation" message.
+    Gate,
+    Deny,
 }
 
-/// Class of tool actions handled by the Hermes plugin ("gate" = block with a message).
+/// Class of tool actions evaluated by the Hermes plugin (format of ADR 0015). Applies when
+/// (`tools` is empty or a case-insensitive glob matches the tool name) and (`patterns` is
+/// empty or a regex matches the subject: tool name line, then one `key: value` line per
+/// argument). The same `id` may appear in several entries with different tool scopes.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ActionClass {
+    pub id: String,
     pub name: String,
-    pub kind: ActionClassKind,
-    /// Tool name patterns (`*` wildcard).
     pub tools: Vec<String>,
-    /// Argument substrings or regexes that put a call in this class.
-    #[serde(default)]
-    pub arg_patterns: Vec<String>,
-    pub gate: bool,
-    pub message: Option<String>,
+    pub patterns: Vec<String>,
+    pub decision: IntentDecision,
 }
 
 /// `GET /intent-policy` (plugin token): served to the Hermes plugin, cached on its side.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct IntentPolicy {
-    pub revision: u64,
-    pub agent: String,
-    pub classes: Vec<ActionClass>,
+    pub version: u64,
+    pub action_classes: Vec<ActionClass>,
 }
 
 /// `POST /enrollments`: creates the agent (in an open session) and, for Hermes agents,
 /// a plugin token.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct EnrollmentRequest {
     pub name: String,
     pub zone_id: Uuid,

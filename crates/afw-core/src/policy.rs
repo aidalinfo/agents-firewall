@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 /// Network object: a destination (or group of destinations) referenced by rules.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct NetObject {
     pub id: Uuid,
     pub name: String,
@@ -25,7 +25,7 @@ pub struct NetObject {
 
 /// What a network object matches.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NetObjectSpec {
     /// Exact domain or wildcard (`*.example.com` matches sub-domains only).
     Domain {
@@ -59,7 +59,7 @@ pub enum DestCategory {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct Service {
     pub id: Uuid,
     pub name: String,
@@ -83,7 +83,7 @@ pub enum L4Proto {
 
 /// Inclusive port range.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct PortRange {
     pub start: u16,
     pub end: u16,
@@ -91,7 +91,7 @@ pub struct PortRange {
 
 /// Application-level match (method and path prefixes apply to HTTP/HTTPS only).
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct AppMatch {
     pub proto: AppProto,
     #[serde(default)]
@@ -112,7 +112,7 @@ pub enum AppProto {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct DataClass {
     pub id: Uuid,
     pub name: String,
@@ -133,7 +133,7 @@ pub enum DataCategory {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Detector {
     /// Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
     Builtin {
@@ -147,7 +147,7 @@ pub enum Detector {
 
 /// A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct Zone {
     pub id: Uuid,
     pub name: String,
@@ -167,7 +167,7 @@ pub enum ZoneMode {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct Agent {
     pub id: Uuid,
     pub name: String,
@@ -196,7 +196,7 @@ pub enum AgentKind {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct Rule {
     pub id: Uuid,
     pub name: String,
@@ -227,7 +227,7 @@ pub struct Rule {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Layer {
     Baseline,
     Zone { zone_id: Uuid },
@@ -252,7 +252,7 @@ pub enum Track {
 
 /// TLS inspection rule. Implicit default when nothing matches: `Inspect` (EF-09).
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct InspectionRule {
     pub id: Uuid,
     pub name: String,
@@ -275,7 +275,7 @@ pub enum InspectionAction {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct PolicySettings {
     #[schemars(with = "Vec<String>")]
     pub internal_networks: Vec<IpNet>,
@@ -301,7 +301,7 @@ impl Default for PolicySettings {
 
 /// Retention in days per kind of stored data.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct Retention {
     pub flows: u32,
     pub http: u32,
@@ -320,7 +320,7 @@ impl Default for Retention {
 
 /// The complete publishable policy.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct PolicyDocument {
     #[serde(default)]
     pub objects: Vec<NetObject>,

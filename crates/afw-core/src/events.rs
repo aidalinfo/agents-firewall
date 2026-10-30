@@ -66,6 +66,8 @@ pub struct DecisionRef {
     pub rule_id: Option<Uuid>,
     pub rule_number: Option<u32>,
     pub rule_name: String,
+    /// Policy revision that took the decision; `None` when the gateway had no valid policy.
+    pub revision: Option<u64>,
     /// `baseline`, `zone` or `implicit`.
     pub layer: String,
     pub reason: String,
@@ -77,6 +79,7 @@ pub struct DnsEvent {
     pub id: Uuid,
     pub gateway_id: Uuid,
     pub agent_id: Option<Uuid>,
+    pub zone_id: Option<Uuid>,
     pub at: DateTime<Utc>,
     pub qname: String,
     pub qtype: String,

@@ -187,6 +187,13 @@
         },
         "verdict": {
           "$ref": "#/definitions/Verdict"
+        },
+        "zone_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
         }
       }
     },
@@ -507,6 +514,15 @@
         },
         "reason": {
           "type": "string"
+        },
+        "revision": {
+          "description": "Policy revision that took the decision; `None` when the gateway had no valid policy.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
         },
         "rule_id": {
           "type": [

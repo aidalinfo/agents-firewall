@@ -176,6 +176,7 @@ pub fn decision() -> DecisionRef {
         rule_id: Some(id(1)),
         rule_number: Some(1),
         rule_name: "rule-1".into(),
+        revision: Some(3),
         layer: "baseline".into(),
         reason: "matched".into(),
     }
@@ -267,6 +268,7 @@ pub fn gateway_events() -> Vec<GatewayEvent> {
             id: id(800),
             gateway_id: id(30),
             agent_id: Some(id(20)),
+            zone_id: Some(id(10)),
             at: at(),
             qname: "api.anthropic.com".into(),
             qtype: "AAAA".into(),

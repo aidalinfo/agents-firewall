@@ -2497,7 +2497,7 @@ paths:
       operationId: getIntentPolicy
       tags:
       - hermes
-      summary: Intent policy for the calling agent (plugin token)
+      summary: Intent policy for the calling agent (`agent_plugin` token only; format of ADR 0015)
       responses:
         '200':
           description: OK
@@ -2518,7 +2518,7 @@ paths:
       operationId: ingestToolCalls
       tags:
       - hermes
-      summary: Tool calls reported by the Hermes plugin (plugin token)
+      summary: Tool calls reported by the Hermes plugin (`agent_plugin` token only; upsert by `id`)
       requestBody:
         required: true
         content:
@@ -2574,7 +2574,7 @@ components:
     bearer:
       type: http
       scheme: bearer
-      description: 'OIDC access token or API token. Roles: admin, auditor, viewer, mcp_agent. Optional `X-Afw-Interface: ui|cli|mcp|api` header.'
+      description: 'OIDC access token or API token. Roles: admin > auditor > viewer; mcp_agent (reads like a viewer, writes only zones delegated to the MCP that are not its own, EF-51); agent_plugin (only /ingest/tool-calls and /intent-policy). Optional `X-Afw-Interface: ui|cli|mcp|api` header: declarative, recorded in the audit log, never used for authorization.'
   parameters:
     Id:
       name: id
@@ -2673,43 +2673,30 @@ components:
       - deny
       type: string
     ActionClass:
-      description: Class of tool actions handled by the Hermes plugin ("gate" = block with a message).
+      additionalProperties: false
+      description: 'Class of tool actions evaluated by the Hermes plugin (format of ADR 0015). Applies when (`tools` is empty or a case-insensitive glob matches the tool name) and (`patterns` is empty or a regex matches the subject: tool name line, then one `key: value` line per argument). The same `id` may appear in several entries with different tool scopes.'
       properties:
-        arg_patterns:
-          default: []
-          description: Argument substrings or regexes that put a call in this class.
+        decision:
+          $ref: '#/components/schemas/IntentDecision'
+        id:
+          type: string
+        name:
+          type: string
+        patterns:
           items:
             type: string
           type: array
-        gate:
-          type: boolean
-        kind:
-          $ref: '#/components/schemas/ActionClassKind'
-        message:
-          type:
-          - string
-          - 'null'
-        name:
-          type: string
         tools:
-          description: Tool name patterns (`*` wildcard).
           items:
             type: string
           type: array
       required:
-      - gate
-      - kind
+      - decision
+      - id
       - name
+      - patterns
       - tools
       type: object
-    ActionClassKind:
-      enum:
-      - deletion
-      - access
-      - infrastructure
-      - paid_generation
-      - custom
-      type: string
     Actor:
       properties:
         id:
@@ -2752,6 +2739,7 @@ components:
       - proxmox
       type: string
     Agent:
+      additionalProperties: false
       properties:
         addresses:
           default: []
@@ -2882,6 +2870,7 @@ components:
       - event
       type: object
     AlertChannel:
+      additionalProperties: false
       properties:
         enabled:
           type: boolean
@@ -2953,6 +2942,7 @@ components:
       - unusual_admin_action
       type: string
     AllowFromLogRequest:
+      additionalProperties: false
       description: '`POST /sessions/{id}/allow-from-log` (EF-42): creates a prefilled rule in the session.'
       properties:
         flow_id:
@@ -3012,6 +3002,7 @@ components:
       - role
       type: object
     AppMatch:
+      additionalProperties: false
       description: Application-level match (method and path prefixes apply to HTTP/HTTPS only).
       properties:
         methods:
@@ -3081,6 +3072,7 @@ components:
       - summary
       type: object
     ApprovalDecision:
+      additionalProperties: false
       description: '`POST /approvals/{id}/decision`.'
       properties:
         approve:
@@ -3235,6 +3227,7 @@ components:
       - state
       type: object
     CaptureRequest:
+      additionalProperties: false
       description: '`POST /captures`.'
       properties:
         agent_id:
@@ -3295,6 +3288,7 @@ components:
       - tool_call_id
       type: object
     CreateApiToken:
+      additionalProperties: false
       description: '`POST /tokens`.'
       properties:
         agent_id:
@@ -3316,6 +3310,7 @@ components:
       - role
       type: object
     CreateRegistrationToken:
+      additionalProperties: false
       description: '`POST /gateways/registration-tokens`.'
       properties:
         name:
@@ -3344,6 +3339,7 @@ components:
       - custom
       type: string
     DataClass:
+      additionalProperties: false
       properties:
         category:
           $ref: '#/components/schemas/DataCategory'
@@ -3373,6 +3369,13 @@ components:
           type: string
         reason:
           type: string
+        revision:
+          description: Policy revision that took the decision; `None` when the gateway had no valid policy.
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         rule_id:
           format: uuid
           type:
@@ -3431,7 +3434,8 @@ components:
       type: object
     Detector:
       oneOf:
-      - description: Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
+      - additionalProperties: false
+        description: Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
         properties:
           id:
             type: string
@@ -3443,7 +3447,8 @@ components:
         - id
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           name:
             type: string
           pattern:
@@ -3486,6 +3491,11 @@ components:
           type: string
         verdict:
           $ref: '#/components/schemas/Verdict'
+        zone_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
       required:
       - at
       - decision
@@ -3512,6 +3522,7 @@ components:
       - session_id
       type: object
     EnrollmentRequest:
+      additionalProperties: false
       description: '`POST /enrollments`: creates the agent (in an open session) and, for Hermes agents, a plugin token.'
       properties:
         gateway_id:
@@ -3932,6 +3943,11 @@ components:
             type: string
           verdict:
             $ref: '#/components/schemas/Verdict'
+          zone_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
         required:
         - at
         - decision
@@ -4214,6 +4230,7 @@ components:
       - bypass
       type: string
     InspectionRule:
+      additionalProperties: false
       description: 'TLS inspection rule. Implicit default when nothing matches: `Inspect` (EF-09).'
       properties:
         action:
@@ -4285,6 +4302,7 @@ components:
       - state
       type: object
     InstallRequest:
+      additionalProperties: false
       description: '`POST /installs`.'
       properties:
         gateways:
@@ -4317,23 +4335,33 @@ components:
       - installed
       - failed
       type: string
+    IntentDecision:
+      description: 'Decision of an action class (strictest wins: deny > gate > log > allow).'
+      oneOf:
+      - enum:
+        - allow
+        - log
+        - deny
+        type: string
+      - description: Blocked with a "submitted to human validation" message.
+        enum:
+        - gate
+        type: string
     IntentPolicy:
+      additionalProperties: false
       description: '`GET /intent-policy` (plugin token): served to the Hermes plugin, cached on its side.'
       properties:
-        agent:
-          type: string
-        classes:
+        action_classes:
           items:
             $ref: '#/components/schemas/ActionClass'
           type: array
-        revision:
+        version:
           format: uint64
           minimum: 0.0
           type: integer
       required:
-      - agent
-      - classes
-      - revision
+      - action_classes
+      - version
       type: object
     Interface:
       enum:
@@ -4366,7 +4394,8 @@ components:
       type: string
     Layer:
       oneOf:
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - baseline
@@ -4374,7 +4403,8 @@ components:
         required:
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - zone
@@ -4400,6 +4430,9 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        first_seen_at:
+          format: date-time
+          type: string
         flows:
           format: uint64
           minimum: 0.0
@@ -4407,6 +4440,9 @@ components:
         last_seen_at:
           format: date-time
           type: string
+        new:
+          description: First seen within the requested period (lateral movement hint).
+          type: boolean
         port:
           format: uint16
           minimum: 0.0
@@ -4420,8 +4456,10 @@ components:
       required:
       - alerts
       - bytes
+      - first_seen_at
       - flows
       - last_seen_at
+      - new
       - port
       - protocol
       - source
@@ -4494,6 +4532,7 @@ components:
       - role
       type: object
     MoveRuleRequest:
+      additionalProperties: false
       description: '`POST /rules/{id}/move`.'
       properties:
         layer:
@@ -4514,6 +4553,7 @@ components:
       - position
       type: object
     NetObject:
+      additionalProperties: false
       description: 'Network object: a destination (or group of destinations) referenced by rules.'
       properties:
         category:
@@ -4539,7 +4579,8 @@ components:
     NetObjectSpec:
       description: What a network object matches.
       oneOf:
-      - description: Exact domain or wildcard (`*.example.com` matches sub-domains only).
+      - additionalProperties: false
+        description: Exact domain or wildcard (`*.example.com` matches sub-domains only).
         properties:
           pattern:
             type: string
@@ -4551,7 +4592,8 @@ components:
         - pattern
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           ip:
             format: ip
             type: string
@@ -4563,7 +4605,8 @@ components:
         - ip
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           cidr:
             type: string
           type:
@@ -4574,7 +4617,8 @@ components:
         - cidr
         - type
         type: object
-      - description: Inclusive address range.
+      - additionalProperties: false
+        description: Inclusive address range.
         properties:
           end:
             format: ip
@@ -4591,7 +4635,8 @@ components:
         - start
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           members:
             items:
               format: uuid
@@ -4605,7 +4650,8 @@ components:
         - members
         - type
         type: object
-      - properties:
+      - additionalProperties: false
+        properties:
           type:
             enum:
             - any
@@ -4712,6 +4758,7 @@ components:
       - items
       type: object
     PolicyDocument:
+      additionalProperties: false
       description: The complete publishable policy.
       properties:
         agents:
@@ -4765,6 +4812,7 @@ components:
           type: array
       type: object
     PolicySettings:
+      additionalProperties: false
       properties:
         internal_networks:
           items:
@@ -4787,6 +4835,7 @@ components:
       - retention_days
       type: object
     PortRange:
+      additionalProperties: false
       description: Inclusive port range.
       properties:
         end:
@@ -4827,6 +4876,7 @@ components:
       - title
       type: object
     PublishRequest:
+      additionalProperties: false
       description: '`POST /sessions/{id}/publish`.'
       properties:
         comment:
@@ -4874,6 +4924,7 @@ components:
       - name
       type: object
     Retention:
+      additionalProperties: false
       description: Retention in days per kind of stored data.
       properties:
         captures:
@@ -4915,7 +4966,7 @@ components:
           - string
           - 'null'
         sha256:
-          description: Fingerprint of the document (same as `InstalledPolicy::sha256`).
+          description: SHA-256 of the canonical JSON of the document (`afw_core::installed::document_sha256`).
           type: string
       required:
       - comment
@@ -4957,13 +5008,22 @@ components:
       - to
       type: object
     Role:
-      enum:
-      - admin
-      - auditor
-      - viewer
-      - mcp_agent
-      type: string
+      oneOf:
+      - enum:
+        - admin
+        - auditor
+        - viewer
+        type: string
+      - description: The single approved administration agent (MCP), restricted to delegated zones that are not its own (EF-51).
+        enum:
+        - mcp_agent
+        type: string
+      - description: 'Hermes plugin token: only `POST /ingest/tool-calls` and `GET /intent-policy`.'
+        enum:
+        - agent_plugin
+        type: string
     Rule:
+      additionalProperties: false
       properties:
         action:
           $ref: '#/components/schemas/Action'
@@ -5057,6 +5117,7 @@ components:
       - rule_id
       type: object
     Service:
+      additionalProperties: false
       properties:
         app:
           anyOf:
@@ -5270,6 +5331,7 @@ components:
       - references
       type: object
     Zone:
+      additionalProperties: false
       description: A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.
       properties:
         comment:

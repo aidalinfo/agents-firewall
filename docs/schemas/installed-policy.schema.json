@@ -31,11 +31,17 @@
       "format": "uint64",
       "minimum": 0.0
     },
+    "rollback": {
+      "description": "Set by the console when it deliberately installs an older revision: only then may a gateway replace its active policy by a lower revision number (see [`Self::may_replace`]).",
+      "default": false,
+      "type": "boolean"
+    },
     "sha256": {
-      "description": "SHA-256 (lowercase hex) of the canonical JSON of `document`.",
+      "description": "SHA-256 (lowercase hex) of the canonical JSON of `{\"document\": …, \"revision\": …, \"rollback\": …}` (see [`installed_sha256`]).",
       "type": "string"
     }
   },
+  "additionalProperties": false,
   "definitions": {
     "Action": {
       "type": "string",
@@ -99,7 +105,8 @@
           "type": "string",
           "format": "uuid"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "AgentKind": {
       "type": "string",
@@ -134,7 +141,8 @@
         "proto": {
           "$ref": "#/definitions/AppProto"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "AppProto": {
       "type": "string",
@@ -186,7 +194,8 @@
         "name": {
           "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "DestCategory": {
       "description": "Destination category. `LlmProvider` carries the data-class exemption (EF-25).",
@@ -216,7 +225,8 @@
                 "builtin"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -238,7 +248,8 @@
                 "regex"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -292,7 +303,8 @@
             "format": "uuid"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "L4Proto": {
       "type": "string",
@@ -316,7 +328,8 @@
                 "baseline"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -335,7 +348,8 @@
               "type": "string",
               "format": "uuid"
             }
-          }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -373,7 +387,8 @@
         "spec": {
           "$ref": "#/definitions/NetObjectSpec"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "NetObjectSpec": {
       "description": "What a network object matches.",
@@ -395,7 +410,8 @@
                 "domain"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -414,7 +430,8 @@
                 "host"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -432,7 +449,8 @@
                 "network"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "description": "Inclusive address range.",
@@ -457,7 +475,8 @@
                 "range"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -479,7 +498,8 @@
                 "group"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -493,7 +513,8 @@
                 "any"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -572,7 +593,8 @@
             "$ref": "#/definitions/Zone"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "PolicySettings": {
       "type": "object",
@@ -602,7 +624,8 @@
         "retention_days": {
           "$ref": "#/definitions/Retention"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "PortRange": {
       "description": "Inclusive port range.",
@@ -622,7 +645,8 @@
           "format": "uint16",
           "minimum": 0.0
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Retention": {
       "description": "Retention in days per kind of stored data.",
@@ -648,7 +672,8 @@
           "format": "uint32",
           "minimum": 0.0
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Rule": {
       "type": "object",
@@ -745,7 +770,8 @@
             }
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Service": {
       "type": "object",
@@ -788,7 +814,8 @@
         "protocol": {
           "$ref": "#/definitions/L4Proto"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Track": {
       "type": "string",
@@ -826,7 +853,8 @@
         "name": {
           "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "ZoneMode": {
       "description": "`Observe`: denials are logged but the flow is allowed (EF-12).",

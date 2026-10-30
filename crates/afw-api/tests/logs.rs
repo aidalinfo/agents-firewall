@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use afw_api::gateways::ports::LogsPort;
 use afw_api::logs::{self, captures, retention, views};
 use afw_api::{AppState, Config, migrate, router};
 use afw_core::api::{
@@ -1669,7 +1670,10 @@ async fn channel_audit_records_the_url_fingerprint() {
             .fetch_one(&e.pool)
             .await
             .unwrap();
-    assert_eq!(diff["after"]["url_sha256"], afw_core::sha256_hex(url.as_bytes()));
+    assert_eq!(
+        diff["after"]["url_sha256"],
+        afw_core::sha256_hex(url.as_bytes())
+    );
     assert!(!diff.to_string().contains("secret-token"));
 }
 

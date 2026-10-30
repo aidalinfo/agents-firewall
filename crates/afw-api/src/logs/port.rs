@@ -10,7 +10,6 @@ use super::{captures, ingest};
 use crate::AppState;
 use crate::gateways::ports::{LogsPort, PortFuture};
 
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LogsPortImpl;
 

@@ -43,14 +43,28 @@ async fn gateway_events_reach_the_logs_api() {
     state.gateways.pki = Some(pki.clone());
     let server = pki.server_config(&["127.0.0.1".to_owned()]).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("https://127.0.0.1:{}", listener.local_addr().unwrap().port());
-    tokio::spawn(afw_api::gateways::tls::serve(listener, state.clone(), server));
+    let base = format!(
+        "https://127.0.0.1:{}",
+        listener.local_addr().unwrap().port()
+    );
+    tokio::spawn(afw_api::gateways::tls::serve(
+        listener,
+        state.clone(),
+        server,
+    ));
     let app = afw_api::router(state);
     let admin = token(&pool, "admin", None).await;
     let auditor = token(&pool, "auditor", None).await;
 
     // Register a gateway.
-    let res = call(&app, "POST", "/api/v1/gateways/registration-tokens", Some(&admin), Some(json!({"name": "gw-a"}))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/gateways/registration-tokens",
+        Some(&admin),
+        Some(json!({"name": "gw-a"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
     let reg_token = res.json()["token"].as_str().unwrap().to_owned();
     let id_dir = tempfile::tempdir().unwrap();
@@ -63,7 +77,12 @@ async fn gateway_events_reach_the_logs_api() {
         .unwrap();
     assert_eq!(res.status().as_u16(), 201);
     let body: serde_json::Value = res.json().await.unwrap();
-    GatewayIdentity::store_cert(id_dir.path(), body["cert_pem"].as_str().unwrap(), body["ca_pem"].as_str().unwrap()).unwrap();
+    GatewayIdentity::store_cert(
+        id_dir.path(),
+        body["cert_pem"].as_str().unwrap(),
+        body["ca_pem"].as_str().unwrap(),
+    )
+    .unwrap();
     let gw: Uuid = body["gateway_id"].as_str().unwrap().parse().unwrap();
     let client = reqwest::Client::builder()
         .use_preconfigured_tls((*GatewayIdentity::client_config(id_dir.path()).unwrap()).clone())
@@ -84,10 +103,22 @@ async fn gateway_events_reach_the_logs_api() {
         "internal": false, "llm_provider": false, "tls_inspected": true,
         "data_classes": [], "observed": false
     }]});
-    let res = client.post(format!("{base}/gw/v1/events")).json(&batch).send().await.unwrap();
+    let res = client
+        .post(format!("{base}/gw/v1/events"))
+        .json(&batch)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status().as_u16(), 202);
 
-    let res = call(&app, "GET", "/api/v1/logs/flows?verdict=deny", Some(&auditor), None).await;
+    let res = call(
+        &app,
+        "GET",
+        "/api/v1/logs/flows?verdict=deny",
+        Some(&auditor),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK, "{}", res.text());
     let items = res.json()["items"].clone();
     assert_eq!(items.as_array().unwrap().len(), 1);
@@ -96,13 +127,25 @@ async fn gateway_events_reach_the_logs_api() {
     assert_eq!(items[0]["rule_label"], "default-deny");
 
     // Capture: requested through the API, commanded in the heartbeat, uploaded over mTLS.
-    let res = call(&app, "POST", "/api/v1/captures", Some(&admin), Some(json!({"agent_id": agent, "duration_secs": 5}))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/captures",
+        Some(&admin),
+        Some(json!({"agent_id": agent, "duration_secs": 5})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::ACCEPTED, "{}", res.text());
     let capture = res.json()["id"].as_str().unwrap().to_owned();
     let hb = json!({"version": "0.1.0", "revision": null, "ca_fingerprint": "ab",
         "stats": {"uptime_secs": 1, "active_flows": 0, "flows_total": 1, "denied_total": 1,
                   "bytes_in": 0, "bytes_out": 0, "events_queued": 0, "events_dropped": 0}});
-    let res = client.post(format!("{base}/gw/v1/heartbeat")).json(&hb).send().await.unwrap();
+    let res = client
+        .post(format!("{base}/gw/v1/heartbeat"))
+        .json(&hb)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status().as_u16(), 200);
     let cmds: serde_json::Value = res.json().await.unwrap();
     assert_eq!(cmds["commands"][0]["capture_id"], json!(capture));
@@ -114,7 +157,14 @@ async fn gateway_events_reach_the_logs_api() {
         .await
         .unwrap();
     assert!(res.status().is_success(), "{}", res.status());
-    let res = call(&app, "GET", &format!("/api/v1/captures/{capture}/download"), Some(&auditor), None).await;
+    let res = call(
+        &app,
+        "GET",
+        &format!("/api/v1/captures/{capture}/download"),
+        Some(&auditor),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body, b"pcap-bytes");
 }

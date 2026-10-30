@@ -681,7 +681,9 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
         parts.headers.insert(header::HOST, v);
     }
     let up_req = Request::from_parts(parts, upstream_body);
-    state.metrics.added_latency(started.elapsed().as_micros() as u64);
+    state
+        .metrics
+        .added_latency(started.elapsed().as_micros() as u64);
     let resp = hf.client(upstream).request(up_req).await;
     let log = HttpLog {
         state: state.clone(),

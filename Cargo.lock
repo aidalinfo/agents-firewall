@@ -174,11 +174,13 @@ dependencies = [
 name = "afw-gateway"
 version = "0.1.0"
 dependencies = [
+ "afw-api",
  "afw-core",
  "afw-dlp",
  "afw-engine",
  "afw-tls",
  "anyhow",
+ "axum",
  "base64 0.22.1",
  "bytes",
  "chrono",
@@ -198,6 +200,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

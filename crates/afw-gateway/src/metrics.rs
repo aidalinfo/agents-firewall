@@ -112,7 +112,12 @@ impl Metrics {
 }
 
 fn pct(m: &Mutex<VecDeque<u64>>) -> (u64, u64) {
-    let mut v: Vec<u64> = m.lock().unwrap_or_else(|e| e.into_inner()).iter().copied().collect();
+    let mut v: Vec<u64> = m
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .copied()
+        .collect();
     if v.is_empty() {
         return (0, 0);
     }

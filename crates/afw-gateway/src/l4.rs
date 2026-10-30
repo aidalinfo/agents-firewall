@@ -49,7 +49,9 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
         }
     };
     flow.mark_allowed(&d);
-    state.metrics.added_latency(started.elapsed().as_micros() as u64);
+    state
+        .metrics
+        .added_latency(started.elapsed().as_micros() as u64);
     let capture = state
         .captures
         .for_agent(d.agent_id)

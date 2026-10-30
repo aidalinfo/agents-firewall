@@ -50,3 +50,7 @@ libc = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# End-to-end test against the real control plane (tests/console_e2e.rs).
+afw-api = { path = "../afw-api" }
+axum = { workspace = true }
+sqlx = { workspace = true }

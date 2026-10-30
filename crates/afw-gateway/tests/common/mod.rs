@@ -352,7 +352,15 @@ pub async fn harness_with(
     policy: Option<InstalledPolicy>,
     tweak: impl FnOnce(&mut GatewayOptions),
 ) -> Harness {
-    let dir = tempfile::tempdir().unwrap();
+    harness_in(tempfile::tempdir().unwrap(), policy, tweak).await
+}
+
+/// Same, with a state directory prepared by the caller (e.g. a registered identity).
+pub async fn harness_in(
+    dir: tempfile::TempDir,
+    policy: Option<InstalledPolicy>,
+    tweak: impl FnOnce(&mut GatewayOptions),
+) -> Harness {
     let up_dir = tempfile::tempdir().unwrap();
     let up_ca =
         afw_tls::GatewayCa::load_or_create(&up_dir.path().join("ca"), "upstream test CA").unwrap();

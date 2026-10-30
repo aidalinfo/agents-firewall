@@ -1,0 +1,30 @@
+name: bots
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: example
+    networks:
+      - backend
+  daniel-bot:
+    image: nousresearch/hermes-agent:latest
+    restart: unless-stopped
+    hostname: daniel
+    ports:
+      - "8080:8080"
+    environment:
+      - HERMES_HOME=/opt/data
+      - HTTP_PROXY=http://old-proxy:8080
+    volumes:
+      - ./data/daniel:/opt/data
+    networks:
+      - backend
+      - default
+    dns:
+      - 1.1.1.1
+    depends_on:
+      - postgres
+networks:
+  backend: {}
+volumes:
+  pgdata: {}

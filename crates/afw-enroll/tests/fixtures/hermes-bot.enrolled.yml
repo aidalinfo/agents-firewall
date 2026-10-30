@@ -1,0 +1,87 @@
+name: bots
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: example
+    networks:
+    - backend
+  afw-net-daniel:
+    image: afw-netinit:local
+    restart: unless-stopped
+    cap_add:
+    - NET_ADMIN
+    environment:
+      AFW_GATEWAY_IP: 10.80.0.2
+    command:
+    - sh
+    - -c
+    - 'trap ''exit 0'' TERM INT; while :; do ip route replace default via 10.80.0.2 || echo ''afw-net: cannot set the default route'' >&2; sleep 10 & wait $$!; done'
+    networks:
+      afw-internal:
+        ipv4_address: 10.80.0.11
+    dns:
+    - 10.80.0.2
+    hostname: daniel
+    ports:
+    - 8080:8080
+    labels:
+      afw.enrolled: 'true'
+      afw.agent: daniel
+  daniel-bot:
+    image: nousresearch/hermes-agent:latest
+    restart: unless-stopped
+    environment:
+    - HERMES_HOME=/opt/data
+    - HTTP_PROXY=http://10.80.0.2:3128
+    - HTTPS_PROXY=http://10.80.0.2:3128
+    - NO_PROXY=localhost,127.0.0.1,::1,afw.example.org
+    - http_proxy=http://10.80.0.2:3128
+    - https_proxy=http://10.80.0.2:3128
+    - no_proxy=localhost,127.0.0.1,::1,afw.example.org
+    - REQUESTS_CA_BUNDLE=/usr/local/share/ca-certificates/afw-gateway.crt
+    - SSL_CERT_FILE=/usr/local/share/ca-certificates/afw-gateway.crt
+    - NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/afw-gateway.crt
+    - CURL_CA_BUNDLE=/usr/local/share/ca-certificates/afw-gateway.crt
+    - AFW_CONSOLE_URL=https://afw.example.org
+    - AFW_AGENT_TOKEN=${AFW_TOKEN_DANIEL}
+    - AFW_AGENT_NAME=daniel
+    volumes:
+    - ./data/daniel:/opt/data
+    - /etc/afw/gateway-ca.crt:/usr/local/share/ca-certificates/afw-gateway.crt:ro
+    - /opt/afw/integrations/hermes:/opt/data/plugins/agents-firewall:ro
+    depends_on:
+    - postgres
+    network_mode: service:afw-net-daniel
+    labels:
+      afw.enrolled: 'true'
+      afw.agent: daniel
+networks:
+  backend: {}
+  afw-internal:
+    external: true
+volumes:
+  pgdata: {}
+x-afw-original:
+  daniel:
+    service: daniel-bot
+    network: afw-internal
+    definition:
+      image: nousresearch/hermes-agent:latest
+      restart: unless-stopped
+      hostname: daniel
+      ports:
+      - 8080:8080
+      environment:
+      - HERMES_HOME=/opt/data
+      - HTTP_PROXY=http://old-proxy:8080
+      volumes:
+      - ./data/daniel:/opt/data
+      networks:
+      - backend
+      - default
+      dns:
+      - 1.1.1.1
+      depends_on:
+      - postgres
+    networks_key: true

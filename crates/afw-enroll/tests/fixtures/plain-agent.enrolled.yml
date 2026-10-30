@@ -1,0 +1,61 @@
+services:
+  afw-net-laurent:
+    image: afw-netinit:local
+    restart: unless-stopped
+    cap_add:
+    - NET_ADMIN
+    environment:
+      AFW_GATEWAY_IP: 10.80.0.2
+    command:
+    - sh
+    - -c
+    - 'trap ''exit 0'' TERM INT; while :; do ip route replace default via 10.80.0.2 || echo ''afw-net: cannot set the default route'' >&2; sleep 10 & wait $$!; done'
+    networks:
+      afw-internal:
+        ipv4_address: 10.80.0.11
+    dns:
+    - 10.80.0.2
+    labels:
+      afw.enrolled: 'true'
+      afw.agent: laurent
+  laurent-bot:
+    image: alpine:3.20
+    command:
+    - sleep
+    - infinity
+    environment:
+      LOG_LEVEL: debug
+      HTTP_PROXY: http://10.80.0.2:3128
+      HTTPS_PROXY: http://10.80.0.2:3128
+      NO_PROXY: localhost,127.0.0.1,::1
+      http_proxy: http://10.80.0.2:3128
+      https_proxy: http://10.80.0.2:3128
+      no_proxy: localhost,127.0.0.1,::1
+      REQUESTS_CA_BUNDLE: /usr/local/share/ca-certificates/afw-gateway.crt
+      SSL_CERT_FILE: /usr/local/share/ca-certificates/afw-gateway.crt
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/afw-gateway.crt
+      CURL_CA_BUNDLE: /usr/local/share/ca-certificates/afw-gateway.crt
+    labels:
+      team: ops
+      afw.enrolled: 'true'
+      afw.agent: laurent
+    network_mode: service:afw-net-laurent
+    volumes:
+    - /etc/afw/gateway-ca.crt:/usr/local/share/ca-certificates/afw-gateway.crt:ro
+networks:
+  afw-internal:
+    external: true
+x-afw-original:
+  laurent:
+    service: laurent-bot
+    network: afw-internal
+    definition:
+      image: alpine:3.20
+      command:
+      - sleep
+      - infinity
+      environment:
+        LOG_LEVEL: debug
+      labels:
+        team: ops
+    networks_key: false

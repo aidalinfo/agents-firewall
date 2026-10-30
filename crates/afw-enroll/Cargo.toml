@@ -1,0 +1,20 @@
+[package]
+name = "afw-enroll"
+description = "Enrollment of containerized agents behind an agents-firewall gateway (Docker Compose, Coolify, Kubernetes)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+axum = { workspace = true }

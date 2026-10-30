@@ -1,0 +1,4 @@
+198.18.0.10 api.anthropic.com api.openai.com
+198.18.0.11 exfil.example
+198.18.0.12 allowed.example api.github.com
+198.18.0.13 s3.demo.example

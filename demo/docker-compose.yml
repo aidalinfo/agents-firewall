@@ -1,0 +1,366 @@
+# agents-firewall — local acceptance environment (docs/adr/0024-deploiement-et-demo.md).
+#
+# Start it with demo/up.sh (builds the images, starts the stack in order, registers the gateway and
+# installs the demo policy). Stop it with demo/down.sh. Nothing here depends on an Internet service.
+#
+# Networks
+#   control      10.76.0.0/24  console, API, Postgres, gateway (only network published on the host, 127.0.0.1)
+#   afw-internal 10.77.0.0/24  internal: gateway (.2) + one afw-net-<agent> namespace per agent (.10+)
+#   lan          10.78.0.0/24  internal: simulated company LAN (internal-db), reachable through the gateway
+#   wan          198.18.0.0/24 internal: simulated Internet (demo DNS, fake LLM, exfil, allowed API, S3);
+#                              198.18.0.0/15 (RFC 2544) is outside the policy's internal networks.
+# Agents are enrolled as afw-enroll does it (ADR 0003): each agent shares the network namespace of an
+# afw-net-<agent> container that alone has NET_ADMIN and routes everything to the gateway.
+
+name: afw-demo
+
+x-proxy-env: &proxy-env
+  HTTP_PROXY: http://10.77.0.2:3128
+  HTTPS_PROXY: http://10.77.0.2:3128
+  http_proxy: http://10.77.0.2:3128
+  https_proxy: http://10.77.0.2:3128
+  NO_PROXY: localhost,127.0.0.1,10.76.0.10
+  no_proxy: localhost,127.0.0.1,10.76.0.10
+  # Public certificate of the gateway's inspection CA, exported by the gateway in the shared volume.
+  SSL_CERT_FILE: /afw-ca/inspection-ca.crt
+  REQUESTS_CA_BUNDLE: /afw-ca/inspection-ca.crt
+  CURL_CA_BUNDLE: /afw-ca/inspection-ca.crt
+  NODE_EXTRA_CA_CERTS: /afw-ca/inspection-ca.crt
+
+x-netinit: &netinit
+  image: afw-netinit:local
+  build:
+    context: ../deploy/docker
+    dockerfile: Dockerfile.netinit
+  cap_drop: [ALL]
+  cap_add: [NET_ADMIN]
+  dns: [10.77.0.2]
+  environment:
+    AFW_GATEWAY_IP: 10.77.0.2
+  restart: unless-stopped
+  mem_limit: 16m
+
+x-agent: &agent
+  image: afw-demo-tools:local
+  command: ["sleep", "infinity"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes:
+    - gateway-public:/afw-ca:ro
+  restart: unless-stopped
+  mem_limit: 64m
+
+x-upstream: &upstream
+  image: afw-demo-tools:local
+  command: ["python", "/opt/afw-demo/fake_upstream.py"]
+  cap_drop: [ALL]
+  volumes:
+    - demo-pki:/pki:ro
+    - upstream-logs:/data
+  depends_on:
+    demo-pki:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1/healthz', timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+  restart: unless-stopped
+  mem_limit: 64m
+
+services:
+  # --- control plane -------------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: afw
+      POSTGRES_PASSWORD: afw-demo-only
+      POSTGRES_DB: afw
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [control]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afw -d afw"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+
+  afw-api:
+    image: afw-api:local
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.api
+    environment:
+      AFW_LISTEN: 0.0.0.0:8080
+      AFW_GW_LISTEN: 0.0.0.0:8443
+      AFW_PUBLIC_HOSTNAMES: afw-api,10.76.0.10
+      DATABASE_URL: postgres://afw:afw-demo-only@postgres:5432/afw
+      AFW_LOG_STORE: postgres
+      AFW_STATE_DIR: /var/lib/afw-api
+      AFW_CONSOLE_CA_EXPORT: /var/lib/afw-api/public/console-ca.crt
+      # Demo-only secrets (never reuse them): admin bootstrap token and 32-byte content key (base64).
+      AFW_BOOTSTRAP_ADMIN_TOKEN: ${AFW_DEMO_ADMIN_TOKEN:-afw-demo-admin-token}
+      AFW_DATA_KEY: ${AFW_DEMO_DATA_KEY:-ZGVtby1vbmx5LWtleS1kby1ub3QtdXNlLWluLXByb2Q=}
+      AFW_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      RUST_LOG: info
+    volumes:
+      - api-state:/var/lib/afw-api
+      - api-public:/var/lib/afw-api/public
+    networks:
+      control:
+        ipv4_address: 10.76.0.10
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+    mem_limit: 256m
+
+  console:
+    image: afw-console:local
+    build:
+      context: ../console
+      dockerfile: Dockerfile
+    environment:
+      NUXT_PUBLIC_API_MODE: http
+      NUXT_PUBLIC_API_BASE: http://localhost:8080
+      PORT: "3000"
+    networks: [control]
+    ports:
+      - 127.0.0.1:3000:3000
+    depends_on:
+      afw-api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 256m
+
+  # --- gateway (one gateway, two zones) --------------------------------------------------------------
+  gateway:
+    image: afw-gateway:local
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.gateway
+    # nftables redirection and ip_forward (ADR 0003); Docker's default capabilities otherwise.
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      AFW_CONSOLE_URL: https://afw-api:8443
+      AFW_CONSOLE_CA_FILE: /etc/afw/console/console-ca.crt
+      AFW_REGISTRATION_TOKEN: ${AFW_GATEWAY_TOKEN:-}
+      AFW_GATEWAY_NAME: demo-gw
+      AFW_STATE_DIR: /var/lib/afw
+      AFW_CA_EXPORT: /var/lib/afw/public/inspection-ca.crt
+      AFW_INTERNAL_SUBNETS: 10.77.0.0/24
+      AFW_UPSTREAM_DNS: 198.18.0.53:53
+      AFW_UPSTREAM_CA_FILE: /etc/afw/upstream/demo-ca.crt
+      RUST_LOG: info
+    volumes:
+      - gateway-state:/var/lib/afw
+      - gateway-public:/var/lib/afw/public
+      - api-public:/etc/afw/console:ro
+      - demo-pki:/etc/afw/upstream:ro
+    networks:
+      control:
+        ipv4_address: 10.76.0.2
+      afw-internal:
+        ipv4_address: 10.77.0.2
+      lan:
+        ipv4_address: 10.78.0.2
+      wan:
+        ipv4_address: 198.18.0.2
+    depends_on:
+      afw-api:
+        condition: service_healthy
+      demo-dns:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 256m
+
+  # --- simulated outside world (wan) ---------------------------------------------------------------
+  demo-pki:
+    image: afw-demo-tools:local
+    build:
+      context: ./tools
+    command: ["/opt/afw-demo/pki.sh"]
+    network_mode: none
+    volumes:
+      - demo-pki:/pki
+    restart: "no"
+
+  demo-dns:
+    image: coredns/coredns:1.11.3
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./dns:/etc/coredns:ro
+    networks:
+      wan:
+        ipv4_address: 198.18.0.53
+    restart: unless-stopped
+    mem_limit: 64m
+
+  fake-llm:
+    <<: *upstream
+    environment:
+      SERVICE: fake-llm
+    networks:
+      wan:
+        ipv4_address: 198.18.0.10
+
+  exfil:
+    <<: *upstream
+    environment:
+      SERVICE: exfil
+      RAW_PORT: "4444"
+    networks:
+      wan:
+        ipv4_address: 198.18.0.11
+
+  allowed-api:
+    <<: *upstream
+    environment:
+      SERVICE: allowed-api
+    networks:
+      wan:
+        ipv4_address: 198.18.0.12
+
+  s3:
+    <<: *upstream
+    environment:
+      SERVICE: s3
+    networks:
+      wan:
+        ipv4_address: 198.18.0.13
+
+  # --- simulated company LAN -----------------------------------------------------------------------
+  internal-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: internal-demo-only
+      POSTGRES_DB: app
+    networks:
+      lan:
+        ipv4_address: 10.78.0.20
+    restart: unless-stopped
+    mem_limit: 128m
+
+  # --- enrolled agents (format produced by afw-enroll, ADR 0003) -----------------------------------
+  afw-net-daniel-bot:
+    <<: *netinit
+    labels:
+      afw.enrolled: "true"
+      afw.agent: daniel-bot
+    networks:
+      afw-internal:
+        ipv4_address: 10.77.0.10
+
+  daniel-bot:
+    # Fake Hermes agent driven over HTTP, with the afw-hermes plugin (lot L4, integrations/hermes/demo).
+    image: afw-hermes-demo:local
+    build:
+      context: ../integrations/hermes
+      dockerfile: demo/Dockerfile.demo
+    network_mode: service:afw-net-daniel-bot
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    env_file:
+      - path: .state/demo.env
+        required: false
+    environment:
+      <<: *proxy-env
+      AFW_CONSOLE_URL: http://10.76.0.10:8080
+      AFW_AGENT_NAME: daniel-bot
+      AFW_STATE_DIR: /tmp/afw-hermes
+    volumes:
+      - gateway-public:/afw-ca:ro
+    labels:
+      afw.enrolled: "true"
+      afw.agent: daniel-bot
+    depends_on: [afw-net-daniel-bot]
+    restart: unless-stopped
+    mem_limit: 128m
+
+  afw-net-laurent-bot:
+    <<: *netinit
+    labels:
+      afw.enrolled: "true"
+      afw.agent: laurent-bot
+    networks:
+      afw-internal:
+        ipv4_address: 10.77.0.11
+
+  laurent-bot:
+    <<: *agent
+    network_mode: service:afw-net-laurent-bot
+    environment:
+      <<: *proxy-env
+    labels:
+      afw.enrolled: "true"
+      afw.agent: laurent-bot
+    depends_on: [afw-net-laurent-bot]
+
+  afw-net-acme-bot:
+    <<: *netinit
+    labels:
+      afw.enrolled: "true"
+      afw.agent: acme-bot
+    networks:
+      afw-internal:
+        ipv4_address: 10.77.0.12
+
+  acme-bot:
+    <<: *agent
+    network_mode: service:afw-net-acme-bot
+    environment:
+      <<: *proxy-env
+    labels:
+      afw.enrolled: "true"
+      afw.agent: acme-bot
+    depends_on: [afw-net-acme-bot]
+
+  # --- tooling (not started by default) -------------------------------------------------------------
+  # Plain client on the wan network, used by the latency scenario as the "without gateway" baseline.
+  direct-client:
+    image: afw-demo-tools:local
+    profiles: [tools]
+    volumes:
+      - demo-pki:/pki:ro
+    networks: [wan]
+
+networks:
+  control:
+    ipam:
+      config:
+        - subnet: 10.76.0.0/24
+  afw-internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
+  lan:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.78.0.0/24
+  wan:
+    internal: true
+    ipam:
+      config:
+        - subnet: 198.18.0.0/24
+
+volumes:
+  postgres-data:
+  api-state:
+  api-public:
+  gateway-state:
+  gateway-public:
+  demo-pki:
+  upstream-logs:

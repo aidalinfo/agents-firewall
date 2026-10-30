@@ -72,6 +72,25 @@ les droits de l'agent d'administration MCP (EF-51, EF-52). Plusieurs choix resta
     révision désirée/active est recopiée par valeur dans `gateways` quand la table existe. Le trait
     `PolicyPort` de L7c est implémenté par `policy::port::PolicyPortImpl`.
 
+13. **Après revue de la PR #13** :
+    - l'agent MCP ne gère jamais un objet porteur d'une `category` (internal, llm_provider,
+      cloud_metadata : elle change les décisions implicites de toutes les zones) ni les `addresses`
+      d'un agent (elles fixent la zone d'un trafic et ce qui est interne) : 403, évalué avant la
+      validation ; pour tous, une adresse d'agent doit appartenir aux `internal_networks` ;
+    - EF-52 : couverture réunie (réseaux, plages, hôtes résolus via groupes) au-delà de 2^24 adresses
+      IPv4 publiques (hors `internal_networks`) ou d'un /32 IPv6 ; joker sur un suffixe public
+      (`*.com`, `*.co.uk`, crate `psl`, MIT/Apache-2.0) ; passage d'une zone en `observe` ;
+    - l'agent MCP n'installe que la dernière révision, publiée par lui, et seulement si personne
+      d'autre n'a installé depuis cette publication ;
+    - l'empreinte `revisions.sha256` est revérifiée à chaque chargement (aucune politique servie en
+      cas d'écart, erreur journalisée) ; un accusé ne rend active que la révision désirée ;
+    - un verrou est libéré quand l'entité revient à son état publié ; le groupe d'« Autoriser depuis
+      le journal » est retrouvé par identifiant (`allow_log_groups`).
+14. **Branchements** : `PolicyPortImpl` est installé par `AppState::new` ; allow-from-log et les
+    compteurs utilisent `crate::logs::get_flow` et `crate::logs::views::rule_stats` (L7b), les
+    champs `AppState.flow_lookup` / `rule_stats` ne servent qu'à les surcharger en test.
+    `GET /policy/status` et `Session.base_revision` / `next_revision` alimentent la console.
+
 ## Conséquences
 - Amendements additifs du contrat : 202 sur la publication, `POST /sessions/{id}/import`,
   `GET /rulebase`, filtres `zone_id`/`q` de `GET /rules`, corps optionnel de `POST /sessions`,

@@ -377,14 +377,11 @@ async fn allow_from_log(
 ) -> Result<(StatusCode, Json<AllowFromLogResponse>), ApiError> {
     p.require_policy_write()?;
     let req: AllowFromLogRequest = parse(body_json(&body)?)?;
-    let lookup = state
-        .flow_lookup
-        .clone()
-        .ok_or_else(|| ApiError::Internal("flow lookup not configured".into()))?;
-    let flow = lookup
-        .get_flow(req.flow_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let flow = match &state.flow_lookup {
+        Some(lookup) => lookup.get_flow(req.flow_id).await?,
+        None => crate::logs::get_flow(&state, req.flow_id).await?,
+    }
+    .ok_or(ApiError::NotFound)?;
     let mut tx = pool(&state)?.begin().await?;
     let session = session_for_write(&mut tx, &p, id).await?;
     let published = store::published(&mut tx).await?;

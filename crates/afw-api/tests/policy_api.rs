@@ -1603,3 +1603,159 @@ async fn allow_from_log_public_suffixes_and_group_by_id() {
 fn group_json(id: Uuid, name: &str) -> Value {
     group(id, name, &[])
 }
+
+#[tokio::test]
+async fn logs_end_to_end_allow_from_log_hits_and_status() {
+    use afw_core::events::{GatewayEvent, RuleHit};
+    let env = env_or_skip!(env());
+    let a = &env.admin;
+    let (z, ag, r1) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (st, sess) = env.call("POST", "/sessions", a, None, None).await;
+    assert_eq!(st, StatusCode::CREATED);
+    assert!(sess["base_revision"].is_null());
+    assert_eq!(sess["next_revision"], 1);
+    let s: Uuid = sess["id"].as_str().unwrap().parse().unwrap();
+    env.create(a, s, "zones", zone(z, "build", false)).await;
+    let mut bot = agent(ag, "bot", z, false);
+    bot["addresses"] = json!(["10.0.0.5"]);
+    env.create(a, s, "agents", bot).await;
+    env.create(a, s, "rules", zone_rule(r1, "first", z, 1, &[]))
+        .await;
+    assert_eq!(env.publish(a, s).await, 1);
+    // The logs module reads the published revisions (names of agents and zones, retention).
+    let loaded = env
+        .state
+        .logs
+        .load_policy(None)
+        .await
+        .expect("policy loaded by L7b");
+    assert_eq!(loaded.zones[0].name, "build");
+    assert_eq!(loaded.agents[0].name, "bot");
+    assert_eq!(loaded.settings.retention_days.flows, 30);
+
+    // A denied flow ingested from a gateway, then "Allow" from the log (real lookup).
+    let gw = env.gateway().await;
+    let flow_id = Uuid::new_v4();
+    let flow = FlowEvent {
+        id: flow_id,
+        gateway_id: gw,
+        agent_id: Some(ag),
+        zone_id: Some(z),
+        src: "10.0.0.5:40000".parse().unwrap(),
+        dst: "140.82.112.3:443".parse().unwrap(),
+        protocol: L4Proto::Tcp,
+        app: None,
+        domain: Some("api.github.com".into()),
+        sni: Some("api.github.com".into()),
+        bytes_out: 100,
+        bytes_in: 0,
+        started_at: chrono::Utc::now(),
+        ended_at: None,
+        verdict: Verdict::Deny,
+        decision: DecisionRef {
+            rule_id: None,
+            rule_number: None,
+            rule_name: "cleanup".into(),
+            revision: Some(1),
+            layer: "implicit".into(),
+            reason: "default deny".into(),
+        },
+        internal: false,
+        llm_provider: false,
+        tls_inspected: true,
+        data_classes: vec![],
+        observed: false,
+    };
+    afw_api::logs::ingest_gateway_events(&env.state, gw, vec![GatewayEvent::Flow(flow)])
+        .await
+        .unwrap();
+    let s = env.open(a).await;
+    let (_, cur) = env
+        .call("GET", &format!("/sessions/{s}"), a, None, None)
+        .await;
+    assert_eq!(cur["base_revision"], 1);
+    assert_eq!(cur["next_revision"], 2);
+    let (st, out) = env
+        .call(
+            "POST",
+            &format!("/sessions/{s}/allow-from-log"),
+            a,
+            None,
+            Some(json!({"flow_id": flow_id})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{out}");
+    assert_eq!(out["created_object"]["spec"]["pattern"], "api.github.com");
+    assert_eq!(out["rule"]["position"], 1);
+    assert_eq!(env.publish(a, s).await, 2);
+
+    // Rule hits reported by the gateway show up in the rule views.
+    let hit_at = chrono::Utc::now();
+    afw_api::logs::ingest_gateway_events(
+        &env.state,
+        gw,
+        vec![GatewayEvent::RuleHits {
+            hits: vec![RuleHit {
+                rule_id: r1,
+                revision: 2,
+                hits: 7,
+                last_hit_at: hit_at,
+            }],
+        }],
+    )
+    .await
+    .unwrap();
+    let (_, views) = env.call("GET", "/rules", &env.viewer, None, None).await;
+    let first = views
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["id"] == json!(r1))
+        .unwrap()
+        .clone();
+    assert_eq!(first["hits"], 7, "{first}");
+    assert!(!first["last_hit_at"].is_null());
+
+    // Policy status: 1 of 2 gateways on the installed revision.
+    let gw2 = env.gateway().await;
+    let (st, _) = env
+        .call(
+            "POST",
+            "/installs",
+            a,
+            None,
+            Some(json!({"revision": 2, "gateways": [gw, gw2]})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    record_install_ack(
+        &env.pool,
+        gw,
+        &PolicyAck {
+            revision: 2,
+            ok: true,
+            error: None,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE gateways SET stats = '{\"p95_ms\": 2.5}' WHERE id = $1")
+        .bind(gw)
+        .execute(&env.pool)
+        .await
+        .unwrap();
+    let (st, status) = env
+        .call("GET", "/policy/status", &env.viewer, None, None)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{status}");
+    assert_eq!(status["latest_revision"], 2);
+    assert_eq!(status["installed_revision"], 2);
+    assert_eq!(status["gateways_total"], 2);
+    assert_eq!(status["gateways_on_revision"], 1);
+    assert_eq!(status["pending_installs"], 1);
+    assert_eq!(status["p95_ms"], 2.5);
+    let (st, _) = env
+        .call("GET", "/policy/status", &env.plugin, None, None)
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+}

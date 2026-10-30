@@ -121,6 +121,31 @@ pub struct Session {
     /// "Install" step after a reload.
     #[serde(default)]
     pub pending_install: Option<u64>,
+    /// Last published revision when the session was opened (its draft started from it).
+    #[serde(default)]
+    pub base_revision: Option<u64>,
+    /// Number the session would get if published now (open sessions only).
+    #[serde(default)]
+    pub next_revision: Option<u64>,
+}
+
+/// `GET /policy/status`: what is published and what runs on the gateways.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct PolicyStatus {
+    /// Last published revision.
+    pub latest_revision: Option<u64>,
+    /// Revision of the most recent installation request.
+    pub installed_revision: Option<u64>,
+    /// Registered (not deleted) gateways.
+    pub gateways_total: u32,
+    /// Gateways whose active revision is `installed_revision`.
+    pub gateways_on_revision: u32,
+    /// Installations still waiting for the gateway's acknowledgement.
+    pub pending_installs: u32,
+    /// Highest decision-latency p95 (milliseconds) reported by the gateways in their
+    /// statistics (`stats.p95_ms`); `null` when none reports it.
+    pub p95_ms: Option<f64>,
 }
 
 /// `POST /sessions` (optional body).

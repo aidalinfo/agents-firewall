@@ -26,7 +26,9 @@ CREATE TABLE policy_sessions (
     opened_at          timestamptz NOT NULL,
     closed_at          timestamptz NULL,
     approval_id        uuid NULL,
-    published_revision bigint NULL REFERENCES revisions (number)
+    published_revision bigint NULL REFERENCES revisions (number),
+    -- Last published revision when the session was opened.
+    base_revision      bigint NULL
 );
 
 -- At most one open session per caller.

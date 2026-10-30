@@ -391,7 +391,7 @@ pub async fn rule_views(
     let numbers = doc.rule_numbers();
     let stats = match &state.rule_stats {
         Some(src) => src.rule_stats().await?,
-        None => HashMap::new(),
+        None => crate::logs::views::rule_stats(pool(state)?).await?,
     };
     let locks: Vec<(Uuid, SqlJson<Actor>)> = sqlx::query_as(
         "SELECT l.entity_id, s.owner FROM policy_locks l JOIN policy_sessions s \

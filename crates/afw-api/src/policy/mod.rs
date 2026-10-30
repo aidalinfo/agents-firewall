@@ -37,8 +37,8 @@ pub const SESSION_HEADER: &str = "x-afw-session";
 pub type FlowFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<FlowEvent>, ApiError>> + Send + 'a>>;
 
-/// Reads a logged flow by id (`allow-from-log`, EF-42). Implemented by the logs store (lot L7b,
-/// `crate::logs::get_flow`) and wired in [`AppState::flow_lookup`].
+/// Reads a logged flow by id (`allow-from-log`, EF-42). The logs store (`crate::logs::get_flow`)
+/// is used unless [`AppState::flow_lookup`] overrides it (tests).
 pub trait FlowLookup: Send + Sync {
     fn get_flow(&self, id: Uuid) -> FlowFuture<'_>;
 }
@@ -48,8 +48,8 @@ pub type RuleStats = HashMap<Uuid, (u64, Option<DateTime<Utc>>)>;
 
 pub type StatsFuture<'a> = Pin<Box<dyn Future<Output = Result<RuleStats, ApiError>> + Send + 'a>>;
 
-/// Rule hit counters (EF-06), implemented by the logs store (lot L7b, `crate::logs::rule_stats`)
-/// and wired in [`AppState::rule_stats`]. Absent: every counter is 0.
+/// Rule hit counters (EF-06). The logs store (`crate::logs::views::rule_stats`) is used unless
+/// [`AppState::rule_stats`] overrides it (tests).
 pub trait RuleStatsSource: Send + Sync {
     fn rule_stats(&self) -> StatsFuture<'_>;
 }

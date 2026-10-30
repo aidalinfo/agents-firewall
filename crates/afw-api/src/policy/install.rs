@@ -29,7 +29,9 @@ use crate::auth::Principal;
 use crate::error::ApiError;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/installs", get(list_installs).post(install))
+    Router::new()
+        .route("/installs", get(list_installs).post(install))
+        .route("/policy/status", get(policy_status))
 }
 
 /// Desired and active revision of a gateway.
@@ -376,4 +378,51 @@ async fn list_installs(
         (offset + limit).to_string()
     });
     Ok(Json(Page { items, next_cursor }))
+}
+
+/// `GET /policy/status` (viewer and above).
+async fn policy_status(
+    State(state): State<AppState>,
+    p: Principal,
+) -> Result<Json<afw_core::api::PolicyStatus>, ApiError> {
+    p.require(Role::Viewer)?;
+    let mut conn = pool(&state)?.acquire().await?;
+    let latest: Option<i64> = sqlx::query_scalar("SELECT max(number) FROM revisions")
+        .fetch_one(&mut *conn)
+        .await?;
+    let installed: Option<i64> =
+        sqlx::query_scalar("SELECT revision FROM installs ORDER BY requested_at DESC, id LIMIT 1")
+            .fetch_optional(&mut *conn)
+            .await?;
+    let has_registry = gateways_table_exists(&mut conn).await?;
+    let (total, on_revision, p95): (i64, i64, Option<f64>) = if has_registry {
+        sqlx::query_as(
+            "SELECT count(*), count(*) FILTER (WHERE s.active_revision = $1), \
+             max((g.stats->>'p95_ms')::float8) FROM gateways g \
+             LEFT JOIN gateway_policy_state s ON s.gateway_id = g.id WHERE g.deleted_at IS NULL",
+        )
+        .bind(installed)
+        .fetch_one(&mut *conn)
+        .await?
+    } else {
+        let (t, o): (i64, i64) = sqlx::query_as(
+            "SELECT count(*), count(*) FILTER (WHERE active_revision = $1) \
+             FROM gateway_policy_state",
+        )
+        .bind(installed)
+        .fetch_one(&mut *conn)
+        .await?;
+        (t, o, None)
+    };
+    let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM installs WHERE state = 'pending'")
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok(Json(afw_core::api::PolicyStatus {
+        latest_revision: latest.map(|n| n as u64),
+        installed_revision: installed.map(|n| n as u64),
+        gateways_total: total as u32,
+        gateways_on_revision: on_revision as u32,
+        pending_installs: pending as u32,
+        p95_ms: p95,
+    }))
 }

@@ -1650,6 +1650,27 @@ paths:
           $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
+  /policy/status:
+    get:
+      operationId: getPolicyStatus
+      tags:
+      - installs
+      summary: Published and installed revisions, gateways on the installed revision, reported p95
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
   /verify:
     get:
       operationId: verifyPolicy
@@ -2438,14 +2459,18 @@ paths:
                 allOf:
                 - $ref: '#/components/schemas/AuditVerifyResult'
                 - type: object
-                  required: [anchor_sources]
+                  required:
+                  - anchor_sources
                   properties:
                     anchor_sources:
                       description: Anchor sources compared, among `db`, `file`, `s3`.
                       type: array
                       items:
                         type: string
-                        enum: [db, file, s3]
+                        enum:
+                        - db
+                        - file
+                        - s3
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2495,7 +2520,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [seq, hash, at]
+                required:
+                - seq
+                - hash
+                - at
                 properties:
                   seq:
                     type: integer
@@ -2613,7 +2641,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [enabled]
+                required:
+                - enabled
                 properties:
                   enabled:
                     type: boolean
@@ -2624,11 +2653,17 @@ paths:
                   scopes:
                     type: string
                   authorization_endpoint:
-                    type: [string, 'null']
+                    type:
+                    - string
+                    - 'null'
                   token_endpoint:
-                    type: [string, 'null']
+                    type:
+                    - string
+                    - 'null'
                   end_session_endpoint:
-                    type: [string, 'null']
+                    type:
+                    - string
+                    - 'null'
         default:
           $ref: '#/components/responses/Error'
   /me:
@@ -5401,6 +5436,49 @@ components:
       - max_stored_body
       - retention_days
       type: object
+    PolicyStatus:
+      description: '`GET /policy/status`: what is published and what runs on the gateways.'
+      properties:
+        gateways_on_revision:
+          description: Gateways whose active revision is `installed_revision`.
+          format: uint32
+          minimum: 0.0
+          type: integer
+        gateways_total:
+          description: Registered (not deleted) gateways.
+          format: uint32
+          minimum: 0.0
+          type: integer
+        installed_revision:
+          description: Revision of the most recent installation request.
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        latest_revision:
+          description: Last published revision.
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        p95_ms:
+          description: Highest decision-latency p95 (milliseconds) reported by the gateways in their statistics (`stats.p95_ms`); `null` when none reports it.
+          format: double
+          type:
+          - number
+          - 'null'
+        pending_installs:
+          description: Installations still waiting for the gateway's acknowledgement.
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - gateways_on_revision
+      - gateways_total
+      - pending_installs
+      type: object
     PortRange:
       additionalProperties: false
       description: Inclusive port range.
@@ -5906,6 +5984,14 @@ components:
           type:
           - string
           - 'null'
+        base_revision:
+          default: null
+          description: Last published revision when the session was opened (its draft started from it).
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         changes:
           description: Number of pending changes.
           format: uint32
@@ -5932,6 +6018,14 @@ components:
           description: Name given when the session was opened.
           type:
           - string
+          - 'null'
+        next_revision:
+          default: null
+          description: Number the session would get if published now (open sessions only).
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
           - 'null'
         opened_at:
           format: date-time

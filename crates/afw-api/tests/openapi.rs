@@ -127,6 +127,7 @@ fn api_schemas() -> serde_json::Value {
         Rulebase,
         OpenSessionRequest,
         SessionChange,
+        PolicyStatus,
     );
     let mut v = serde_json::to_value(g.take_definitions()).unwrap();
     objectify_true_schemas(&mut v);
@@ -254,6 +255,7 @@ fn rest_contract_covers_every_resource() {
             ("/sessions/{id}/allow-from-log", &["post"]),
             ("/sessions/{id}/import", &["post"]),
             ("/rulebase", &["get"]),
+            ("/policy/status", &["get"]),
             ("/revisions", &["get"]),
             ("/revisions/{n}", &["get"]),
             ("/revisions/{n}/diff", &["get"]),

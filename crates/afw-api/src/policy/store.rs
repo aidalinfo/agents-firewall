@@ -433,6 +433,19 @@ pub async fn session_dto(conn: &mut PgConnection, s: &SessionRow) -> Result<Sess
         }
         None => None,
     };
+    let base_revision: Option<i64> =
+        sqlx::query_scalar("SELECT base_revision FROM policy_sessions WHERE id = $1")
+            .bind(s.id)
+            .fetch_one(&mut *conn)
+            .await?;
+    let next_revision = if s.state == SessionState::Open {
+        let latest: Option<i64> = sqlx::query_scalar("SELECT max(number) FROM revisions")
+            .fetch_one(&mut *conn)
+            .await?;
+        Some(latest.unwrap_or(0) as u64 + 1)
+    } else {
+        None
+    };
     Ok(Session {
         id: s.id,
         owner: s.owner.clone(),
@@ -445,6 +458,8 @@ pub async fn session_dto(conn: &mut PgConnection, s: &SessionRow) -> Result<Sess
         approval_id: s.approval_id,
         name: s.name.clone(),
         pending_install,
+        base_revision: base_revision.map(|n| n as u64),
+        next_revision,
     })
 }
 
@@ -469,8 +484,9 @@ pub async fn open_session(
     }
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO policy_sessions (id, owner, owner_key, interface, name, state, opened_at) \
-         VALUES ($1, $2, $3, $4, $5, 'open', now())",
+        "INSERT INTO policy_sessions (id, owner, owner_key, interface, name, state, opened_at, \
+         base_revision) VALUES ($1, $2, $3, $4, $5, 'open', now(), \
+         (SELECT max(number) FROM revisions))",
     )
     .bind(id)
     .bind(Json(&p.actor))

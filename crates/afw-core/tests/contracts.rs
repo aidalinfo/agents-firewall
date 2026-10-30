@@ -128,6 +128,16 @@ fn api_types_round_trip() {
         approval_id: None,
         name: Some("s".into()),
         pending_install: Some(2),
+        base_revision: Some(1),
+        next_revision: Some(2),
+    });
+    roundtrip(&PolicyStatus {
+        latest_revision: Some(3),
+        installed_revision: Some(2),
+        gateways_total: 3,
+        gateways_on_revision: 2,
+        pending_installs: 1,
+        p95_ms: Some(1.5),
     });
     roundtrip(&OpenSessionRequest { name: None });
     roundtrip(&PublishRequest {

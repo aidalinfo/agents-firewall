@@ -1,0 +1,42 @@
+agents-firewall
+Copyright 2026 Aidalinfo / Pulse myIT and contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+Acknowledgements and prior art
+-------------------------------------------------------------------------------
+
+The design of agents-firewall is informed by the following projects and work.
+No third-party source code is included at this time. If code is reused from any
+Apache-2.0 project below, its copyright notice and NOTICE content MUST be added
+to the "Third-party code" section of this file, as required by Section 4 of the
+Apache License 2.0.
+
+- Pipelock — AI agent egress proxy and content scanning
+  https://github.com/luckyPipewrench/pipelock — Apache License 2.0
+
+- Leash by StrongDM — container-based AI agent sandboxing with Cedar policies
+  https://github.com/strongdm/leash — Apache License 2.0
+
+- Smokescreen by Stripe — egress proxy
+  https://github.com/stripe/smokescreen — MIT License
+
+- mitmproxy — interactive TLS-capable intercepting proxy
+  https://github.com/mitmproxy/mitmproxy — MIT License
+
+- Check Point Software Technologies — security management concepts (objects,
+  rulebase layers, sessions, publish & install policy, SmartLog). Concepts only;
+  no affiliation. Check Point is a trademark of its respective owner.
+
+- "The lethal trifecta for AI agents" — Simon Willison
+  https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/
+
+- OWASP Top 10 for Agentic Applications
+  https://genai.owasp.org/
+
+-------------------------------------------------------------------------------
+Third-party code
+-------------------------------------------------------------------------------
+
+None yet.

@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use or reference agents-firewall, please cite it as below."
+title: "agents-firewall: an open-source firewall for AI agents"
+abstract: "Centrally managed egress control, full traffic visibility and audit for fleets of LLM agents."
+type: software
+authors:
+  - name: "Aidalinfo / Pulse myIT"
+repository-code: "https://github.com/aidalinfo/agents-firewall"
+license: Apache-2.0
+keywords:
+  - ai-agents
+  - firewall
+  - egress-filtering
+  - prompt-injection
+  - llm-security
+  - mcp

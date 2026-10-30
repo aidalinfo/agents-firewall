@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Security issues must not be reported here** — see [SECURITY.md](https://github.com/aidalinfo/agents-firewall/blob/main/SECURITY.md).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Gateway, Control plane API, Web console, afw CLI, MCP server, Hermes plugin, Deployment (Compose / Helm), Documentation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, container runtime (Docker, Coolify, Kubernetes), agent framework.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove any secret or personal data before pasting.
+      render: shell

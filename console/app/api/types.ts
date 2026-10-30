@@ -362,9 +362,12 @@ export type TraceResult = 'no_match' | 'accept' | 'deny' | 'observe'
 export interface TraceStep {
   /** "S1", "S1–S5", "1–11", "12"… */
   label: string
+  /** Rule name; empty for a collapsed range (see `range`). */
   name: string
   result: TraceResult
   rule_id: Uuid | null
+  /** Set when several non-matching rules are collapsed into one line. */
+  range: { layer: 'baseline' | 'zone', count: number, zone: string | null } | null
 }
 
 export interface DestinationOption {
@@ -442,23 +445,26 @@ export interface Rulebase {
 
 export interface WhereUsed {
   kind: 'rule' | 'inspection' | 'alert' | 'map' | 'zone' | 'gateway' | 'masking'
-  label: string
+  /** Rule display number, zone or gateway name… */
+  ref: string | null
   name: string
-  context: string
-  href: string
+  zone: string | null
+  hits: number | null
+  last_at: DateTime | null
+  note: string | null
 }
 
 export interface NetObjectView {
   id: Uuid
   name: string
-  /** domain | host | network | range | group | service | data_class | agent */
   kind: 'domain' | 'host' | 'network' | 'range' | 'group' | 'any' | 'service' | 'data_class' | 'agent'
   value: string
   comment: string
   members: string[]
   in_session: boolean
   used_in: number
-  history: string
+  builtin: boolean
+  last_change: { revision: number, by: string, at: DateTime | null, note: string | null } | null
 }
 
 export interface ZoneView extends Zone {
@@ -494,7 +500,10 @@ export interface Session {
 export interface VerifyFinding {
   severity: 'error' | 'warning'
   code: 'shadowed_rule' | 'expired_rule' | 'unused_object' | 'missing_cleanup' | 'empty_group' | string
+  /** Server message (fallback when the console has no translation for `code`). */
   message: string
+  /** Values for the translated message (rule number, name, zone, object…). */
+  params: Record<string, string>
 }
 
 export interface VerifyReport {

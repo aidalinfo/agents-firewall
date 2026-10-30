@@ -34,7 +34,9 @@ check "helm template (defaults)" helm_run template afw deploy/helm/agents-firewa
 tpl="$(helm_run template afw deploy/helm/agents-firewall -f deploy/helm/agents-firewall/ci/gateway-values.yaml 2>/dev/null || true)"
 check "helm template renders a NetworkPolicy for enrolled pods" grep -q 'afw.enrolled' <<<"$tpl"
 check "enrolled-pod NetworkPolicy has no open egress rule" \
-  bash -c 'docker run --rm -i mikefarah/yq:4.44.3 -o=json ea "[.] | map(select(.kind == \"NetworkPolicy\" and .metadata.labels[\"app.kubernetes.io/component\"] == \"enrolled-egress\"))" - <<<"$1" | jq -e "length > 0 and all(.[]; .spec.egress | all(.[]; (.to | length) > 0))" >/dev/null' _ "$tpl"
+  bash -c 'docker run --rm -i "$2" -o=json ea "[.] | map(select(.kind == \"NetworkPolicy\" and .metadata.labels[\"app.kubernetes.io/component\"] == \"enrolled-egress\"))" - <<<"$1" | jq -e "length > 0 and all(.[]; .spec.egress | all(.[]; (.to | length) > 0))" >/dev/null' _ "$tpl" "$YQ_IMAGE"
+check "rendered manifests are valid Kubernetes objects (kubeconform, both value sets)" \
+  bash -c '{ docker run --rm -v "$1":/w -w /w "$2" template afw deploy/helm/agents-firewall; echo "---"; printf "%s\n" "$3"; } | docker run --rm -i "$4" -strict -summary -' _ "$ROOT" "$HELM_IMAGE" "$tpl" "$KUBECONFORM_IMAGE"
 check "no StatefulSet when postgres.enabled=false" \
   bash -c '! grep -q "kind: StatefulSet" <<<"$1"' _ "$tpl"
 
@@ -56,6 +58,6 @@ check "demo policy references only declared ids" bash -c '
   f=demo/policy/demo-policy.json
   declared=$(jq -c "[.objects[],.services[],.data_classes[],.zones[],.agents[],.rules[],.inspection_rules[] | .id]" "$f")
   jq -e --argjson d "$declared" "[.. | strings | select(test(\"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\"))] | all(. as \$x | \$d | index(\$x))" "$f" >/dev/null'
-check "demo policy contains nothing specific to Pulse myIT" bash -c '! grep -qi "pulse" demo/policy/demo-policy.json'
+check "demo policy contains nothing specific to Pulse myIT" bash -c '[ -s demo/policy/demo-policy.json ] && ! grep -qi "pulse" demo/policy/demo-policy.json'
 
 finish

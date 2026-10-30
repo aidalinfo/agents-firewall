@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+# afw-api: control-plane REST API (plan §4 L7a/b/c). Multi-stage build, non-root runtime.
+# Build (from the repository root): docker build -t afw-api:local -f deploy/docker/Dockerfile.api .
+# SQL migrations (crates/afw-api/migrations) are embedded in the binary at compile time by
+# `sqlx::migrate!`, so the runtime image needs no migration files.
+
+FROM rust:1.91-bookworm AS build
+WORKDIR /src
+ENV CARGO_TERM_COLOR=never \
+    SQLX_OFFLINE=true \
+    CARGO_BUILD_JOBS=3
+COPY . .
+# The base image already pins Rust 1.91; drop the toolchain file so rustup does not fetch components.
+RUN rm -f rust-toolchain.toml
+RUN --mount=type=cache,id=afw-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=afw-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=afw-docker-target,target=/src/target,sharing=locked \
+    set -eux; \
+    locked=""; if [ -f Cargo.lock ]; then locked="--locked"; fi; \
+    cargo build --release -p afw-api --bin afw-api $locked; \
+    install -D -m 0755 target/release/afw-api /out/afw-api
+
+FROM debian:bookworm-slim
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    rm -rf /var/lib/apt/lists/*; \
+    groupadd --system --gid 10001 afw; \
+    useradd --system --uid 10001 --gid afw --home-dir /var/lib/afw-api --shell /usr/sbin/nologin afw; \
+    install -d -o afw -g afw -m 0700 /var/lib/afw-api; \
+    install -d -o afw -g afw -m 0755 /var/lib/afw-api/public
+COPY --from=build /out/afw-api /usr/local/bin/afw-api
+LABEL org.opencontainers.image.title="afw-api" \
+      org.opencontainers.image.description="agents-firewall control-plane API" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/aidalinfo/agents-firewall"
+ENV AFW_LISTEN=0.0.0.0:8080 \
+    AFW_STATE_DIR=/var/lib/afw-api \
+    RUST_LOG=info
+USER 10001:10001
+WORKDIR /var/lib/afw-api
+# 8080: REST API (/api/v1, /healthz) — 8443: gateway protocol (/gw/v1, mTLS)
+EXPOSE 8080 8443
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/afw-api"]

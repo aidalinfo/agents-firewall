@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+# afw-cli: the `afw` CLI (lot L8) and the `afw-mcp` admin MCP server (lot L9) in one small image,
+# used by the demo scenarios and handy for operators. Never pushed to a registry by this repository.
+# Build (from the repository root): docker build -t afw-cli:local -f deploy/docker/Dockerfile.cli .
+
+FROM rust:1.91-bookworm AS build
+WORKDIR /src
+ENV CARGO_TERM_COLOR=never \
+    SQLX_OFFLINE=true \
+    CARGO_BUILD_JOBS=3
+COPY . .
+# The base image already pins Rust 1.91; drop the toolchain file so rustup does not fetch components.
+RUN rm -f rust-toolchain.toml
+RUN --mount=type=cache,id=afw-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=afw-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=afw-docker-target,target=/src/target,sharing=locked \
+    set -eux; \
+    locked=""; if [ -f Cargo.lock ]; then locked="--locked"; fi; \
+    cargo build --release -p afw-cli --bin afw $locked; \
+    install -D -m 0755 target/release/afw /out/afw; \
+    if cargo build --release -p afw-mcp $locked; then \
+      for b in target/release/afw-mcp; do [ -x "$b" ] && install -m 0755 "$b" /out/; done; \
+    fi
+
+FROM debian:bookworm-slim
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    rm -rf /var/lib/apt/lists/*; \
+    useradd --system --uid 10001 --user-group --create-home --home-dir /home/afw --shell /usr/sbin/nologin afw
+COPY --from=build /out/ /usr/local/bin/
+LABEL org.opencontainers.image.title="afw-cli" \
+      org.opencontainers.image.description="agents-firewall CLI (afw) and admin MCP server (afw-mcp)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/aidalinfo/agents-firewall"
+USER 10001:10001
+WORKDIR /home/afw
+ENTRYPOINT ["/usr/local/bin/afw"]

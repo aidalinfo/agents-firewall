@@ -1,0 +1,11 @@
+# Build context of the Rust images (deploy/docker/Dockerfile.*): keep it small.
+target
+**/node_modules
+**/.nuxt
+**/.output
+console
+integrations
+demo
+.git
+.github
+**/*.pyc

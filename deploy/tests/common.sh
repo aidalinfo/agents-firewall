@@ -7,6 +7,9 @@ export ROOT
 HELM_IMAGE="${HELM_IMAGE:-alpine/helm:3.16.2}"
 SHELLCHECK_IMAGE="${SHELLCHECK_IMAGE:-koalaman/shellcheck:stable}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
+KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.6.7}"
+YQ_IMAGE="${YQ_IMAGE:-mikefarah/yq:4.44.3}"
+export HELM_IMAGE KUBECONFORM_IMAGE YQ_IMAGE
 
 failures=0
 ok() { printf '  ok    %s\n' "$*"; }

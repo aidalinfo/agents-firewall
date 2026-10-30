@@ -1,0 +1,165 @@
+# agents-firewall Helm chart — default values.
+# Images are built locally from this repository (deploy/docker/*, console/Dockerfile); this project does not
+# publish images: push them to your own registry and set the repositories below.
+
+# -- Override the chart name / full name.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Image pull secrets for every pod.
+imagePullSecrets: []
+
+# -- Common secrets. Leave `existingSecret` empty to let the chart create `<fullname>-secrets`.
+secrets:
+  # -- Existing secret with keys `data-key`, `database-url` and (optional) `bootstrap-admin-token`.
+  existingSecret: ""
+  # -- Content encryption key (AES-256-GCM, 32 bytes base64). Generated once and kept on upgrade when empty.
+  #    Back it up: stored HTTP bodies cannot be read without it.
+  dataKey: ""
+  # -- First administrator token (create real tokens / configure OIDC with it, then remove it).
+  bootstrapAdminToken: ""
+
+api:
+  image:
+    repository: afw-api
+    tag: local
+    pullPolicy: IfNotPresent
+  # -- Only one replica is supported in V1 (the console PKI lives on the state volume).
+  replicas: 1
+  # -- Public URL of the API (browsers, CLI, Hermes plugin).
+  publicUrl: "https://afw.example.com"
+  # -- DNS names / IPs written in the certificate of the gateway endpoint (comma separated).
+  publicHostnames: "afw.example.com"
+  # -- Log store: `postgres` or `clickhouse` (then set clickhouse.url).
+  logStore: postgres
+  clickhouse:
+    url: ""
+    user: afw
+    # -- Existing secret holding the ClickHouse password under key `clickhouse-password`.
+    existingSecret: ""
+  oidc:
+    issuer: ""
+    clientId: ""
+    audience: ""
+  logLevel: info
+  # -- Extra environment variables (list of EnvVar).
+  extraEnv: []
+  service:
+    type: ClusterIP
+    port: 8080
+  # -- Gateway endpoint (/gw/v1, mTLS, port 8443). It must NOT be TLS-terminated by the ingress:
+  #    expose it directly (LoadBalancer / NodePort) when gateways run outside the cluster.
+  gatewayService:
+    type: ClusterIP
+    port: 8443
+    annotations: {}
+  persistence:
+    # -- State volume (console PKI, audit exports). Required in production.
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile: { type: RuntimeDefault }
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: { drop: [ALL] }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+console:
+  enabled: true
+  image:
+    repository: afw-console
+    tag: local
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile: { type: RuntimeDefault }
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities: { drop: [ALL] }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: afw.example.com
+  # -- TLS secret for the host (e.g. from cert-manager).
+  tlsSecret: ""
+
+# -- Built-in PostgreSQL (simple StatefulSet). Disable it to use an external database.
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+  database: afw
+  user: afw
+  # -- Generated once and kept on upgrade when empty.
+  password: ""
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+# -- External PostgreSQL, used when postgres.enabled=false: give `url` or an existing secret with key `database-url`.
+externalDatabase:
+  url: ""
+  existingSecret: ""
+
+# -- Gateways, one per namespace of agents (ADR 0003, Kubernetes). Pods labelled `afw.enrolled=true` in that
+#    namespace may only talk to the gateway (NetworkPolicy); afw-enroll patches their DNS, proxy variables and CA.
+gateway:
+  image:
+    repository: afw-gateway
+    tag: local
+    pullPolicy: IfNotPresent
+  # -- Gateway endpoint of the control plane. Defaults to the in-cluster gateway service of this release.
+  consoleUrl: ""
+  # -- Ports exposed by the gateway service (targetPort = gateway listener).
+  ports:
+    proxy: 3128        # explicit HTTP(S) proxy
+    transparent: 15001 # transparent TCP listener (traffic that ignores the proxy, via the gateway DNS)
+    dns: 53
+    health: 9090
+  # -- Destination ports allowed from enrolled pods to the gateway in addition to proxy/DNS (transparent path).
+  transparentPorts: [80, 443]
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  # -- One entry per namespace:
+  #    - namespace: agents        # namespace of the agents (must exist)
+  #      name: agents-gw          # gateway name shown in the console
+  #      registrationToken: ""    # one-time token (15 min); or existingSecret with key `registration-token`
+  #      existingSecret: ""
+  #      caCertificate: ""        # public inspection CA (PEM), published as ConfigMap afw-gateway-ca once known
+  instances: []
+
+# -- Labels and annotations added to every resource.
+commonLabels: {}

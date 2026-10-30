@@ -1,0 +1,114 @@
+# agents-firewall — control plane (console + API + PostgreSQL), ClickHouse optional (profile `clickhouse`).
+#   cp .env.example .env   # then set every CHANGE_ME value
+#   docker compose up -d                       # PostgreSQL stores configuration, audit and logs
+#   docker compose --profile clickhouse up -d  # + ClickHouse for the logs (set AFW_LOG_STORE=clickhouse)
+# Gateways run on each agents host with gateway.yml. See docs/installation.md.
+# Put a TLS reverse proxy in front of the console and the API (ports bound to 127.0.0.1 by default).
+
+name: agents-firewall
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${AFW_POSTGRES_USER:-afw}
+      POSTGRES_PASSWORD: ${AFW_POSTGRES_PASSWORD:?set AFW_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${AFW_POSTGRES_DB:-afw}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  afw-api:
+    image: ${AFW_API_IMAGE:-afw-api:local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.api
+    environment:
+      AFW_LISTEN: 0.0.0.0:8080
+      AFW_GW_LISTEN: 0.0.0.0:8443
+      AFW_PUBLIC_URL: ${AFW_PUBLIC_URL:?set AFW_PUBLIC_URL in .env}
+      AFW_PUBLIC_HOSTNAMES: ${AFW_PUBLIC_HOSTNAMES:-}
+      DATABASE_URL: postgres://${AFW_POSTGRES_USER:-afw}:${AFW_POSTGRES_PASSWORD}@postgres:5432/${AFW_POSTGRES_DB:-afw}
+      AFW_LOG_STORE: ${AFW_LOG_STORE:-postgres}
+      AFW_CLICKHOUSE_URL: ${AFW_CLICKHOUSE_URL:-http://clickhouse:8123}
+      AFW_CLICKHOUSE_USER: ${AFW_CLICKHOUSE_USER:-afw}
+      AFW_CLICKHOUSE_PASSWORD: ${AFW_CLICKHOUSE_PASSWORD:-}
+      AFW_STATE_DIR: /var/lib/afw-api
+      AFW_CONSOLE_CA_EXPORT: /var/lib/afw-api/public/console-ca.crt
+      AFW_DATA_KEY: ${AFW_DATA_KEY:?set AFW_DATA_KEY in .env (32 random bytes, base64)}
+      AFW_BOOTSTRAP_ADMIN_TOKEN: ${AFW_BOOTSTRAP_ADMIN_TOKEN:-}
+      AFW_CORS_ORIGINS: ${AFW_CONSOLE_URL:-http://localhost:3000}
+      AFW_OIDC_ISSUER: ${AFW_OIDC_ISSUER:-}
+      AFW_OIDC_CLIENT_ID: ${AFW_OIDC_CLIENT_ID:-}
+      AFW_OIDC_AUDIENCE: ${AFW_OIDC_AUDIENCE:-}
+      AFW_AUDIT_EXPORT_DIR: /var/lib/afw-api/audit-export
+      RUST_LOG: ${AFW_LOG_LEVEL:-info}
+    volumes:
+      - api-state:/var/lib/afw-api
+    networks: [backend, frontend]
+    ports:
+      - ${AFW_API_BIND:-127.0.0.1}:${AFW_API_PORT:-8080}:8080
+      # Gateway protocol (mTLS, /gw/v1): must be reachable from every agents host.
+      - ${AFW_GW_BIND:-0.0.0.0}:${AFW_GW_PORT:-8443}:8443
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  console:
+    image: ${AFW_CONSOLE_IMAGE:-afw-console:local}
+    build:
+      context: ../../console
+      dockerfile: Dockerfile
+    environment:
+      NUXT_PUBLIC_API_MODE: http
+      NUXT_PUBLIC_API_BASE: ${AFW_PUBLIC_URL}
+      PORT: "3000"
+    networks: [frontend]
+    ports:
+      - ${AFW_CONSOLE_BIND:-127.0.0.1}:${AFW_CONSOLE_PORT:-3000}:3000
+    depends_on:
+      afw-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    profiles: [clickhouse]
+    environment:
+      CLICKHOUSE_DB: afw
+      CLICKHOUSE_USER: ${AFW_CLICKHOUSE_USER:-afw}
+      CLICKHOUSE_PASSWORD: ${AFW_CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    networks: [backend]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+networks:
+  backend:
+    internal: true
+  frontend: {}
+
+volumes:
+  postgres-data:
+  api-state:
+  clickhouse-data:

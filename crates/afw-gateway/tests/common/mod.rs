@@ -43,7 +43,16 @@ pub const OBJ_ALLOWED: u128 = 0x301;
 pub const OBJ_LLM: u128 = 0x302;
 pub const OBJ_META: u128 = 0x303;
 pub const OBJ_K8S: u128 = 0x304;
+pub const OBJ_IP: u128 = 0x305;
+pub const OBJ_PATH: u128 = 0x306;
+pub const SVC_ADMIN: u128 = 0x601;
+pub const SVC_V1: u128 = 0x602;
 pub const CLASS_SECRETS: u128 = 0x401;
+pub const RULE_NO_ADMIN: u128 = 0x506;
+pub const RULE_IP: u128 = 0x507;
+pub const RULE_PATH: u128 = 0x508;
+/// An address accepted by an IP object (never a name).
+pub const TRUSTED_IP: &str = "127.0.0.6";
 pub const RULE_META: u128 = 0x501;
 pub const RULE_SECRETS: u128 = 0x502;
 pub const RULE_LLM: u128 = 0x503;
@@ -82,6 +91,28 @@ fn rule(n: u128, name: &str, layer: Layer, position: u32, dst: &[u128], classes:
     }
 }
 
+fn rule_svc(n: u128, name: &str, layer: Layer, position: u32, dst: &[u128], svc: u128, action: Action) -> Rule {
+    Rule {
+        services: vec![id(svc)],
+        ..rule(n, name, layer, position, dst, &[], action)
+    }
+}
+
+fn path_service(n: u128, name: &str, prefix: &str) -> Service {
+    Service {
+        id: id(n),
+        name: name.into(),
+        comment: String::new(),
+        protocol: L4Proto::Tcp,
+        ports: vec![],
+        app: Some(AppMatch {
+            proto: AppProto::Https,
+            methods: vec![],
+            path_prefixes: vec![prefix.into()],
+        }),
+    }
+}
+
 /// Test policy: baseline denies cloud metadata and secrets, accepts the LLM provider; the
 /// zone accepts `allowed.test` and `k8s.test`. Everything else falls to the cleanup rule.
 pub fn document(mode: ZoneMode) -> PolicyDocument {
@@ -95,8 +126,10 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
             obj(OBJ_LLM, "llm.test", Some(DestCategory::LlmProvider), NetObjectSpec::Domain { pattern: "llm.test".into() }),
             obj(OBJ_META, "metadata", Some(DestCategory::CloudMetadata), NetObjectSpec::Host { ip: "169.254.169.254".parse().unwrap() }),
             obj(OBJ_K8S, "k8s.test", None, NetObjectSpec::Domain { pattern: "k8s.test".into() }),
+            obj(OBJ_IP, "trusted ip", None, NetObjectSpec::Host { ip: TRUSTED_IP.parse().unwrap() }),
+            obj(OBJ_PATH, "path.test", None, NetObjectSpec::Domain { pattern: "path.test".into() }),
         ],
-        services: vec![],
+        services: vec![path_service(SVC_ADMIN, "admin paths", "/admin"), path_service(SVC_V1, "v1 api", "/v1/")],
         data_classes: vec![DataClass {
             id: id(CLASS_SECRETS),
             name: "secrets".into(),
@@ -126,8 +159,11 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
             rule(RULE_META, "cloud metadata", Layer::Baseline, 1, &[OBJ_META], &[], Action::Deny),
             rule(RULE_SECRETS, "outbound secrets", Layer::Baseline, 2, &[], &[CLASS_SECRETS], Action::Deny),
             rule(RULE_LLM, "llm providers", Layer::Baseline, 3, &[OBJ_LLM], &[], Action::Accept),
+            rule_svc(RULE_NO_ADMIN, "no admin paths", zone, 0, &[OBJ_ALLOWED], SVC_ADMIN, Action::Deny),
             rule(RULE_ALLOWED, "allowed api", zone, 1, &[OBJ_ALLOWED], &[], Action::Accept),
             rule(RULE_K8S, "kubernetes", zone, 2, &[OBJ_K8S], &[], Action::Accept),
+            rule(RULE_IP, "trusted ip", zone, 3, &[OBJ_IP], &[], Action::Accept),
+            rule_svc(RULE_PATH, "v1 only", zone, 4, &[OBJ_PATH], SVC_V1, Action::Accept),
         ],
         inspection_rules: vec![],
         settings,
@@ -194,7 +230,7 @@ pub async fn harness_with(policy: Option<InstalledPolicy>, tweak: impl FnOnce(&m
         std::fs::write(dir.path().join("policy.json"), serde_json::to_vec(p).unwrap()).unwrap();
     }
     let mut hosts: HashMap<String, Vec<IpAddr>> = HashMap::new();
-    for h in ["allowed.test", "llm.test", "denied.test", "k8s.test", "other.test"] {
+    for h in ["allowed.test", "llm.test", "denied.test", "k8s.test", "other.test", "path.test"] {
         hosts.insert(h.into(), vec![UPSTREAM_IP.parse().unwrap()]);
     }
     hosts.insert("metadata.test".into(), vec!["169.254.169.254".parse().unwrap()]);

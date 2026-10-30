@@ -470,3 +470,66 @@ async fn sni_flood_is_rate_limited() {
     assert!(refused >= 5, "leaf minting must be rate limited per agent ({refused})");
     h.wait_event(|e| matches!(e, GatewayEvent::Alert(_))).await;
 }
+
+#[tokio::test]
+async fn denied_sni_towards_allowed_ip_is_denied() {
+    let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    // The agent targets an IP accepted by an IP object, but names a denied host: the name
+    // decides (the gateway would connect to the name's address, not to the agent's choice).
+    let dst: SocketAddr = format!("{TRUSTED_IP}:{}", h.upstream_addr.port()).parse().unwrap();
+    let s = h.transparent(AGENT_IP, dst).await;
+    let mut tls = h.tls(s, "denied.test").await.unwrap();
+    let resp = http_raw(&mut tls, &get("denied.test", "/")).await;
+    assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
+    assert!(resp.contains("denied.test not allowed for daniel-bot (rule default-deny)"), "{resp}");
+    h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
+    assert!(h.log.all().is_empty());
+}
+
+#[tokio::test]
+async fn rewritten_host_or_absolute_uri_denied() {
+    let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    for raw in [
+        // Absolute URI towards another host behind an allowed SNI.
+        b"GET https://denied.test/ HTTP/1.1\r\nHost: allowed.test\r\nConnection: close\r\n\r\n".to_vec(),
+        // Host with a trailing label.
+        get("allowed.test.denied.test", "/"),
+        // Host with userinfo-like trick.
+        get("allowed.test@denied.test", "/"),
+    ] {
+        let resp = post_tls(&h, "allowed.test", raw).await;
+        assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+    }
+    assert!(h.log.all().is_empty());
+}
+
+#[tokio::test]
+async fn denied_path_behind_allowed_connection() {
+    let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    let resp = post_tls(&h, "allowed.test", get("allowed.test", "/data")).await;
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+    for path in ["/admin", "/admin/users", "/x/../admin", "/x/..;/admin", "/%61dmin", "//admin"] {
+        let resp = post_tls(&h, "allowed.test", get("allowed.test", path)).await;
+        assert!(resp.starts_with("HTTP/1.1 403"), "{path}: {resp}");
+        assert!(resp.contains("(rule 4)"), "{path}: {resp}");
+    }
+    assert_eq!(h.log.all().len(), 1, "only /data reached the upstream");
+}
+
+#[tokio::test]
+async fn path_accept_rule_is_evaluated_per_request() {
+    let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    let resp = post_tls(&h, "path.test", get("path.test", "/v1/ok")).await;
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+    let resp = post_tls(&h, "path.test", get("path.test", "/other")).await;
+    assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
+    assert!(resp.contains("(rule default-deny)"), "{resp}");
+    // Several requests on one connection: each one is judged.
+    let s = h.transparent(AGENT_IP, h.upstream_addr).await;
+    let mut tls = h.tls(s, "path.test").await.unwrap();
+    let both = b"GET /v1/a HTTP/1.1\r\nHost: path.test\r\n\r\nGET /admin HTTP/1.1\r\nHost: path.test\r\nConnection: close\r\n\r\n";
+    let resp = http_raw(&mut tls, both).await;
+    assert!(resp.contains("HTTP/1.1 200") && resp.contains("HTTP/1.1 403"), "{resp}");
+    assert_eq!(h.log.all().iter().filter(|s| s.path.starts_with("/v1/")).count(), 2);
+    assert!(!h.log.all().iter().any(|s| s.path == "/admin" || s.path == "/other"));
+}

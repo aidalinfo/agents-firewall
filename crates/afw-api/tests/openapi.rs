@@ -123,6 +123,11 @@ fn api_schemas() -> serde_json::Value {
         Enrollment,
         Verdict,
         Severity,
+        RuleView,
+        Rulebase,
+        OpenSessionRequest,
+        SessionChange,
+        PolicyStatus,
     );
     let mut v = serde_json::to_value(g.take_definitions()).unwrap();
     objectify_true_schemas(&mut v);
@@ -248,6 +253,9 @@ fn rest_contract_covers_every_resource() {
             ("/sessions/{id}/discard", &["post"]),
             ("/sessions/{id}/publish", &["post"]),
             ("/sessions/{id}/allow-from-log", &["post"]),
+            ("/sessions/{id}/import", &["post"]),
+            ("/rulebase", &["get"]),
+            ("/policy/status", &["get"]),
             ("/revisions", &["get"]),
             ("/revisions/{n}", &["get"]),
             ("/revisions/{n}/diff", &["get"]),
@@ -280,7 +288,7 @@ fn rest_contract_covers_every_resource() {
             ("/me", &["get"]),
             ("/tokens", CRUD),
             ("/tokens/{id}", &["delete"]),
-            ("/intent-policy", &["get"]),
+            ("/intent-policy", &["get", "put"]),
             ("/ingest/tool-calls", &["post"]),
             ("/enrollments", &["post"]),
         ],

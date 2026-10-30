@@ -79,6 +79,10 @@ pub struct AppState {
     pub audit_export: Arc<audit::export::AuditExportConfig>,
     /// Logs module state (lot L7b).
     pub logs: logs::LogsHandle,
+    /// Override of the flow lookup of `allow-from-log` (tests); `None`: the logs store.
+    pub flow_lookup: Option<Arc<dyn policy::FlowLookup>>,
+    /// Override of the rule hit counters of rule views (tests); `None`: the logs store.
+    pub rule_stats: Option<Arc<dyn policy::RuleStatsSource>>,
 }
 
 impl AppState {
@@ -87,7 +91,7 @@ impl AppState {
             logs: logs::LogsHandle::new(&config, pool.clone()),
             ports: gateways::ports::Ports {
                 logs: Arc::new(logs::port::LogsPortImpl),
-                ..Default::default()
+                policy: Arc::new(policy::port::PolicyPortImpl),
             },
             pool,
             config: Arc::new(config),

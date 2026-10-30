@@ -1,0 +1,2 @@
+-- Reserved migration: logs store, tool calls, alerts, captures (lot L7b).
+-- Intentionally empty in L0; the owning lot fills it.

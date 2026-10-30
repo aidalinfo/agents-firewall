@@ -55,7 +55,7 @@ def test_file_found_in_hermes_home(tmp_path):
     (tmp_path / "afw-hermes.yaml").write_text("agent_name: home-bot\n")
     cfg = load_config(env={"HERMES_HOME": str(tmp_path)})
     assert cfg.agent_name == "home-bot"
-    assert cfg.state_dir == tmp_path / "afw"
+    assert cfg.state_dir != tmp_path / "afw"  # state kept outside HERMES_HOME (ADR 0015)
 
 
 def test_defaults_without_anything(tmp_path):

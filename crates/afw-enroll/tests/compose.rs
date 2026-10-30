@@ -4,8 +4,8 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 
 use afw_enroll::{
-    CA_CONTAINER_PATH, EnrollError, EnrollSpec, EnrollWarning, HermesSpec, ORIGINAL_KEY,
-    enroll_compose, unenroll_compose,
+    CA_BUNDLE_PATH, CA_CERT_PATH, CA_DIR, EnrollError, EnrollSpec, EnrollWarning, HermesSpec,
+    ORIGINAL_KEY, enroll_compose, netinit_script, unenroll_compose,
 };
 use serde_yaml::Value;
 
@@ -131,12 +131,39 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
         "mac_address",
         "cap_add",
         "privileged",
+        "sysctls",
     ] {
         assert!(agent.get(k).is_none(), "agent still has `{k}`");
     }
-    // The holder alone has NET_ADMIN, the fixed IP, the gateway DNS and the published ports.
+    // NET_RAW (Docker default) is dropped: no ARP/IP spoofing on the internal network.
+    assert_eq!(strings(&agent["cap_drop"]), vec!["NET_RAW"]);
+    // The agent waits for the holder (routes set, CA bundle built).
+    assert_eq!(
+        agent["depends_on"]["afw-net-daniel"]["condition"].as_str(),
+        Some("service_healthy")
+    );
+    assert_eq!(
+        agent["depends_on"]["postgres"]["condition"].as_str(),
+        Some("service_started")
+    );
+    // The holder alone has NET_ADMIN (and nothing else), the fixed IP, the gateway DNS and
+    // the published ports.
     let net = service(&doc, "afw-net-daniel");
+    assert_eq!(strings(&net["cap_drop"]), vec!["ALL"]);
     assert_eq!(strings(&net["cap_add"]), vec!["NET_ADMIN"]);
+    assert_eq!(
+        net["sysctls"]["net.ipv4.conf.all.accept_redirects"].as_i64(),
+        Some(0)
+    );
+    assert_eq!(
+        net["sysctls"]["net.ipv4.conf.default.accept_redirects"].as_i64(),
+        Some(0)
+    );
+    assert!(
+        strings(&net["healthcheck"]["test"])
+            .join(" ")
+            .contains("/tmp/afw-ready")
+    );
     assert_eq!(
         net["networks"]["afw-internal"]["ipv4_address"].as_str(),
         Some("10.80.0.11")
@@ -152,10 +179,11 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
     assert_eq!(net["restart"].as_str(), Some("unless-stopped"));
     assert_eq!(net["image"].as_str(), Some("afw-netinit:local"));
     let cmd = strings(&net["command"]).join(" ");
-    assert!(
-        cmd.contains("ip route replace default via 10.80.0.2"),
-        "{cmd}"
-    );
+    assert!(cmd.contains("GW='10.80.0.2'"), "{cmd}");
+    assert!(cmd.contains("ME='10.80.0.11'"), "{cmd}");
+    // Compose escaping: no `$` left alone for interpolation.
+    assert!(cmd.contains("route replace default via \"$$GW\""), "{cmd}");
+    assert!(!cmd.replace("$$", "").contains('$'), "unescaped $ in {cmd}");
     assert!(cmd.contains("sleep"), "{cmd}");
     assert_eq!(net["labels"]["afw.enrolled"].as_str(), Some("true"));
     assert_eq!(net["labels"]["afw.agent"].as_str(), Some("daniel"));
@@ -170,7 +198,9 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
 fn privileged_agent_is_enrolled_with_warning() {
     let yaml = "services:\n  bot:\n    image: x\n    privileged: true\n";
     let out = enroll_compose(yaml, &spec("bot", "bot")).unwrap();
-    assert!(out.warnings.contains(&EnrollWarning::Privileged));
+    assert!(out.warnings.contains(&EnrollWarning::Privileged {
+        service: "bot".into()
+    }));
     // The flag is kept: [Killian] rejected refusing privileged containers.
     assert_eq!(
         parse(&out.yaml)["services"]["bot"]["privileged"].as_bool(),
@@ -180,18 +210,32 @@ fn privileged_agent_is_enrolled_with_warning() {
 
 #[test]
 fn net_admin_and_sys_admin_caps_are_reported() {
-    let yaml =
-        "services:\n  bot:\n    image: x\n    cap_add: [CHOWN, net_admin, CAP_SYS_ADMIN, ALL]\n";
+    let yaml = "services:\n  bot:\n    image: x\n    cap_add: [CHOWN, net_admin, CAP_SYS_ADMIN, ALL, SYS_MODULE, SYS_RAWIO, BPF, DAC_READ_SEARCH, NET_RAW]\n";
     let out = enroll_compose(yaml, &spec("bot", "bot")).unwrap();
     let caps: Vec<_> = out
         .warnings
         .iter()
         .filter_map(|w| match w {
-            EnrollWarning::DangerousCapability { capability } => Some(capability.as_str()),
+            EnrollWarning::DangerousCapability {
+                service,
+                capability,
+            } if service == "bot" => Some(capability.as_str()),
             _ => None,
         })
         .collect();
-    assert_eq!(caps, vec!["net_admin", "CAP_SYS_ADMIN", "ALL"]);
+    assert_eq!(
+        caps,
+        vec![
+            "net_admin",
+            "CAP_SYS_ADMIN",
+            "ALL",
+            "SYS_MODULE",
+            "SYS_RAWIO",
+            "BPF",
+            "DAC_READ_SEARCH",
+            "NET_RAW"
+        ]
+    );
 }
 
 #[test]
@@ -206,14 +250,17 @@ services:
         source: /run/docker.sock
         target: /sock
       - ./data:/data
+      - /var/run:/host-run
+      - /run/podman/podman.sock:/p.sock
+      - /run/containerd/containerd.sock:/c.sock
 "#;
     let out = enroll_compose(yaml, &spec("bot", "bot")).unwrap();
     let n = out
         .warnings
         .iter()
-        .filter(|w| matches!(w, EnrollWarning::DockerSocket { .. }))
+        .filter(|w| matches!(w, EnrollWarning::RuntimeSocket { .. }))
         .count();
-    assert_eq!(n, 2, "{:?}", out.warnings);
+    assert_eq!(n, 5, "{:?}", out.warnings);
 }
 
 #[test]
@@ -221,6 +268,7 @@ fn host_pid_is_reported() {
     let yaml = "services:\n  bot:\n    image: x\n    pid: host\n";
     let out = enroll_compose(yaml, &spec("bot", "bot")).unwrap();
     assert!(out.warnings.contains(&EnrollWarning::HostNamespace {
+        service: "bot".into(),
         namespace: "pid".into()
     }));
 }
@@ -302,18 +350,35 @@ fn proxy_and_ca_variables_are_set_and_override_existing_ones() {
             "{k}"
         );
     }
-    for k in [
-        "REQUESTS_CA_BUNDLE",
-        "SSL_CERT_FILE",
-        "NODE_EXTRA_CA_CERTS",
-        "CURL_CA_BUNDLE",
-    ] {
-        assert_eq!(env_get(agent, k).as_deref(), Some(CA_CONTAINER_PATH), "{k}");
+    for k in ["REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE"] {
+        assert_eq!(env_get(agent, k).as_deref(), Some(CA_BUNDLE_PATH), "{k}");
     }
+    // Node adds extra CAs to its own roots: the gateway CA alone.
+    assert_eq!(
+        env_get(agent, "NODE_EXTRA_CA_CERTS").as_deref(),
+        Some(CA_CERT_PATH)
+    );
     // Pre-existing variables are kept.
     assert_eq!(env_get(agent, "HERMES_HOME").as_deref(), Some("/opt/data"));
     let vols = strings(&agent["volumes"]);
-    assert!(vols.contains(&format!("/etc/afw/gateway-ca.crt:{CA_CONTAINER_PATH}:ro")));
+    // The CA directory (bundle built by the holder) is mounted read-only; the host CA file is
+    // only mounted in the holder.
+    assert!(vols.contains(&format!("afw-ca-daniel:{CA_DIR}:ro")));
+    assert!(
+        !vols
+            .iter()
+            .any(|v| v.starts_with("/etc/afw/gateway-ca.crt"))
+    );
+    let holder = strings(&service(&doc, "afw-net-daniel")["volumes"]);
+    assert_eq!(
+        holder,
+        vec![
+            "/etc/afw/gateway-ca.crt:/afw-ca-src/gateway.crt:ro".to_string(),
+            "afw-ca-daniel:/afw-ca".to_string()
+        ]
+    );
+    assert!(doc["volumes"]["afw-ca-daniel"].is_mapping());
+    assert!(doc["volumes"]["pgdata"].is_mapping());
     assert!(vols.contains(&"./data/daniel:/opt/data".to_string()));
 }
 
@@ -338,7 +403,7 @@ fn map_environment_is_extended_as_a_map() {
     );
     assert_eq!(agent["labels"]["team"].as_str(), Some("ops"));
     assert_eq!(agent["labels"]["afw.enrolled"].as_str(), Some("true"));
-    assert!(out.warnings.is_empty());
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     // No top-level networks before: one is created with only the external gateway network.
     assert_eq!(doc["networks"].as_mapping().unwrap().len(), 1);
 }
@@ -387,7 +452,11 @@ fn ipv6_agent_gets_ipv6_address() {
     assert!(
         strings(&net["command"])
             .join(" ")
-            .contains("ip -6 route replace default via fd00:80::2")
+            .contains("ip -6 route replace default via \"$$GW\"")
+    );
+    assert_eq!(
+        net["sysctls"]["net.ipv6.conf.all.accept_redirects"].as_i64(),
+        Some(0)
     );
 }
 
@@ -523,4 +592,200 @@ fn spec_ip_types_are_plain_ipaddr() {
     let s = spec("a", "a");
     let _: IpAddr = s.gateway_ip;
     let _: IpAddr = s.agent_ip;
+}
+
+// ---------------------------------------------------------------- review #6 findings
+
+#[test]
+fn merge_keys_are_resolved_before_the_audit() {
+    let y = "x-common: &common\n  cap_add: [NET_ADMIN]\n  privileged: true\nservices:\n  bot:\n    <<: *common\n    image: bot\n";
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    assert!(out.warnings.contains(&EnrollWarning::Privileged {
+        service: "bot".into()
+    }));
+    assert!(out.warnings.iter().any(|w| matches!(w,
+        EnrollWarning::DangerousCapability { capability, .. } if capability == "NET_ADMIN")));
+    assert!(!out.yaml.contains("<<"));
+}
+
+#[test]
+fn extends_is_refused() {
+    let y = "services:\n  bot:\n    extends: {file: base.yml, service: base}\n    image: bot\n";
+    let err = enroll_compose(y, &spec("bot", "bot")).unwrap_err();
+    assert!(matches!(err, EnrollError::Unsupported(_)), "{err}");
+}
+
+#[test]
+fn services_joining_the_agent_namespace_are_audited() {
+    let y = r#"
+services:
+  bot:
+    image: bot
+    container_name: the-bot
+  helper:
+    image: alpine
+    network_mode: service:bot
+    cap_add: [NET_ADMIN]
+  other:
+    image: alpine
+    network_mode: container:the-bot
+    privileged: true
+  unrelated:
+    image: alpine
+    cap_add: [NET_ADMIN]
+"#;
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    let w = &out.warnings;
+    assert!(w.contains(&EnrollWarning::JoinsAgentNetwork {
+        service: "helper".into()
+    }));
+    assert!(w.contains(&EnrollWarning::DangerousCapability {
+        service: "helper".into(),
+        capability: "NET_ADMIN".into()
+    }));
+    assert!(w.contains(&EnrollWarning::JoinsAgentNetwork {
+        service: "other".into()
+    }));
+    assert!(w.contains(&EnrollWarning::Privileged {
+        service: "other".into()
+    }));
+    assert!(
+        !w.iter().any(|x| format!("{x:?}").contains("unrelated")),
+        "{w:?}"
+    );
+}
+
+#[test]
+fn shared_pid_ipc_and_volumes_from_are_reported() {
+    let y = "services:\n  bot:\n    image: bot\n    pid: service:helper\n    ipc: container:abc\n    volumes_from: [helper]\n  helper:\n    image: alpine\n";
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    assert!(out.warnings.contains(&EnrollWarning::SharedNamespace {
+        service: "bot".into(),
+        namespace: "pid".into(),
+        with: "service:helper".into()
+    }));
+    assert!(out.warnings.contains(&EnrollWarning::SharedNamespace {
+        service: "bot".into(),
+        namespace: "ipc".into(),
+        with: "container:abc".into()
+    }));
+    assert!(out.warnings.contains(&EnrollWarning::VolumesFrom {
+        service: "bot".into(),
+        from: "helper".into()
+    }));
+}
+
+#[test]
+fn net_sysctls_are_removed_and_others_kept() {
+    let y = "services:\n  bot:\n    image: bot\n    sysctls:\n      net.ipv4.ip_forward: 1\n      kernel.shm_rmid_forced: 1\n";
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    let doc = parse(&out.yaml);
+    let sys = &doc["services"]["bot"]["sysctls"];
+    assert!(sys.get("net.ipv4.ip_forward").is_none());
+    assert_eq!(sys["kernel.shm_rmid_forced"].as_i64(), Some(1));
+    assert!(out.warnings.contains(&EnrollWarning::NetSysctlsRemoved {
+        service: "bot".into(),
+        keys: vec!["net.ipv4.ip_forward".into()]
+    }));
+    // Exact inverse still holds.
+    assert_eq!(
+        parse(&unenroll_compose(&out.yaml, "bot").unwrap()),
+        parse(y)
+    );
+}
+
+#[test]
+fn moved_ports_are_reported_as_not_published() {
+    let out = enroll_compose(&fixture("hermes-bot.yml"), &hermes_spec()).unwrap();
+    assert!(out.warnings.contains(&EnrollWarning::PortsNotPublished {
+        service: "daniel-bot".into()
+    }));
+}
+
+#[test]
+fn existing_cap_drop_is_extended_not_replaced() {
+    let y = "services:\n  bot:\n    image: bot\n    cap_drop: [MKNOD]\n  b2:\n    image: x\n    cap_drop: [ALL]\n";
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    assert_eq!(
+        strings(&parse(&out.yaml)["services"]["bot"]["cap_drop"]),
+        vec!["MKNOD", "NET_RAW"]
+    );
+    let s2 = EnrollSpec {
+        agent_ip: "10.80.0.12".parse().unwrap(),
+        ..spec("b2", "b2")
+    };
+    let out = enroll_compose(y, &s2).unwrap();
+    assert_eq!(
+        strings(&parse(&out.yaml)["services"]["b2"]["cap_drop"]),
+        vec!["ALL"]
+    );
+}
+
+#[test]
+fn null_and_absent_top_level_keys_are_restored_exactly() {
+    for y in [
+        "services:\n  bot:\n    image: bot\nnetworks:\n",
+        "services:\n  bot:\n    image: bot\nvolumes:\nnetworks: {}\n",
+        "services:\n  bot:\n    image: bot\n",
+    ] {
+        let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+        let back = unenroll_compose(&out.yaml, "bot").unwrap();
+        assert_eq!(parse(&back), parse(y), "back:\n{back}");
+    }
+}
+
+#[test]
+fn two_agents_with_created_volumes_unenroll_exactly() {
+    let original = "services:\n  a:\n    image: x\n  b:\n    image: y\n";
+    let sa = spec("a", "a");
+    let sb = EnrollSpec {
+        agent_ip: "10.80.0.12".parse().unwrap(),
+        network: "afw-other".into(),
+        ..spec("b", "b")
+    };
+    let both = enroll_compose(&enroll_compose(original, &sa).unwrap().yaml, &sb)
+        .unwrap()
+        .yaml;
+    for order in [["a", "b"], ["b", "a"]] {
+        let step = unenroll_compose(&both, order[0]).unwrap();
+        let back = unenroll_compose(&step, order[1]).unwrap();
+        assert_eq!(parse(&back), parse(original), "{order:?}");
+    }
+}
+
+#[test]
+fn netinit_script_is_valid_sh_and_isolates_the_agent() {
+    let s = spec("bot", "bot");
+    let script = netinit_script(&s);
+    // C1: host route to the gateway, default via the gateway, every other route deleted.
+    assert!(script.contains(r#"ip -4 route replace "$GW/32" dev "$IFACE" scope link"#));
+    assert!(script.contains(r#"ip -4 route replace default via "$GW" dev "$IFACE""#));
+    assert!(script.contains("ip -4 route del"));
+    assert!(script.contains(r#"ip -6 route flush dev "$IFACE""#));
+    // C3: every interface but lo and the gateway one is set down.
+    assert!(script.contains(r#"ip link set dev "$dev" down"#));
+    // I4: bundle = system roots + gateway CA.
+    assert!(script.contains("/etc/ssl/certs/ca-certificates.crt"));
+    assert!(script.contains("bundle.pem"));
+    assert!(script.contains("GW='10.80.0.2'") && script.contains("ME='10.80.0.11'"));
+    // Same script in compose (escaped) and in docker run (raw).
+    let compose = enroll_compose("services:\n  bot:\n    image: x\n", &s).unwrap();
+    let cmd = strings(&parse(&compose.yaml)["services"]["afw-net-bot"]["command"]);
+    assert_eq!(cmd[2].replace("$$", "$"), script);
+    // POSIX syntax check with the system shell.
+    let status = std::process::Command::new("sh")
+        .arg("-n")
+        .arg("-c")
+        .arg(&script)
+        .status()
+        .expect("sh");
+    assert!(status.success(), "sh -n failed");
+    let v6 = EnrollSpec {
+        gateway_ip: "fd00:80::2".parse().unwrap(),
+        agent_ip: "fd00:80::11".parse().unwrap(),
+        ..s
+    };
+    let script6 = netinit_script(&v6);
+    assert!(script6.contains(r#"ip -6 route replace "$GW/128""#));
+    assert!(script6.contains(r#"ip -4 route flush dev "$IFACE""#));
 }

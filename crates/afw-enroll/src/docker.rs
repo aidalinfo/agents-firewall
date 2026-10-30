@@ -1,26 +1,28 @@
 //! Enrollment of a container started with plain `docker run` (EF-63).
 //!
-//! Two containers, as with Compose: first the holder (`netinit_run_args` + image +
-//! `netinit_command`), then the agent with `docker_run_args` placed before its image.
+//! Two containers, as with Compose: first the holder
+//! (`docker run <netinit_run_args…> <netinit_command…>`), then the agent with
+//! `docker_run_args` placed before its image.
 
-use crate::compose::route_script;
-use crate::spec::{CA_CONTAINER_PATH, EnrollSpec, LABEL_AGENT, LABEL_ENROLLED};
+use crate::compose::ca_volume_name;
+use crate::netinit::{HOLDER_CA_DIR, HOLDER_CA_SRC, READY_FILE, script};
+use crate::spec::{CA_DIR, EnrollSpec, LABEL_AGENT, LABEL_ENROLLED};
 
 /// Arguments of `docker run` for the `afw-net-<agent>` holder, up to (and including) its image.
-///
-/// `docker run <netinit_run_args…> <netinit_command…>`
 pub fn netinit_run_args(spec: &EnrollSpec) -> Vec<String> {
-    let ip_flag = if spec.agent_ip.is_ipv4() {
-        "--ip"
+    let (ip_flag, fam) = if spec.agent_ip.is_ipv4() {
+        ("--ip", "ipv4")
     } else {
-        "--ip6"
+        ("--ip6", "ipv6")
     };
-    vec![
+    let mut args: Vec<String> = vec![
         "-d".into(),
         "--name".into(),
         spec.net_service_name(),
         "--restart".into(),
         "unless-stopped".into(),
+        "--cap-drop".into(),
+        "ALL".into(),
         "--cap-add".into(),
         "NET_ADMIN".into(),
         "--network".into(),
@@ -29,27 +31,51 @@ pub fn netinit_run_args(spec: &EnrollSpec) -> Vec<String> {
         spec.agent_ip.to_string(),
         "--dns".into(),
         spec.gateway_ip.to_string(),
+    ];
+    for scope in ["all", "default"] {
+        args.push("--sysctl".into());
+        args.push(format!("net.{fam}.conf.{scope}.accept_redirects=0"));
+    }
+    args.extend([
+        "-v".into(),
+        format!("{}:{HOLDER_CA_SRC}:ro", spec.ca_path_host),
+        "-v".into(),
+        format!("{}:{HOLDER_CA_DIR}", ca_volume_name(&spec.agent_name)),
+        "--health-cmd".into(),
+        format!("test -f {READY_FILE} && test -s {HOLDER_CA_DIR}/bundle.pem"),
+        "--health-interval".into(),
+        "5s".into(),
         "-e".into(),
         format!("AFW_GATEWAY_IP={}", spec.gateway_ip),
+        "-e".into(),
+        format!("AFW_AGENT_IP={}", spec.agent_ip),
         "--label".into(),
         format!("{LABEL_ENROLLED}=true"),
         "--label".into(),
         format!("{LABEL_AGENT}={}", spec.agent_name),
         spec.netinit_image.clone(),
+    ]);
+    args
+}
+
+/// Command of the holder container ([`crate::netinit_script`], without Compose escaping).
+pub fn netinit_command(spec: &EnrollSpec) -> Vec<String> {
+    vec![
+        "sh".into(),
+        "-c".into(),
+        script(spec.gateway_ip, spec.agent_ip),
     ]
 }
 
-/// Command of the holder container (default route to the gateway, re-applied every 10 s).
-pub fn netinit_command(spec: &EnrollSpec) -> Vec<String> {
-    vec!["sh".into(), "-c".into(), route_script(spec.gateway_ip)]
-}
-
 /// Arguments to add to the agent's `docker run`, before its image. The agent joins the
-/// holder's namespace and gets no capability; published ports belong on the holder.
+/// holder's namespace without `NET_RAW`; published ports belong on the holder. Start it once
+/// the holder is healthy.
 pub fn docker_run_args(spec: &EnrollSpec) -> Vec<String> {
     let mut args = vec![
         "--network".into(),
         format!("container:{}", spec.net_service_name()),
+        "--cap-drop".into(),
+        "NET_RAW".into(),
     ];
     for (k, v) in spec.agent_environment() {
         args.push("-e".into());
@@ -62,7 +88,7 @@ pub fn docker_run_args(spec: &EnrollSpec) -> Vec<String> {
         }
     }
     args.push("-v".into());
-    args.push(format!("{}:{CA_CONTAINER_PATH}:ro", spec.ca_path_host));
+    args.push(format!("{}:{CA_DIR}:ro", ca_volume_name(&spec.agent_name)));
     if let Some(h) = &spec.hermes {
         args.push("-v".into());
         args.push(format!("{}:{}:ro", h.plugin_dir_host, h.container_dir()));

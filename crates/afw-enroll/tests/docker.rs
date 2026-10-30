@@ -32,6 +32,7 @@ fn pairs(args: &[String], flag: &str) -> Vec<String> {
 fn agent_joins_holder_namespace_without_capabilities() {
     let a = docker_run_args(&spec());
     assert_eq!(pairs(&a, "--network"), vec!["container:afw-net-solo"]);
+    assert_eq!(pairs(&a, "--cap-drop"), vec!["NET_RAW"]);
     for forbidden in [
         "--cap-add",
         "--privileged",
@@ -49,9 +50,8 @@ fn agent_joins_holder_namespace_without_capabilities() {
     assert!(env.contains(&"AFW_AGENT_TOKEN".to_string()));
     assert!(!a.iter().any(|x| x.contains("SOLO_TOKEN")));
     let vols = pairs(&a, "-v");
-    assert!(vols.contains(
-        &"/etc/afw/ca.crt:/usr/local/share/ca-certificates/afw-gateway.crt:ro".to_string()
-    ));
+    assert!(vols.contains(&"afw-ca-solo:/usr/local/share/ca-certificates/afw:ro".to_string()));
+    assert!(!vols.iter().any(|v| v.starts_with("/etc/afw/ca.crt")));
     assert!(vols.contains(&"/opt/afw/hermes:/home/hermes/.hermes/plugins/afw:ro".to_string()));
 }
 
@@ -60,14 +60,30 @@ fn holder_has_net_admin_fixed_ip_and_gateway_dns() {
     let s = spec();
     let a = netinit_run_args(&s);
     assert_eq!(pairs(&a, "--name"), vec!["afw-net-solo"]);
+    assert_eq!(pairs(&a, "--cap-drop"), vec!["ALL"]);
     assert_eq!(pairs(&a, "--cap-add"), vec!["NET_ADMIN"]);
+    assert_eq!(
+        pairs(&a, "--sysctl"),
+        vec![
+            "net.ipv4.conf.all.accept_redirects=0",
+            "net.ipv4.conf.default.accept_redirects=0"
+        ]
+    );
+    assert_eq!(
+        pairs(&a, "-v"),
+        vec![
+            "/etc/afw/ca.crt:/afw-ca-src/gateway.crt:ro",
+            "afw-ca-solo:/afw-ca"
+        ]
+    );
+    assert!(pairs(&a, "--health-cmd")[0].contains("/tmp/afw-ready"));
     assert_eq!(pairs(&a, "--network"), vec!["afw-internal"]);
     assert_eq!(pairs(&a, "--ip"), vec!["10.80.0.20"]);
     assert_eq!(pairs(&a, "--dns"), vec!["10.80.0.2"]);
     assert_eq!(a.last().unwrap(), "afw-netinit:local");
     let cmd = netinit_command(&s);
     assert_eq!(&cmd[..2], &["sh", "-c"]);
-    assert!(cmd[2].contains("ip route replace default via 10.80.0.2"));
+    assert_eq!(cmd[2], afw_enroll::netinit_script(&s));
     assert!(
         cmd[2].contains("wait $!"),
         "no compose escaping outside compose"

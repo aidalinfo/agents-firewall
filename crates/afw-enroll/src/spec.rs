@@ -9,8 +9,13 @@ use crate::error::EnrollError;
 /// Default image of the network-namespace holder container (`afw-net-<agent>`).
 pub const DEFAULT_NETINIT_IMAGE: &str = "afw-netinit:local";
 
-/// Path where the gateway inspection CA is mounted inside the agent container.
-pub const CA_CONTAINER_PATH: &str = "/usr/local/share/ca-certificates/afw-gateway.crt";
+/// Directory mounted read-only in the agent: `gateway.crt` (gateway CA alone, picked up by
+/// `update-ca-certificates`) and `bundle.pem` (system roots + gateway CA).
+pub const CA_DIR: &str = "/usr/local/share/ca-certificates/afw";
+/// Full bundle (system roots + gateway CA): `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`.
+pub const CA_BUNDLE_PATH: &str = "/usr/local/share/ca-certificates/afw/bundle.pem";
+/// Gateway CA alone: `NODE_EXTRA_CA_CERTS` (added to Node's own roots).
+pub const CA_CERT_PATH: &str = "/usr/local/share/ca-certificates/afw/gateway.crt";
 
 /// Default directory of the Hermes plugin inside a Hermes container
 /// (`$HERMES_HOME/plugins/<name>`, `HERMES_HOME=/opt/data` in the Hermes images).
@@ -39,8 +44,8 @@ pub struct EnrollSpec {
     pub network: String,
     /// Explicit proxy URL, e.g. `http://10.80.0.2:3128`.
     pub proxy_url: String,
-    /// Host path of the gateway inspection CA certificate (PEM). May be a full bundle
-    /// (system roots + gateway CA), see ADR 0023.
+    /// Host path of the gateway inspection CA certificate (PEM). The holder builds the full
+    /// bundle (system roots + this CA) from it, see ADR 0023.
     pub ca_path_host: String,
     /// Hermes plugin installation (EF-61), `None` for a non-Hermes agent.
     pub hermes: Option<HermesSpec>,
@@ -134,7 +139,7 @@ impl EnrollSpec {
             Some(host) => format!("{NO_PROXY},{host}"),
             None => NO_PROXY.to_string(),
         };
-        let mut env = proxy_environment(&self.proxy_url, &no_proxy, CA_CONTAINER_PATH);
+        let mut env = proxy_environment(&self.proxy_url, &no_proxy);
         if let Some(h) = &self.hermes {
             env.push(("AFW_CONSOLE_URL".into(), h.console_url.clone()));
             env.push((
@@ -148,11 +153,7 @@ impl EnrollSpec {
 }
 
 /// Proxy and CA variables, upper and lower case (curl only reads lower-case `http_proxy`).
-pub(crate) fn proxy_environment(
-    proxy_url: &str,
-    no_proxy: &str,
-    ca_path: &str,
-) -> Vec<(String, String)> {
+pub(crate) fn proxy_environment(proxy_url: &str, no_proxy: &str) -> Vec<(String, String)> {
     vec![
         ("HTTP_PROXY".into(), proxy_url.into()),
         ("HTTPS_PROXY".into(), proxy_url.into()),
@@ -160,10 +161,10 @@ pub(crate) fn proxy_environment(
         ("http_proxy".into(), proxy_url.into()),
         ("https_proxy".into(), proxy_url.into()),
         ("no_proxy".into(), no_proxy.into()),
-        ("REQUESTS_CA_BUNDLE".into(), ca_path.into()),
-        ("SSL_CERT_FILE".into(), ca_path.into()),
-        ("NODE_EXTRA_CA_CERTS".into(), ca_path.into()),
-        ("CURL_CA_BUNDLE".into(), ca_path.into()),
+        ("REQUESTS_CA_BUNDLE".into(), CA_BUNDLE_PATH.into()),
+        ("SSL_CERT_FILE".into(), CA_BUNDLE_PATH.into()),
+        ("CURL_CA_BUNDLE".into(), CA_BUNDLE_PATH.into()),
+        ("NODE_EXTRA_CA_CERTS".into(), CA_CERT_PATH.into()),
     ]
 }
 
@@ -214,52 +215,135 @@ fn is_env_name(s: &str) -> bool {
 }
 
 /// Non-blocking findings reported by an enrollment ([Killian]: privileged containers are not
-/// refused, the limit is documented and only reported).
+/// refused, the limit is documented and only reported). `service` is the compose service (or
+/// the Kubernetes container/workload) the finding is about.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EnrollWarning {
-    /// `privileged: true`: the agent can change its own route and leave through another path.
-    Privileged,
-    /// A capability that lets the agent rewrite its network namespace (`NET_ADMIN`, `SYS_ADMIN`, `ALL`).
-    DangerousCapability { capability: String },
-    /// The Docker socket is mounted: the agent can start an unenrolled container.
-    DockerSocket { mount: String },
-    /// `pid: host` or another host namespace.
-    HostNamespace { namespace: String },
+    /// `privileged: true`: the container can change the network namespace and leave.
+    Privileged { service: String },
+    /// A capability that defeats the isolation (`NET_ADMIN`, `NET_RAW`, `SYS_ADMIN`,
+    /// `SYS_MODULE`, `SYS_RAWIO`, `SYS_PTRACE`, `BPF`, `DAC_READ_SEARCH`, `ALL`).
+    DangerousCapability { service: String, capability: String },
+    /// A container runtime socket (Docker, Podman, containerd, CRI-O) or `/var/run` is mounted:
+    /// the container can start workloads that are not enrolled.
+    RuntimeSocket { service: String, mount: String },
+    /// A host namespace (`pid: host`, `ipc: host`, `hostPID`, `hostIPC`…).
+    HostNamespace { service: String, namespace: String },
+    /// `pid`/`ipc` shared with another container (`service:`/`container:`).
+    SharedNamespace {
+        service: String,
+        namespace: String,
+        with: String,
+    },
+    /// `volumes_from` another container.
+    VolumesFrom { service: String, from: String },
+    /// Another service joins the network namespace of the agent (same egress, own privileges).
+    JoinsAgentNetwork { service: String },
     /// `links` cannot be combined with `network_mode: service:`; they were removed.
-    LinksRemoved,
-    /// Kubernetes: a privileged container can reach the node and leave through another path.
-    PodPrivileged { container: String },
+    LinksRemoved { service: String },
+    /// `net.*` sysctls cannot be set on a container sharing a namespace; they were removed.
+    NetSysctlsRemoved { service: String, keys: Vec<String> },
+    /// Ports moved to the holder sit on an `internal` network: Docker no longer publishes them.
+    PortsNotPublished { service: String },
+    /// Kubernetes: a `hostPath` volume.
+    HostPath { service: String, path: String },
+    /// Kubernetes: an existing NetworkPolicy also allows egress of enrolled pods elsewhere than
+    /// the gateway (NetworkPolicies are additive: any allow rule widens the egress).
+    BroadEgressPolicy { policy: String, reason: String },
 }
 
 impl std::fmt::Display for EnrollWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Privileged => write!(
+            Self::Privileged { service } => write!(
                 f,
-                "the agent is privileged: it can change its network namespace and bypass the gateway"
+                "{service} is privileged: it can change its network namespace and bypass the gateway"
             ),
-            Self::DangerousCapability { capability } => write!(
+            Self::DangerousCapability {
+                service,
+                capability,
+            } => write!(
                 f,
-                "the agent has capability {capability}: it can change its route and bypass the gateway"
+                "{service} has capability {capability}: it can weaken the isolation"
             ),
-            Self::DockerSocket { mount } => write!(
+            Self::RuntimeSocket { service, mount } => write!(
                 f,
-                "the Docker socket is mounted ({mount}): the agent can start containers that are not enrolled"
+                "{service} mounts {mount}: it can start containers that are not enrolled"
             ),
-            Self::HostNamespace { namespace } => {
-                write!(f, "the agent shares the host {namespace} namespace")
+            Self::HostNamespace { service, namespace } => {
+                write!(f, "{service} shares the host {namespace} namespace")
             }
-            Self::LinksRemoved => write!(
+            Self::SharedNamespace {
+                service,
+                namespace,
+                with,
+            } => write!(f, "{service} shares its {namespace} namespace with {with}"),
+            Self::VolumesFrom { service, from } => {
+                write!(f, "{service} mounts the volumes of {from}")
+            }
+            Self::JoinsAgentNetwork { service } => write!(
                 f,
-                "`links` are incompatible with the shared network namespace and were removed"
+                "{service} joins the network namespace of the agent: its own privileges apply to the agent traffic"
             ),
-            Self::PodPrivileged { container } => write!(
+            Self::LinksRemoved { service } => write!(
                 f,
-                "container {container} is privileged: it can reach the node and bypass the gateway"
+                "{service}: `links` are incompatible with the shared network namespace and were removed"
+            ),
+            Self::NetSysctlsRemoved { service, keys } => write!(
+                f,
+                "{service}: net.* sysctls were removed ({})",
+                keys.join(", ")
+            ),
+            Self::PortsNotPublished { service } => write!(
+                f,
+                "{service}: its ports were moved to the network holder, on an internal network Docker does not publish them any more"
+            ),
+            Self::HostPath { service, path } => {
+                write!(f, "{service} mounts the host path {path}")
+            }
+            Self::BroadEgressPolicy { policy, reason } => write!(
+                f,
+                "NetworkPolicy {policy} widens the egress of enrolled pods: {reason}"
             ),
         }
     }
+}
+
+/// Capabilities reported by [`EnrollWarning::DangerousCapability`] (without the `CAP_` prefix).
+pub(crate) const DANGEROUS_CAPS: &[&str] = &[
+    "NET_ADMIN",
+    "NET_RAW",
+    "SYS_ADMIN",
+    "SYS_MODULE",
+    "SYS_RAWIO",
+    "SYS_PTRACE",
+    "BPF",
+    "DAC_READ_SEARCH",
+    "ALL",
+];
+
+/// `true` for a capability in [`DANGEROUS_CAPS`] (case-insensitive, `CAP_` prefix allowed).
+pub(crate) fn is_dangerous_cap(cap: &str) -> bool {
+    let up = cap.to_ascii_uppercase();
+    let norm = up.strip_prefix("CAP_").unwrap_or(&up);
+    DANGEROUS_CAPS.contains(&norm)
+}
+
+/// Container runtime sockets and the directories holding them.
+pub(crate) fn is_runtime_socket(path: &str) -> bool {
+    let p = path.trim_end_matches('/');
+    if matches!(p, "/var/run" | "/run" | "/var/run/docker" | "/run/docker") {
+        return true;
+    }
+    if p.ends_with(".sock") {
+        return true;
+    }
+    let under_run = p.starts_with("/var/run/") || p.starts_with("/run/");
+    under_run
+        && ["docker", "podman", "containerd", "crio", "cri-dockerd"]
+            .iter()
+            .any(|k| p.contains(k))
 }
 
 /// Result of a successful enrollment.

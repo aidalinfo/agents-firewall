@@ -1,6 +1,10 @@
-//! Kubernetes enrollment (ADR 0003, Kubernetes section): one gateway per namespace, egress of
-//! enrolled pods restricted by a `NetworkPolicy` to the gateway only, pod DNS pointed to the
-//! gateway, proxy variables and the inspection CA mounted from a `ConfigMap`.
+//! Kubernetes enrollment (ADR 0003, Kubernetes section; ADR 0023).
+//!
+//! One gateway per agent namespace, running in its own dedicated namespace (agents cannot
+//! create a pod that impersonates it). Egress of enrolled pods is restricted by a
+//! `NetworkPolicy` to the gateway pods only (namespace + pod selector), pod DNS points to the
+//! gateway, proxy variables are set and a CA bundle (system roots + gateway CA) is built by an
+//! init container into an `emptyDir` mounted read-only as a directory.
 
 use std::net::IpAddr;
 
@@ -9,30 +13,53 @@ use serde_json::{Value as Json, json};
 use serde_yaml::{Mapping, Value};
 
 use crate::error::EnrollError;
+use crate::netinit::k8s_bundle_script;
 use crate::spec::{
-    CA_CONTAINER_PATH, EnrollOutcome, EnrollWarning, LABEL_AGENT, LABEL_ENROLLED, NO_PROXY,
-    proxy_environment, validate_agent_name,
+    CA_DIR, DEFAULT_NETINIT_IMAGE, EnrollOutcome, EnrollWarning, LABEL_AGENT, LABEL_ENROLLED,
+    NO_PROXY, is_dangerous_cap, is_runtime_socket, proxy_environment, validate_agent_name,
 };
 
-/// Name of the CA `ConfigMap` key and of the pod volume.
+/// Key of the CA in the `ConfigMap`.
 const CA_KEY: &str = "ca.crt";
-const CA_VOLUME: &str = "afw-gateway-ca";
+/// Volume holding the `ConfigMap` (source of the bundle).
+const CA_SRC_VOLUME: &str = "afw-gateway-ca";
+/// `emptyDir` volume holding `gateway.crt` and `bundle.pem`.
+const CA_VOLUME: &str = "afw-ca";
+/// Init container building the bundle.
+const CA_INIT: &str = "afw-ca-bundle";
+const CA_SRC_MOUNT: &str = "/afw-ca-src";
+const CA_BUILD_MOUNT: &str = "/afw-ca";
+/// Namespace label set by Kubernetes on every namespace (1.21+).
+const NS_NAME_LABEL: &str = "kubernetes.io/metadata.name";
 
-/// Per-namespace gateway parameters.
+/// Reference to a key of an existing Secret (never a secret value in clear).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretKeyRef {
+    /// Secret name, in the gateway namespace.
+    pub name: String,
+    /// Key inside the Secret.
+    pub key: String,
+}
+
+/// Gateway parameters for one agent namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct K8sSpec {
-    /// Namespace of the agents (one gateway per namespace).
+    /// Namespace of the agents.
     pub namespace: String,
+    /// Dedicated namespace of the gateway (must differ from `namespace`).
+    pub gateway_namespace: String,
     /// Gateway name (Deployment, Service and prefix of the other objects), e.g. `afw-gateway`.
     pub gateway_name: String,
     /// Gateway image.
     pub gateway_image: String,
+    /// Image of the init container building the CA bundle (sh + system CA bundle).
+    pub netinit_image: String,
     /// Fixed `ClusterIP` of the gateway Service (pod DNS server, inside the service CIDR).
     pub gateway_cluster_ip: IpAddr,
     /// Console URL the gateway registers with.
     pub console_url: String,
-    /// One-time gateway registration token (stored in a Secret).
-    pub registration_token: String,
+    /// Existing Secret (gateway namespace) holding the one-time registration token.
+    pub registration_secret: SecretKeyRef,
     /// Public inspection CA (PEM) once known; `None` creates an empty ConfigMap to fill later.
     #[serde(default)]
     pub ca_pem: Option<String>,
@@ -47,21 +74,28 @@ pub struct K8sSpec {
 }
 
 impl K8sSpec {
-    /// Spec with the default ports, state size and cluster domain.
+    /// Spec with defaults: gateway namespace `afw-gw-<namespace>`, ports 3128/15001, `1Gi`
+    /// state, `cluster.local`, Secret key `registration-token`.
     pub fn new(
         namespace: impl Into<String>,
         gateway_image: impl Into<String>,
         gateway_cluster_ip: IpAddr,
         console_url: impl Into<String>,
-        registration_token: impl Into<String>,
+        registration_secret_name: impl Into<String>,
     ) -> Self {
+        let namespace = namespace.into();
         Self {
-            namespace: namespace.into(),
+            gateway_namespace: format!("afw-gw-{namespace}"),
+            namespace,
             gateway_name: "afw-gateway".into(),
             gateway_image: gateway_image.into(),
+            netinit_image: DEFAULT_NETINIT_IMAGE.into(),
             gateway_cluster_ip,
             console_url: console_url.into(),
-            registration_token: registration_token.into(),
+            registration_secret: SecretKeyRef {
+                name: registration_secret_name.into(),
+                key: "registration-token".into(),
+            },
             ca_pem: None,
             proxy_port: 3128,
             transparent_port: 15001,
@@ -73,6 +107,7 @@ impl K8sSpec {
     fn validate(&self) -> Result<(), EnrollError> {
         for (what, v) in [
             ("namespace", &self.namespace),
+            ("gateway_namespace", &self.gateway_namespace),
             ("gateway_name", &self.gateway_name),
         ] {
             if !is_dns_label(v) {
@@ -81,8 +116,20 @@ impl K8sSpec {
                 )));
             }
         }
-        if self.gateway_image.trim().is_empty() {
-            return Err(EnrollError::InvalidSpec("gateway_image is empty".into()));
+        if self.gateway_namespace == self.namespace {
+            return Err(EnrollError::InvalidSpec(
+                "the gateway must run in a dedicated namespace, distinct from the agents".into(),
+            ));
+        }
+        for (what, v) in [
+            ("gateway_image", &self.gateway_image),
+            ("netinit_image", &self.netinit_image),
+            ("registration_secret.name", &self.registration_secret.name),
+            ("registration_secret.key", &self.registration_secret.key),
+        ] {
+            if v.trim().is_empty() {
+                return Err(EnrollError::InvalidSpec(format!("{what} is empty")));
+            }
         }
         if self.proxy_port == 0 || self.transparent_port == 0 {
             return Err(EnrollError::InvalidSpec("ports must be non-zero".into()));
@@ -117,12 +164,14 @@ impl K8sSpec {
     }
 }
 
-/// Manifests of the per-namespace gateway: Secret (registration token), ConfigMap (public CA),
-/// PersistentVolumeClaim (state), Deployment, Service (fixed ClusterIP) and two
-/// NetworkPolicies (egress of enrolled pods → gateway only; gateway ingress ← enrolled pods).
+/// Manifests: Namespace of the gateway, ConfigMap (public CA, agent namespace),
+/// PersistentVolumeClaim (state), Deployment, Service (fixed ClusterIP), NetworkPolicy
+/// (egress of enrolled pods → gateway pods only, agent namespace) and NetworkPolicy (gateway
+/// ingress ← enrolled pods only). The registration token is read from an existing Secret.
 pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
     spec.validate()?;
     let ns = &spec.namespace;
+    let gw_ns = &spec.gateway_namespace;
     let name = &spec.gateway_name;
     let labels = spec.selector();
     let ports_np: Vec<Json> = spec
@@ -138,10 +187,8 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
     let manifests = vec![
         json!({
             "apiVersion": "v1",
-            "kind": "Secret",
-            "metadata": { "name": format!("{name}-identity"), "namespace": ns, "labels": labels },
-            "type": "Opaque",
-            "stringData": { "registration-token": spec.registration_token },
+            "kind": "Namespace",
+            "metadata": { "name": gw_ns, "labels": { "app.kubernetes.io/part-of": "agents-firewall" } },
         }),
         json!({
             "apiVersion": "v1",
@@ -152,7 +199,7 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
         json!({
             "apiVersion": "v1",
             "kind": "PersistentVolumeClaim",
-            "metadata": { "name": format!("{name}-state"), "namespace": ns, "labels": labels },
+            "metadata": { "name": format!("{name}-state"), "namespace": gw_ns, "labels": labels },
             "spec": {
                 "accessModes": ["ReadWriteOnce"],
                 "resources": { "requests": { "storage": spec.state_size } },
@@ -161,7 +208,7 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
         json!({
             "apiVersion": "apps/v1",
             "kind": "Deployment",
-            "metadata": { "name": name, "namespace": ns, "labels": labels },
+            "metadata": { "name": name, "namespace": gw_ns, "labels": labels },
             "spec": {
                 "replicas": 1,
                 // The state volume is ReadWriteOnce and the CA key must stay unique.
@@ -171,7 +218,11 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
                     "metadata": { "labels": labels },
                     "spec": {
                         "automountServiceAccountToken": false,
-                        "securityContext": { "runAsNonRoot": true, "runAsUser": 10001, "fsGroup": 10001 },
+                        "securityContext": {
+                            "runAsNonRoot": true, "runAsUser": 10001, "fsGroup": 10001,
+                            // Non-root process listening on 53/80/443 without any capability.
+                            "sysctls": [{ "name": "net.ipv4.ip_unprivileged_port_start", "value": "0" }],
+                        },
                         "containers": [{
                             "name": "gateway",
                             "image": spec.gateway_image,
@@ -181,7 +232,8 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
                                 { "name": "AFW_CONSOLE_URL", "value": spec.console_url },
                                 { "name": "AFW_STATE_DIR", "value": "/var/lib/afw" },
                                 { "name": "AFW_REGISTRATION_TOKEN", "valueFrom": { "secretKeyRef": {
-                                    "name": format!("{name}-identity"), "key": "registration-token" } } },
+                                    "name": spec.registration_secret.name,
+                                    "key": spec.registration_secret.key } } },
                             ],
                             "ports": spec.gateway_ports().iter().map(|(n, proto, port)| json!({
                                 "name": n, "containerPort": port, "protocol": proto })).chain(
@@ -190,7 +242,7 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
                             "securityContext": {
                                 "allowPrivilegeEscalation": false,
                                 "readOnlyRootFilesystem": true,
-                                "capabilities": { "drop": ["ALL"], "add": ["NET_BIND_SERVICE"] },
+                                "capabilities": { "drop": ["ALL"] },
                             },
                             "readinessProbe": { "tcpSocket": { "port": 9090 }, "periodSeconds": 5 },
                             "livenessProbe": { "tcpSocket": { "port": 9090 }, "periodSeconds": 10 },
@@ -204,7 +256,7 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
         json!({
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": { "name": name, "namespace": ns, "labels": labels },
+            "metadata": { "name": name, "namespace": gw_ns, "labels": labels },
             "spec": {
                 "type": "ClusterIP",
                 "clusterIP": spec.gateway_cluster_ip.to_string(),
@@ -221,7 +273,11 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
                 "podSelector": { "matchLabels": { LABEL_ENROLLED: "true" } },
                 "policyTypes": ["Egress"],
                 "egress": [{
-                    "to": [{ "podSelector": { "matchLabels": labels } }],
+                    // Same peer element: namespace AND pod selector.
+                    "to": [{
+                        "namespaceSelector": { "matchLabels": { NS_NAME_LABEL: gw_ns } },
+                        "podSelector": { "matchLabels": labels },
+                    }],
                     "ports": ports_np,
                 }],
             },
@@ -229,12 +285,15 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
         json!({
             "apiVersion": "networking.k8s.io/v1",
             "kind": "NetworkPolicy",
-            "metadata": { "name": format!("{name}-ingress"), "namespace": ns, "labels": labels },
+            "metadata": { "name": format!("{name}-ingress"), "namespace": gw_ns, "labels": labels },
             "spec": {
                 "podSelector": { "matchLabels": labels },
                 "policyTypes": ["Ingress"],
                 "ingress": [{
-                    "from": [{ "podSelector": { "matchLabels": { LABEL_ENROLLED: "true" } } }],
+                    "from": [{
+                        "namespaceSelector": { "matchLabels": { NS_NAME_LABEL: ns } },
+                        "podSelector": { "matchLabels": { LABEL_ENROLLED: "true" } },
+                    }],
                     "ports": ports_np,
                 }],
             },
@@ -248,8 +307,9 @@ pub fn k8s_manifests(spec: &K8sSpec) -> Result<Vec<Value>, EnrollError> {
 
 /// Enroll the pods of a workload (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job,
 /// CronJob or Pod): label `afw.enrolled=true` (selected by the egress NetworkPolicy),
-/// annotation `afw.agent`, DNS on the gateway, proxy variables and CA mounted in every
-/// container. `hostNetwork: true` is refused (the NetworkPolicy does not apply to it).
+/// annotation `afw.agent`, no service-account token, DNS on the gateway, proxy variables,
+/// `NET_RAW` dropped, CA bundle built by an init container and mounted as a directory.
+/// `hostNetwork: true` is refused (NetworkPolicies do not apply to it).
 pub fn patch_pod_template(
     workload_yaml: &str,
     spec: &K8sSpec,
@@ -258,6 +318,7 @@ pub fn patch_pod_template(
     spec.validate()?;
     validate_agent_name(agent_name)?;
     let mut doc: Value = serde_yaml::from_str(workload_yaml)?;
+    doc.apply_merge()?;
     let kind = doc
         .get("kind")
         .and_then(Value::as_str)
@@ -308,18 +369,35 @@ pub fn patch_pod_template(
         return Err(EnrollError::HostNetwork(workload_name));
     }
     let mut warnings = Vec::new();
+    for (key, ns) in [("hostPID", "pid"), ("hostIPC", "ipc")] {
+        if pod.get(key).and_then(Value::as_bool) == Some(true) {
+            warnings.push(EnrollWarning::HostNamespace {
+                service: workload_name.clone(),
+                namespace: ns.into(),
+            });
+        }
+    }
     if let Some(Value::Sequence(vols)) = pod.get("volumes") {
         for v in vols {
             if let Some(path) = v
                 .get("hostPath")
                 .and_then(|h| h.get("path"))
                 .and_then(Value::as_str)
-                .filter(|p| p.ends_with("docker.sock") || p.ends_with("containerd.sock"))
             {
-                warnings.push(EnrollWarning::DockerSocket { mount: path.into() });
+                warnings.push(EnrollWarning::HostPath {
+                    service: workload_name.clone(),
+                    path: path.into(),
+                });
+                if is_runtime_socket(path) {
+                    warnings.push(EnrollWarning::RuntimeSocket {
+                        service: workload_name.clone(),
+                        mount: path.into(),
+                    });
+                }
             }
         }
     }
+    pod.insert("automountServiceAccountToken".into(), Value::Bool(false));
     pod.insert("dnsPolicy".into(), "None".into());
     let d = &spec.cluster_domain;
     pod.insert(
@@ -331,13 +409,21 @@ pub fn patch_pod_template(
         }))?,
     );
     let vols = child_seq(pod, "volumes")?;
-    vols.retain(|v| v.get("name").and_then(Value::as_str) != Some(CA_VOLUME));
+    vols.retain(|v| {
+        !matches!(
+            v.get("name").and_then(Value::as_str),
+            Some(CA_SRC_VOLUME | CA_VOLUME)
+        )
+    });
     vols.push(serde_yaml::to_value(json!({
-        "name": CA_VOLUME,
-        "configMap": { "name": format!("{}-ca", spec.gateway_name), "items": [{ "key": CA_KEY, "path": CA_KEY }] },
+        "name": CA_SRC_VOLUME,
+        "configMap": { "name": format!("{}-ca", spec.gateway_name) },
     }))?);
+    vols.push(serde_yaml::to_value(
+        json!({ "name": CA_VOLUME, "emptyDir": {} }),
+    )?);
 
-    let env = proxy_environment(&spec.proxy_url(), NO_PROXY, CA_CONTAINER_PATH);
+    let env = proxy_environment(&spec.proxy_url(), NO_PROXY);
     for list in ["initContainers", "containers"] {
         let Some(Value::Sequence(containers)) = pod.get_mut(list) else {
             continue;
@@ -351,13 +437,30 @@ pub fn patch_pod_template(
                 .and_then(Value::as_str)
                 .unwrap_or("?")
                 .to_string();
-            if c.get("securityContext")
+            let sc = c.get("securityContext");
+            if sc
                 .and_then(|s| s.get("privileged"))
                 .and_then(Value::as_bool)
                 == Some(true)
             {
-                warnings.push(EnrollWarning::PodPrivileged { container: cname });
+                warnings.push(EnrollWarning::Privileged {
+                    service: cname.clone(),
+                });
             }
+            if let Some(Value::Sequence(caps)) = sc
+                .and_then(|s| s.get("capabilities"))
+                .and_then(|c| c.get("add"))
+            {
+                for cap in caps.iter().filter_map(Value::as_str) {
+                    if is_dangerous_cap(cap) {
+                        warnings.push(EnrollWarning::DangerousCapability {
+                            service: cname.clone(),
+                            capability: cap.into(),
+                        });
+                    }
+                }
+            }
+            drop_net_raw(c)?;
             let envs = child_seq(c, "env")?;
             for (k, v) in &env {
                 let entry = serde_yaml::to_value(json!({ "name": k, "value": v }))?;
@@ -371,16 +474,146 @@ pub fn patch_pod_template(
             }
             let mounts = child_seq(c, "volumeMounts")?;
             mounts.retain(|m| m.get("name").and_then(Value::as_str) != Some(CA_VOLUME));
+            // A directory mount (no subPath): a refreshed bundle is visible without restart.
             mounts.push(serde_yaml::to_value(json!({
-                "name": CA_VOLUME, "mountPath": CA_CONTAINER_PATH, "subPath": CA_KEY, "readOnly": true,
+                "name": CA_VOLUME, "mountPath": CA_DIR, "readOnly": true,
             }))?);
         }
     }
+
+    // --- init container building the bundle, first of all.
+    let init = serde_yaml::to_value(json!({
+        "name": CA_INIT,
+        "image": spec.netinit_image,
+        "command": ["sh", "-c", k8s_bundle_script(&format!("{CA_SRC_MOUNT}/{CA_KEY}"), CA_BUILD_MOUNT)],
+        "securityContext": {
+            "runAsNonRoot": true,
+            "runAsUser": 65534,
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true,
+            "capabilities": { "drop": ["ALL"] },
+        },
+        "volumeMounts": [
+            { "name": CA_SRC_VOLUME, "mountPath": CA_SRC_MOUNT, "readOnly": true },
+            { "name": CA_VOLUME, "mountPath": CA_BUILD_MOUNT },
+        ],
+    }))?;
+    let inits = child_seq(pod, "initContainers")?;
+    inits.retain(|c| c.get("name").and_then(Value::as_str) != Some(CA_INIT));
+    inits.insert(0, init);
 
     Ok(EnrollOutcome {
         yaml: serde_yaml::to_string(&doc)?,
         warnings,
     })
+}
+
+/// Report existing NetworkPolicies that may select enrolled pods and allow egress elsewhere
+/// than the gateway. NetworkPolicies are additive: one extra allow rule is enough to bypass
+/// the gateway.
+pub fn check_networkpolicies(existing: &[Value]) -> Vec<EnrollWarning> {
+    let mut out = Vec::new();
+    for np in existing {
+        if np.get("kind").and_then(Value::as_str) != Some("NetworkPolicy") {
+            continue;
+        }
+        let name = format!(
+            "{}/{}",
+            np["metadata"]["namespace"].as_str().unwrap_or("?"),
+            np["metadata"]["name"].as_str().unwrap_or("?")
+        );
+        let spec = &np["spec"];
+        if !may_select_enrolled(&spec["podSelector"]) {
+            continue;
+        }
+        let egress_type = spec["policyTypes"]
+            .as_sequence()
+            .map(|t| t.iter().any(|x| x.as_str() == Some("Egress")))
+            .unwrap_or_else(|| spec.get("egress").is_some());
+        if !egress_type {
+            continue;
+        }
+        let Some(rules) = spec["egress"].as_sequence() else {
+            continue; // Egress with no rule = deny all, never wider.
+        };
+        for rule in rules {
+            if let Some(reason) = broad_reason(rule) {
+                out.push(EnrollWarning::BroadEgressPolicy {
+                    policy: name.clone(),
+                    reason,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// A pod selector may select enrolled pods unless it explicitly excludes `afw.enrolled=true`.
+fn may_select_enrolled(sel: &Value) -> bool {
+    if let Some(v) = sel["matchLabels"].get(LABEL_ENROLLED) {
+        return v.as_str() == Some("true");
+    }
+    if let Some(exprs) = sel["matchExpressions"].as_sequence() {
+        for e in exprs {
+            if e["key"].as_str() != Some(LABEL_ENROLLED) {
+                continue;
+            }
+            let values: Vec<&str> = e["values"]
+                .as_sequence()
+                .map(|v| v.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            match e["operator"].as_str() {
+                Some("DoesNotExist") => return false,
+                Some("NotIn") if values.contains(&"true") => return false,
+                Some("In") if !values.contains(&"true") => return false,
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+fn broad_reason(rule: &Value) -> Option<String> {
+    let Some(peers) = rule.get("to").and_then(Value::as_sequence) else {
+        return Some("an egress rule without `to` allows every destination".into());
+    };
+    if peers.is_empty() {
+        return Some("an egress rule with an empty `to` allows every destination".into());
+    }
+    for p in peers {
+        if let Some(cidr) = p["ipBlock"]["cidr"].as_str() {
+            return Some(format!("ipBlock {cidr}"));
+        }
+        let gateway = p["podSelector"]["matchLabels"]["app.kubernetes.io/name"].as_str()
+            == Some("afw-gateway");
+        if !gateway {
+            return Some(format!(
+                "peer {} is not the gateway",
+                serde_yaml::to_string(p)
+                    .unwrap_or_default()
+                    .trim()
+                    .replace('\n', " ")
+            ));
+        }
+    }
+    None
+}
+
+/// `NET_RAW` allows spoofing on the pod network; dropped on every agent container.
+fn drop_net_raw(c: &mut Mapping) -> Result<(), EnrollError> {
+    let sc = child_map(c, "securityContext")?;
+    let caps = child_map(sc, "capabilities")?;
+    let drop = child_seq(caps, "drop")?;
+    let covered = drop.iter().filter_map(Value::as_str).any(|d| {
+        matches!(
+            d.to_ascii_uppercase().as_str(),
+            "NET_RAW" | "ALL" | "CAP_NET_RAW"
+        )
+    });
+    if !covered {
+        drop.push("NET_RAW".into());
+    }
+    Ok(())
 }
 
 fn child_map<'a>(m: &'a mut Mapping, key: &str) -> Result<&'a mut Mapping, EnrollError> {

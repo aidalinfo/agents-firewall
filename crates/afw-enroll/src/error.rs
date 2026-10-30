@@ -26,6 +26,13 @@ pub enum EnrollError {
     /// Another `network_mode` (`service:`, `container:`, `none`, …) is already set.
     #[error("service `{service}` already uses `network_mode: {mode}`: enrollment is not supported")]
     UnsupportedNetworkMode { service: String, mode: String },
+    /// A construct the enrollment cannot handle safely (e.g. `extends`).
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+    /// Coolify kept another network on the holder: the isolation cannot be guaranteed. The
+    /// original compose file has been written back.
+    #[error("Coolify resource `{uuid}`: {reason}; the original compose file was restored")]
+    CoolifyRejected { uuid: String, reason: String },
     /// The `x-afw-original` annotation is missing or damaged.
     #[error("enrollment annotation for `{0}` is damaged: {1}")]
     BrokenAnnotation(String, String),

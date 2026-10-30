@@ -1,113 +1,144 @@
 # ADR 0023 — Enrôlement des agents (crate `afw-enroll`)
 
-- Statut : accepté — 2026-10-30
+- Statut : accepté — 2026-10-30 (révisé après la revue indépendante de la PR #6)
 - Exigences : EF-60, EF-61, EF-63, EF-64 ; applique l'ADR 0003.
 
 ## Contexte
 L'enrôlement doit raccorder un agent conteneurisé à la passerelle sans toucher à son image, pour
 trois environnements (compose manuel, Coolify, Kubernetes) et un conteneur isolé (`docker run`),
 et être réversible. La crate est autonome (pas de dépendance à `afw-core`) : la CLI (L8) et l'API
-l'appellent.
+l'appellent. La revue de la PR #6 a démontré des contournements (dont un sur un vrai Docker) ;
+ses tests sont gardés comme tests de non-régression (`tests/review_bypass.rs`).
 
 ## Décisions
 
-### Docker Compose
-- **Motif « pause »** (ADR 0003) : service `afw-net-<agent>` (image `afw-netinit:local`,
-  `cap_add: [NET_ADMIN]`, IP fixe sur le réseau interne de la passerelle, `dns: [<passerelle>]`,
-  `restart: unless-stopped`, étiquettes `afw.enrolled=true` et `afw.agent=<nom>`). Sa commande est
-  une boucle `sh` qui repose `ip route replace default via <passerelle>` toutes les 10 s (même
-  comportement que l'image netinit du lot L12, qui reçoit aussi `AFW_GATEWAY_IP`). Le `$` du script
-  est écrit `$$` pour échapper à l'interpolation de Compose. Le réseau interne n'ayant pas de route
-  par défaut, tant que la route n'est pas posée l'agent n'a aucun réseau (fermeture par défaut).
-- L'agent passe en `network_mode: service:afw-net-<agent>`, sans aucune capacité ajoutée. Les clés
-  que Docker refuse avec ce mode sont **déplacées** sur `afw-net` (`ports`, `expose`, `hostname`,
-  `domainname`, `mac_address`, `extra_hosts`, `dns_search`, `dns_opt`) ; `networks`, `dns` et `links`
-  sont retirées (avertissement pour `links`).
-- Variables : `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` **et leurs formes minuscules** (curl ne lit
-  que `http_proxy`), `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `CURL_CA_BUNDLE`.
-  La forme d'origine de `environment`/`labels` (liste ou dictionnaire) est conservée, une variable
-  existante est remplacée à sa place.
-- `NO_PROXY = localhost,127.0.0.1,::1`, plus **l'hôte de la console** pour un agent Hermes : le plugin
-  parle à la console sans passer par le proxy explicite. La route par défaut passe malgré tout par
-  la passerelle : ce trafic reste **filtré par la politique** et le socle doit autoriser la console
-  (règle de socle « agents → console », ajoutée dans la politique de démo).
-- Hermes (EF-61) : plugin monté en lecture seule dans `$HERMES_HOME/plugins/agents-firewall`
-  (défaut `/opt/data/plugins/agents-firewall`, `HERMES_HOME=/opt/data` dans les images Hermes ;
-  modifiable par `HermesSpec::plugin_dir_container`), `AFW_CONSOLE_URL`, `AFW_AGENT_NAME` et
-  `AFW_AGENT_TOKEN=${<variable>}` : le jeton n'est **jamais écrit** dans le fichier, Compose
-  l'interpole depuis l'environnement de l'hôte. Pour `docker run`, `-e AFW_AGENT_TOKEN` sans valeur
-  (hérité de l'environnement, jamais sur la ligne de commande visible dans `ps`).
-- Réseau de la passerelle déclaré `external: true` (il est créé `internal: true` par le
-  déploiement de la passerelle).
-- **Réversibilité** : l'état d'origine (définition complète du service, déclaration du réseau,
-  présence de la clé `networks`) est gardé dans l'extension de premier niveau `x-afw-original`
-  (ignorée par Compose). `unenroll` restaure ces valeurs à leur place ; testé : `enroll` puis
-  `unenroll` = YAML d'origine sémantiquement égal, y compris avec deux agents désenrôlés dans
-  n'importe quel ordre (le dernier agent qui utilise le réseau restaure sa déclaration d'origine).
-  Une modification faite à la main sur le service enrôlé est perdue au désenrôlement.
-- Idempotence : un deuxième enrôlement du même agent ou du même service est une erreur claire
-  (« already enrolled »).
-- **Privilèges** : `network_mode: host` est une **erreur** (isolement impossible) ; tout autre
-  `network_mode` déjà posé est refusé (non pris en charge). `privileged: true`, capacités
-  `NET_ADMIN`/`SYS_ADMIN`/`ALL`, socket Docker monté, espaces de noms de l'hôte (`pid`, `ipc`, `uts`,
-  `userns_mode`) donnent un **avertissement** (`EnrollWarning`) et l'enrôlement a lieu : le refus des
-  conteneurs privilégiés a été écarté par [Killian] ; la limite est documentée et seulement signalée.
-- Traitement par `serde_yaml::Value` : l'ordre des clés est conservé, `afw-net-<agent>` est inséré
-  juste avant l'agent. Les **commentaires et ancres YAML sont perdus** (limite de serde_yaml ; un
-  éditeur YAML préservant les commentaires n'existe pas sous licence compatible et maintenu).
+### Conteneur réseau `afw-net-<agent>` (motif « pause », ADR 0003)
+- `cap_drop: [ALL]` puis `cap_add: [NET_ADMIN]`, IP fixe sur le réseau interne de la passerelle,
+  `dns: [<passerelle>]`, `restart: unless-stopped`, étiquettes `afw.enrolled=true` et
+  `afw.agent=<nom>`, `sysctls` `net.ipv4.conf.{all,default}.accept_redirects=0` (la passerelle
+  relaie entre agents d'un même sous-réseau : une redirection ICMP ne doit jamais créer de chemin
+  direct).
+- Son script, **source de vérité** exposée par `netinit_script(spec)` (l'image netinit du lot L12
+  doit l'exécuter tel quel), tourne toutes les 10 s, sans fenêtre où la route par défaut manque :
+  1. trouve l'interface qui porte l'adresse de l'agent et met **hors service toute autre interface**
+     sauf `lo` (un réseau ajouté plus tard, par Coolify par exemple, est coupé en moins de 10 s) ;
+  2. `ip route replace <gw>/32 dev <iface> scope link`, puis `ip route replace default via <gw>` ;
+  3. **supprime toute autre route**, en particulier celle du sous-réseau interne : un agent ne
+     joint plus directement un autre agent, tout passe par la passerelle ;
+  4. vide les routes de l'autre famille d'adresses ;
+  5. construit `/afw-ca/bundle.pem` (racines système de l'image + CA de la passerelle) et
+     `/afw-ca/gateway.crt` dans le volume `afw-ca-<agent>`.
+  Le fichier `/tmp/afw-ready` n'existe que si les routes sont conformes ; il sert de `healthcheck`.
+  Avant le premier passage, le réseau `internal` n'a aucune route par défaut (fermeture par défaut).
+  Le `$` du script est écrit `$$` dans le compose (échappement de l'interpolation Compose).
+- Vérifié sur un vrai Docker (OrbStack, deux agents enrôlés, réseau `internal` 10.80.0.0/24) :
+  table de routes de l'agent réduite à `default via 10.80.0.2` et `10.80.0.2 dev eth0` ; sans
+  passerelle, `nc` de l'agent b vers l'agent a échoue (avant correction : succès, voisinage ARP
+  direct) ; `ip route add` refusé dans l'agent ; un réseau `internal` branché à chaud sur le
+  conteneur réseau passe à `DOWN` en moins de 12 s et sa cible devient injoignable ;
+  `accept_redirects` vaut 0 sur `all` et `eth0` ; paquet de CA construit et monté.
+  `docker network connect` d'un réseau non `internal` est de toute façon refusé par Docker
+  (« failed to set gateway: file exists ») car la route par défaut existe déjà.
 
-### CA d'inspection
-La CA est montée sur `/usr/local/share/ca-certificates/afw-gateway.crt` et les variables
-`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` pointent dessus (`NODE_EXTRA_CA_CERTS`
-s'ajoute aux racines de Node). Ces trois variables **remplacent** les racines système : pour les
-destinations en `Bypass` d'inspection, l'agent verrait le vrai certificat et ne pourrait pas le
-valider. Recommandation : passer en `ca_path_host` un **paquet complet** (racines système + CA de
-la passerelle) produit sur l'hôte ; la CLI pourra le générer.
+### Agent (Docker Compose)
+- `network_mode: service:afw-net-<agent>`, **`cap_drop: [NET_RAW]`** ajouté (ARP/IP spoofing sur
+  le réseau interne), aucune capacité ajoutée, `depends_on: afw-net-<agent>: service_healthy`
+  (une liste `depends_on` existante devient un dictionnaire `service_started`).
+- Les clés que Docker refuse avec ce mode sont **déplacées** sur `afw-net` (`ports`, `expose`,
+  `hostname`, `domainname`, `mac_address`, `extra_hosts`, `dns_search`, `dns_opt`) ; `networks`,
+  `dns`, `links` et les `sysctls` `net.*` sont retirés (avertissements `LinksRemoved`,
+  `NetSysctlsRemoved`). Les ports déplacés sont sur un réseau `internal` : **Docker ne les publie
+  plus** (avertissement `PortsNotPublished`) ; l'accès entrant se fait par la passerelle.
+- Variables : `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` et leurs formes minuscules,
+  `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` → `…/afw/bundle.pem` (paquet complet :
+  les destinations exemptées d'inspection restent vérifiables), `NODE_EXTRA_CA_CERTS` →
+  `…/afw/gateway.crt` (Node l'ajoute à ses propres racines). Le volume `afw-ca-<agent>` est monté
+  **en lecture seule comme répertoire** sur `/usr/local/share/ca-certificates/afw` (repris par
+  `update-ca-certificates`) ; le fichier CA de l'hôte n'est monté que dans `afw-net`.
+- `NO_PROXY = localhost,127.0.0.1,::1`, plus l'hôte de la console pour un agent Hermes : le plugin
+  parle à la console sans le proxy explicite. La route par défaut passe malgré tout par la
+  passerelle : ce trafic reste **filtré par la politique** et **le socle doit autoriser la
+  console** (règle de socle « agents → console », ajoutée dans la politique de démo).
+- Hermes (EF-61) : plugin monté en lecture seule dans `$HERMES_HOME/plugins/agents-firewall`
+  (défaut `/opt/data/plugins/agents-firewall`, modifiable), `AFW_CONSOLE_URL`, `AFW_AGENT_NAME` et
+  `AFW_AGENT_TOKEN=${<variable>}` : le jeton n'est **jamais écrit** dans le fichier. Pour
+  `docker run`, `-e AFW_AGENT_TOKEN` sans valeur (hérité, jamais visible dans `ps`).
+
+### Analyse et avertissements
+- Les clés de fusion YAML (`<<`) sont **résolues avant l'analyse** (`apply_merge`) : une capacité
+  cachée derrière une ancre est vue. `extends` est **refusé** (clés héritées d'un autre fichier,
+  impossibles à analyser) : le résoudre avant d'enrôler.
+- Le service agent **et tout service qui rejoint son espace réseau** (`network_mode:
+  service:<agent>`, `container:<container_name>`, ou celui d'`afw-net`) sont analysés
+  (`JoinsAgentNetwork` + leurs propres avertissements).
+- `network_mode: host` est une **erreur** ; tout autre `network_mode` déjà posé est refusé.
+  Avertissements (l'enrôlement a lieu, [Killian] a écarté le refus des conteneurs privilégiés) :
+  `privileged`, capacités `NET_ADMIN`, `NET_RAW`, `SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`,
+  `SYS_PTRACE`, `BPF`, `DAC_READ_SEARCH`, `ALL` ; sockets d'exécution (Docker, Podman, containerd,
+  CRI-O, tout `*.sock`, `/var/run`, `/run`) ; espaces de noms de l'hôte (`pid`, `ipc`, `uts`,
+  `userns_mode`, `cgroup`) ; `pid`/`ipc` partagés avec un autre conteneur ; `volumes_from`.
+
+### Réversibilité
+L'état d'origine (définition complète du service, déclaration du réseau, présence ou valeur nulle
+des clés `networks` et `volumes`) est gardé dans l'extension de premier niveau `x-afw-original`.
+`unenroll` restaure ces valeurs à leur place ; testé : `enroll` puis `unenroll` = YAML d'origine
+sémantiquement égal, y compris `networks:` nul, deux agents désenrôlés dans n'importe quel ordre,
+sur le même réseau ou non. Limites : une modification faite à la main sur le service enrôlé est
+perdue ; un fichier avec `<<` est restauré sous sa forme fusionnée ; commentaires et ancres sont
+perdus (serde_yaml). Un deuxième enrôlement est une erreur claire (« already enrolled »).
 
 ### Coolify (EF-64)
-La modification vit **dans Coolify** (champ `docker_compose_raw`), sinon un redéploiement
-l'écraserait. API v4 vérifiée dans le code de Coolify (`routes/api.php`, `ServicesController`) :
-`GET /api/v1/{applications|services}/{uuid}` (compose en clair, visible seulement si le jeton a la
-permission `read:sensitive`), `PATCH` du même chemin avec `docker_compose_raw` **encodé en base64**
-(Coolify répond 422 sinon), `POST …/restart` (repli `GET` sur 405 pour les versions v4 plus
-anciennes). Ordre : lire → transformer → écrire → redémarrer ; rien n'est écrit si la
-transformation échoue, rien n'est redémarré si l'écriture échoue. Le jeton n'apparaît pas dans le
-`Debug` du client.
-Hypothèses non vérifiables sans instance réelle : le `PATCH` d'une *application* (build pack
-`dockercompose`) accepte `docker_compose_raw` comme celui d'un *service* ; pour une application dont
-le compose vient d'un dépôt Git, Coolify relit le fichier du dépôt au déploiement, la modification
-doit alors être faite dans le dépôt (préférer les services Coolify « Docker Compose Empty ») ; le
-parseur de Coolify respecte `network_mode: service:…` sans ajouter son propre réseau au service.
+La modification vit **dans Coolify** (`docker_compose_raw`), sinon un redéploiement l'écraserait.
+API v4 vérifiée dans le code de Coolify (`routes/api.php`, `ServicesController`) : `GET
+/api/v1/{applications|services}/{uuid}` (compose en clair, visible seulement avec la permission
+`read:sensitive`), `PATCH` du même chemin avec `docker_compose_raw` **en base64**, `POST
+…/restart` (repli `GET` sur 405).
+- Ordre : lire → transformer → écrire → **relire et vérifier** qu'`afw-net` n'est attaché qu'au
+  réseau de la passerelle et que l'agent est toujours dans son espace réseau → redémarrer. Si la
+  vérification ou le **redémarrage échoue, le compose d'origine est réécrit** et une erreur est
+  renvoyée (`CoolifyRejected` ou l'erreur HTTP). Si la restauration échoue elle aussi, un nouvel
+  `enroll_coolify` avec les mêmes paramètres (annotation identique) **reprend au redémarrage**
+  sans réécrire.
+- Coolify peut ajouter son propre réseau aux services au déploiement (hors `docker_compose_raw`) :
+  le script d'`afw-net` coupe toute interface autre que celle de la passerelle (fenêtre ≤ 10 s).
+- Jeton Hermes : le compose référence `${<agent_token_env>}` ; la valeur se pose comme variable
+  d'environnement de la ressource avec `CoolifyClient::set_env` (`PATCH …/envs/bulk`,
+  `{"data":[{"key","value"}]}`), ou à la main dans l'interface Coolify (Environment Variables).
+- Hypothèses non vérifiables sans instance réelle : le `PATCH` d'une *application* accepte
+  `docker_compose_raw` comme celui d'un *service* ; `envs/bulk` crée la variable si elle manque ;
+  pour une application dont le compose vient de Git, Coolify relit le dépôt (préférer les services
+  « Docker Compose Empty »).
 
 ### Kubernetes (EF-64)
-- Passerelle **par namespace** : Secret (jeton d'enregistrement), ConfigMap (CA publique, vide et
-  annotée `afw.ca-pending` tant qu'elle n'est pas connue), PVC d'état (clé de CA conservée au
-  redémarrage, jamais exportée), Deployment (1 réplique, `Recreate`, non root, `drop: [ALL]` +
-  `NET_BIND_SERVICE`), Service `ClusterIP` **fixe** (adresse DNS des pods).
-- `NetworkPolicy` d'egress pour les pods `afw.enrolled=true` : une seule règle, vers les pods de la
-  passerelle uniquement, ports TCP 3128, 15001, 80, 443 et UDP/TCP 53 ; ni `ipBlock` ni
-  `namespaceSelector`. Une seconde NetworkPolicy limite l'entrée de la passerelle aux pods enrôlés.
-  Les ports 80/443 servent au trafic qui ignore le proxy et suit la résolution DNS de la passerelle.
-- `patch_pod_template` (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, Pod) :
-  étiquette `afw.enrolled=true` sur le gabarit (le sélecteur, immuable, n'est pas modifié),
-  annotation `afw.agent`, `dnsPolicy: None` + `dnsConfig` vers la passerelle, variables de proxy,
-  CA montée par `subPath` dans chaque conteneur et conteneur d'initialisation. `hostNetwork: true`
-  est une erreur ; conteneur `privileged` ou socket d'exécution en `hostPath` : avertissement.
-  `NET_ADMIN` n'est pas signalé : la NetworkPolicy est appliquée hors du pod par le CNI.
+- Passerelle **dans un namespace dédié** (`afw-gw-<namespace>` par défaut, distinct de celui des
+  agents) : un agent qui peut créer des pods dans son namespace ne peut pas se faire passer pour
+  elle. Manifestes : Namespace, ConfigMap de la CA publique (dans le namespace des agents), PVC
+  d'état, Deployment (non root, `drop: [ALL]`, `net.ipv4.ip_unprivileged_port_start=0` pour
+  écouter 53/80/443 sans capacité), Service `ClusterIP` fixe. Le jeton d'enregistrement est lu
+  dans un **Secret existant** (`secretKeyRef`), jamais écrit en clair dans les manifestes.
+- `NetworkPolicy` d'egress (namespace des agents) pour les pods `afw.enrolled=true` : une seule
+  règle, un seul pair qui combine `namespaceSelector` (`kubernetes.io/metadata.name`) **et**
+  `podSelector` de la passerelle, ports TCP 3128, 15001, 80, 443 et UDP/TCP 53 ; ni `ipBlock` ni
+  pair large. Une seconde NetworkPolicy limite l'entrée de la passerelle aux pods enrôlés.
+- **Les NetworkPolicy sont additives** : toute autre politique qui sélectionne les pods enrôlés et
+  autorise une sortie élargit l'egress et contourne la passerelle. `check_networkpolicies(&[…])`
+  signale ces politiques (règle sans `to`, `ipBlock`, pair qui n'est pas la passerelle) ; la CLI
+  doit l'appeler sur les politiques existantes du namespace avant d'enrôler.
+- `patch_pod_template` : étiquette `afw.enrolled=true` (sélecteur immuable non modifié),
+  annotation `afw.agent`, `automountServiceAccountToken: false`, `dnsPolicy: None` + `dnsConfig`
+  vers la passerelle, variables de proxy, `NET_RAW` retiré de chaque conteneur, conteneur
+  d'initialisation `afw-ca-bundle` (non root, sans capacité) qui construit le paquet dans un
+  `emptyDir` monté **comme répertoire** (pas de `subPath`) en lecture seule. `hostNetwork: true`
+  est une erreur ; `privileged`, capacités dangereuses, `hostPID`, `hostIPC`, `hostPath` (et
+  sockets d'exécution) donnent un avertissement.
 - Prérequis : un CNI qui applique les NetworkPolicy (Calico, Cilium…) en évaluant l'egress après
-  la traduction de l'adresse du Service. Le plugin Hermes n'est pas monté en Kubernetes (il est
-  dans l'image de l'agent).
-
-### Vérification sur Docker
-Essai réel (Docker 27, réseau `internal` 10.80.0.0/24, image `alpine` à la place de netinit) du
-compose enrôlé : dans l'agent, `default via 10.80.0.2`, adresse 10.80.0.11, `HTTPS_PROXY` posé, CA
-montée, et `ip link add` refusé (« Operation not permitted ») faute de `NET_ADMIN`. Le résolveur
-embarqué de Docker (127.0.0.11) relaie vers la passerelle (`dns:`), depuis l'espace réseau de
-l'agent.
+  la traduction d'adresse du Service. Le plugin Hermes n'est pas monté en Kubernetes (il est dans
+  l'image de l'agent).
 
 ## Conséquences
-- `enroll_compose` et `patch_pod_template` renvoient `EnrollOutcome { yaml, warnings }` (au lieu
-  d'une simple chaîne) pour porter les avertissements ; `k8s_manifests` renvoie un `Result`
-  (validation des noms DNS-1123).
-- Si `afw-net-<agent>` est recréé, l'agent perd son espace réseau et doit être redémarré (limite
-  de Docker pour `network_mode: service:`) ; `restart: unless-stopped` limite ce cas.
+- `enroll_compose` et `patch_pod_template` renvoient `EnrollOutcome { yaml, warnings }` ;
+  `k8s_manifests` renvoie un `Result` ; `EnrollWarning` porte le service concerné.
+- Le lot L12 aligne `deploy/docker/netinit.sh` sur `netinit_script` ; l'image doit fournir `ip`,
+  `awk` et `/etc/ssl/certs/ca-certificates.crt`. La passerelle (L6) devrait aussi désactiver
+  l'envoi de redirections ICMP (`send_redirects=0`) sur l'interface interne.
+- Si `afw-net-<agent>` est recréé, l'agent perd son espace réseau et doit être redémarré.

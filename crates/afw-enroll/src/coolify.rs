@@ -179,6 +179,29 @@ impl CoolifyClient {
         Ok(())
     }
 
+    /// Create or update an environment variable of the resource
+    /// (`PATCH /{kind}/{uuid}/envs/bulk`), e.g. `AFW_AGENT_TOKEN` for a Hermes agent: the
+    /// compose file only references `${AFW_AGENT_TOKEN}`.
+    pub async fn set_env(
+        &self,
+        kind: CoolifyKind,
+        uuid: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<(), EnrollError> {
+        let path = format!("{}/envs/bulk", resource_path(kind, uuid)?);
+        let resp = self
+            .http
+            .patch(format!("{}{path}", self.base_url))
+            .bearer_auth(&self.token)
+            .header("accept", "application/json")
+            .json(&json!({ "data": [{ "key": key, "value": value, "is_preview": false }] }))
+            .send()
+            .await?;
+        check(resp, &path).await?;
+        Ok(())
+    }
+
     async fn compose_of(&self, kind: CoolifyKind, uuid: &str) -> Result<String, EnrollError> {
         self.get(kind, uuid)
             .await?
@@ -187,8 +210,12 @@ impl CoolifyClient {
     }
 }
 
-/// Read the compose file from Coolify → [`enroll_compose`] → write it back → restart.
-/// Nothing is written if the transformation fails; nothing is restarted if the write fails.
+/// Read the compose file from Coolify → [`enroll_compose`] → write it back → read it back and
+/// check that the holder is only on the gateway network → restart.
+///
+/// Nothing is written if the transformation fails. If the read-back check or the restart fails,
+/// the original compose file is written back. A resource already enrolled with the same
+/// parameters (identical annotation, e.g. after a failed restart) is only restarted.
 pub async fn enroll_coolify(
     client: &CoolifyClient,
     kind: CoolifyKind,
@@ -196,9 +223,41 @@ pub async fn enroll_coolify(
     spec: &EnrollSpec,
 ) -> Result<EnrollOutcome, EnrollError> {
     let compose = client.compose_of(kind, uuid).await?;
-    let outcome = enroll_compose(&compose, spec)?;
+    let outcome = match enroll_compose(&compose, spec) {
+        Ok(o) => o,
+        Err(EnrollError::AlreadyEnrolled(agent)) => {
+            // Resume: same enrollment already stored, only the restart is missing.
+            let same = unenroll_compose(&compose, &spec.agent_name)
+                .ok()
+                .and_then(|orig| enroll_compose(&orig, spec).ok())
+                .filter(|o| same_yaml(&o.yaml, &compose));
+            return match same {
+                Some(o) => {
+                    client.restart(kind, uuid).await?;
+                    Ok(o)
+                }
+                None => Err(EnrollError::AlreadyEnrolled(agent)),
+            };
+        }
+        Err(e) => return Err(e),
+    };
     client.update_compose(kind, uuid, &outcome.yaml).await?;
-    client.restart(kind, uuid).await?;
+
+    let check = match client.compose_of(kind, uuid).await {
+        Ok(stored) => verify_isolated(&stored, spec),
+        Err(e) => Err(format!("cannot read the compose file back: {e}")),
+    };
+    if let Err(reason) = check {
+        rollback(client, kind, uuid, &compose).await?;
+        return Err(EnrollError::CoolifyRejected {
+            uuid: uuid.into(),
+            reason,
+        });
+    }
+    if let Err(e) = client.restart(kind, uuid).await {
+        rollback(client, kind, uuid, &compose).await?;
+        return Err(e);
+    }
     Ok(outcome)
 }
 
@@ -214,6 +273,78 @@ pub async fn unenroll_coolify(
     client.update_compose(kind, uuid, &restored).await?;
     client.restart(kind, uuid).await?;
     Ok(restored)
+}
+
+async fn rollback(
+    client: &CoolifyClient,
+    kind: CoolifyKind,
+    uuid: &str,
+    original: &str,
+) -> Result<(), EnrollError> {
+    client
+        .update_compose(kind, uuid, original)
+        .await
+        .map_err(|e| {
+            EnrollError::Http(format!(
+                "restoring the original compose file of `{uuid}` failed: {e}"
+            ))
+        })
+}
+
+fn same_yaml(a: &str, b: &str) -> bool {
+    matches!(
+        (
+            serde_yaml::from_str::<serde_yaml::Value>(a),
+            serde_yaml::from_str::<serde_yaml::Value>(b),
+        ),
+        (Ok(x), Ok(y)) if x == y
+    )
+}
+
+/// The stored compose file must keep the holder on the gateway network only, and the agent in
+/// the holder's namespace (Coolify may add its own network to every service).
+fn verify_isolated(yaml: &str, spec: &EnrollSpec) -> Result<(), String> {
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(yaml).map_err(|e| format!("stored compose is invalid: {e}"))?;
+    let services = &doc["services"];
+    let net = spec.net_service_name();
+    let holder = services
+        .get(net.as_str())
+        .ok_or_else(|| format!("service {net} missing after the update"))?;
+    let networks: Vec<String> = match holder.get("networks") {
+        Some(serde_yaml::Value::Mapping(m)) => m
+            .keys()
+            .filter_map(|k| k.as_str().map(str::to_string))
+            .collect(),
+        Some(serde_yaml::Value::Sequence(s)) => s
+            .iter()
+            .filter_map(|k| k.as_str().map(str::to_string))
+            .collect(),
+        _ => vec![],
+    };
+    if networks != [spec.network.clone()] {
+        return Err(format!(
+            "{net} must be attached to `{}` only, Coolify stored {networks:?}",
+            spec.network
+        ));
+    }
+    if holder.get("network_mode").is_some() {
+        return Err(format!("{net} got a network_mode"));
+    }
+    let agent = &services[spec.service.as_str()];
+    let expected = format!("service:{net}");
+    if agent
+        .get("network_mode")
+        .and_then(serde_yaml::Value::as_str)
+        != Some(expected.as_str())
+        || agent.get("networks").is_some()
+    {
+        return Err(format!(
+            "{} is not in the namespace of {net} any more",
+            spec.service
+        ));
+    }
+    Ok(())
 }
 
 fn resource_path(kind: CoolifyKind, uuid: &str) -> Result<String, EnrollError> {

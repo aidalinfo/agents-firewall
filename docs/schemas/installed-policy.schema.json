@@ -1,0 +1,840 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstalledPolicy",
+  "type": "object",
+  "required": [
+    "document",
+    "format",
+    "published_at",
+    "published_by",
+    "revision",
+    "sha256"
+  ],
+  "properties": {
+    "document": {
+      "$ref": "#/definitions/PolicyDocument"
+    },
+    "format": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "published_by": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "sha256": {
+      "description": "SHA-256 (lowercase hex) of the canonical JSON of `document`.",
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "Action": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "deny"
+      ]
+    },
+    "Agent": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "zone_id"
+      ],
+      "properties": {
+        "addresses": {
+          "description": "Source addresses identifying the agent on the gateway's internal network.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "ip"
+          }
+        },
+        "gateway_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "hermes": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "$ref": "#/definitions/AgentKind"
+        },
+        "labels": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "mcp_admin": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "zone_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "AgentKind": {
+      "type": "string",
+      "enum": [
+        "docker_compose",
+        "coolify",
+        "kubernetes",
+        "container"
+      ]
+    },
+    "AppMatch": {
+      "description": "Application-level match (method and path prefixes apply to HTTP/HTTPS only).",
+      "type": "object",
+      "required": [
+        "proto"
+      ],
+      "properties": {
+        "methods": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path_prefixes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "proto": {
+          "$ref": "#/definitions/AppProto"
+        }
+      }
+    },
+    "AppProto": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "dns",
+        "ssh",
+        "tls",
+        "other"
+      ]
+    },
+    "DataCategory": {
+      "type": "string",
+      "enum": [
+        "secret",
+        "infra",
+        "commercial",
+        "personal",
+        "custom"
+      ]
+    },
+    "DataClass": {
+      "type": "object",
+      "required": [
+        "category",
+        "detectors",
+        "id",
+        "name"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/DataCategory"
+        },
+        "comment": {
+          "default": "",
+          "type": "string"
+        },
+        "detectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Detector"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "DestCategory": {
+      "description": "Destination category. `LlmProvider` carries the data-class exemption (EF-25).",
+      "type": "string",
+      "enum": [
+        "llm_provider",
+        "cloud_metadata",
+        "internal"
+      ]
+    },
+    "Detector": {
+      "oneOf": [
+        {
+          "description": "Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).",
+          "type": "object",
+          "required": [
+            "id",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "builtin"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "pattern",
+            "type"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "regex"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "InspectionAction": {
+      "type": "string",
+      "enum": [
+        "inspect",
+        "bypass"
+      ]
+    },
+    "InspectionRule": {
+      "description": "TLS inspection rule. Implicit default when nothing matches: `Inspect` (EF-09).",
+      "type": "object",
+      "required": [
+        "action",
+        "id",
+        "name",
+        "position"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/InspectionAction"
+        },
+        "destinations": {
+          "description": "Empty = any destination.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "zones": {
+          "description": "Empty = all zones.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "L4Proto": {
+      "type": "string",
+      "enum": [
+        "tcp",
+        "udp",
+        "any"
+      ]
+    },
+    "Layer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "baseline"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "zone_id"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "zone"
+              ]
+            },
+            "zone_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      ]
+    },
+    "NetObject": {
+      "description": "Network object: a destination (or group of destinations) referenced by rules.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "spec"
+      ],
+      "properties": {
+        "category": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DestCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "comment": {
+          "default": "",
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/definitions/NetObjectSpec"
+        }
+      }
+    },
+    "NetObjectSpec": {
+      "description": "What a network object matches.",
+      "oneOf": [
+        {
+          "description": "Exact domain or wildcard (`*.example.com` matches sub-domains only).",
+          "type": "object",
+          "required": [
+            "pattern",
+            "type"
+          ],
+          "properties": {
+            "pattern": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "domain"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "ip",
+            "type"
+          ],
+          "properties": {
+            "ip": {
+              "type": "string",
+              "format": "ip"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "host"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "cidr",
+            "type"
+          ],
+          "properties": {
+            "cidr": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "network"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Inclusive address range.",
+          "type": "object",
+          "required": [
+            "end",
+            "start",
+            "type"
+          ],
+          "properties": {
+            "end": {
+              "type": "string",
+              "format": "ip"
+            },
+            "start": {
+              "type": "string",
+              "format": "ip"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "range"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "members",
+            "type"
+          ],
+          "properties": {
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "group"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "any"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "PolicyDocument": {
+      "description": "The complete publishable policy.",
+      "type": "object",
+      "properties": {
+        "agents": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Agent"
+          }
+        },
+        "data_classes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DataClass"
+          }
+        },
+        "inspection_rules": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InspectionRule"
+          }
+        },
+        "objects": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NetObject"
+          }
+        },
+        "rules": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Rule"
+          }
+        },
+        "services": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Service"
+          }
+        },
+        "settings": {
+          "default": {
+            "internal_networks": [
+              "10.0.0.0/8",
+              "172.16.0.0/12",
+              "192.168.0.0/16",
+              "fc00::/7"
+            ],
+            "max_buffered_body": 1048576,
+            "max_stored_body": 262144,
+            "retention_days": {
+              "captures": 7,
+              "flows": 30,
+              "http": 14
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/PolicySettings"
+            }
+          ]
+        },
+        "zones": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Zone"
+          }
+        }
+      }
+    },
+    "PolicySettings": {
+      "type": "object",
+      "required": [
+        "internal_networks",
+        "max_buffered_body",
+        "max_stored_body",
+        "retention_days"
+      ],
+      "properties": {
+        "internal_networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_buffered_body": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_stored_body": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "retention_days": {
+          "$ref": "#/definitions/Retention"
+        }
+      }
+    },
+    "PortRange": {
+      "description": "Inclusive port range.",
+      "type": "object",
+      "required": [
+        "end",
+        "start"
+      ],
+      "properties": {
+        "end": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "start": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Retention": {
+      "description": "Retention in days per kind of stored data.",
+      "type": "object",
+      "required": [
+        "captures",
+        "flows",
+        "http"
+      ],
+      "properties": {
+        "captures": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "flows": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "http": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Rule": {
+      "type": "object",
+      "required": [
+        "action",
+        "enabled",
+        "id",
+        "layer",
+        "name",
+        "position"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/Action"
+        },
+        "comment": {
+          "default": "",
+          "type": "string"
+        },
+        "data_classes": {
+          "description": "Data classes. Empty = no content condition.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "destinations": {
+          "description": "Objects. Empty = any.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "layer": {
+          "$ref": "#/definitions/Layer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "section": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "services": {
+          "description": "Services. Empty = any.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "sources": {
+          "description": "Zones. Empty = all zones, allowed only in the baseline layer.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "track": {
+          "default": "detailed",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Track"
+            }
+          ]
+        }
+      }
+    },
+    "Service": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "protocol"
+      ],
+      "properties": {
+        "app": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppMatch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "comment": {
+          "default": "",
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ports": {
+          "description": "Empty = any port.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PortRange"
+          }
+        },
+        "protocol": {
+          "$ref": "#/definitions/L4Proto"
+        }
+      }
+    },
+    "Track": {
+      "type": "string",
+      "enum": [
+        "none",
+        "log",
+        "detailed",
+        "capture"
+      ]
+    },
+    "Zone": {
+      "description": "A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.",
+      "type": "object",
+      "required": [
+        "id",
+        "mode",
+        "name"
+      ],
+      "properties": {
+        "comment": {
+          "default": "",
+          "type": "string"
+        },
+        "delegated_to_mcp": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mode": {
+          "$ref": "#/definitions/ZoneMode"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "ZoneMode": {
+      "description": "`Observe`: denials are logged but the flow is allowed (EF-12).",
+      "type": "string",
+      "enum": [
+        "enforce",
+        "observe"
+      ]
+    }
+  }
+}

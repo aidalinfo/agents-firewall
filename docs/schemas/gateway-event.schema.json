@@ -1,0 +1,625 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GatewayEvent",
+  "description": "Event sent by a gateway in `POST /gw/v1/events`.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "bytes_in",
+        "bytes_out",
+        "decision",
+        "dst",
+        "gateway_id",
+        "id",
+        "internal",
+        "llm_provider",
+        "observed",
+        "protocol",
+        "src",
+        "started_at",
+        "tls_inspected",
+        "type",
+        "verdict"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "app": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppProto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bytes_in": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "bytes_out": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "data_classes": {
+          "description": "Names of the data classes detected in the flow.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "decision": {
+          "$ref": "#/definitions/DecisionRef"
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dst": {
+          "type": "string"
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "internal": {
+          "type": "boolean"
+        },
+        "llm_provider": {
+          "type": "boolean"
+        },
+        "observed": {
+          "type": "boolean"
+        },
+        "protocol": {
+          "$ref": "#/definitions/L4Proto"
+        },
+        "sni": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "src": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tls_inspected": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "flow"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/definitions/Verdict"
+        },
+        "zone_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "at",
+        "decision",
+        "gateway_id",
+        "id",
+        "qname",
+        "qtype",
+        "type",
+        "verdict"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "answers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decision": {
+          "$ref": "#/definitions/DecisionRef"
+        },
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "qname": {
+          "type": "string"
+        },
+        "qtype": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "dns"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/definitions/Verdict"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "at",
+        "flow_id",
+        "gateway_id",
+        "host",
+        "id",
+        "method",
+        "type",
+        "url"
+      ],
+      "properties": {
+        "admin_action": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AdminAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "findings": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Finding"
+          }
+        },
+        "flow_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "host": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "method": {
+          "type": "string"
+        },
+        "request_body": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Body"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_headers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "response_body": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Body"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "response_headers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "http"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "websocket": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "at",
+        "id",
+        "kind",
+        "severity",
+        "summary",
+        "type"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "details": {
+          "default": null
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "$ref": "#/definitions/AlertKind"
+        },
+        "severity": {
+          "$ref": "#/definitions/Severity"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "alert"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Struct variant (not a newtype over `Vec`): serde cannot internally tag a sequence.",
+      "type": "object",
+      "required": [
+        "hits",
+        "type"
+      ],
+      "properties": {
+        "hits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RuleHit"
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "rule_hits"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "AdminAction": {
+      "description": "Recognised infrastructure administration call (internal flows, EF-82).",
+      "type": "object",
+      "required": [
+        "action",
+        "resource",
+        "system"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "system": {
+          "$ref": "#/definitions/AdminSystem"
+        }
+      }
+    },
+    "AdminSystem": {
+      "type": "string",
+      "enum": [
+        "kubernetes",
+        "coolify",
+        "docker",
+        "proxmox"
+      ]
+    },
+    "AlertKind": {
+      "type": "string",
+      "enum": [
+        "new_destination",
+        "volume_spike",
+        "deny_burst",
+        "cloud_metadata",
+        "secret_detected",
+        "port_scan",
+        "new_internal_host",
+        "sensitive_port",
+        "internal_burst",
+        "unusual_admin_action"
+      ]
+    },
+    "AppProto": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "dns",
+        "ssh",
+        "tls",
+        "other"
+      ]
+    },
+    "Body": {
+      "description": "Captured body, already masked before leaving the gateway.",
+      "type": "object",
+      "required": [
+        "data",
+        "encoding",
+        "sha256",
+        "size",
+        "truncated"
+      ],
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "encoding": {
+          "$ref": "#/definitions/BodyEncoding"
+        },
+        "sha256": {
+          "description": "SHA-256 (hex) of the original, unmasked body.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Original size in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BodyEncoding": {
+      "type": "string",
+      "enum": [
+        "utf8",
+        "base64"
+      ]
+    },
+    "DataCategory": {
+      "type": "string",
+      "enum": [
+        "secret",
+        "infra",
+        "commercial",
+        "personal",
+        "custom"
+      ]
+    },
+    "DecisionRef": {
+      "description": "Which rule (or implicit rule) decided a flow.",
+      "type": "object",
+      "required": [
+        "layer",
+        "reason",
+        "rule_name"
+      ],
+      "properties": {
+        "layer": {
+          "description": "`baseline`, `zone` or `implicit`.",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rule_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "rule_name": {
+          "type": "string"
+        },
+        "rule_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Finding": {
+      "description": "A data-class detection. Never contains the secret itself.",
+      "type": "object",
+      "required": [
+        "category",
+        "class",
+        "fingerprint",
+        "kind",
+        "location"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/DataCategory"
+        },
+        "class": {
+          "description": "Data class name.",
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "SHA-256 of the matched value truncated to 12 hex characters.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Detector kind (e.g. `aws_access_key`).",
+          "type": "string"
+        },
+        "location": {
+          "description": "Where it was found (e.g. `request.body`, `request.header:authorization`, `url`).",
+          "type": "string"
+        }
+      }
+    },
+    "L4Proto": {
+      "type": "string",
+      "enum": [
+        "tcp",
+        "udp",
+        "any"
+      ]
+    },
+    "RuleHit": {
+      "description": "Rule hit counters aggregated by a gateway since its previous report.",
+      "type": "object",
+      "required": [
+        "hits",
+        "last_hit_at",
+        "revision",
+        "rule_id"
+      ],
+      "properties": {
+        "hits": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "last_hit_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "rule_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ]
+    },
+    "Verdict": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    }
+  }
+}

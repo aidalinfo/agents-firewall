@@ -1,0 +1,24 @@
+[package]
+name = "afw-tls"
+description = "Per-gateway TLS inspection authority, leaf minting and console mTLS PKI for agents-firewall"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+rcgen = { workspace = true }
+x509-parser = { workspace = true }
+webpki-roots = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+tempfile = { workspace = true }

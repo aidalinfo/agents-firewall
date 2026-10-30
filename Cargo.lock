@@ -101,13 +101,17 @@ dependencies = [
 name = "afw-client"
 version = "0.1.0"
 dependencies = [
+ "afw-client",
  "afw-core",
- "anyhow",
+ "axum",
+ "bytes",
  "chrono",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
  "uuid",
 ]
 

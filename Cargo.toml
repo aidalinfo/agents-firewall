@@ -61,6 +61,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "macros", "migrate", "ipnetwork"] }
 hickory-proto = "0.24"
 clap = { version = "4", features = ["derive", "env"] }
+toml = "0.8"
 schemars = { version = "0.8", features = ["uuid1", "chrono"] }
 aes-gcm = "0.10"
 rand = "0.8"

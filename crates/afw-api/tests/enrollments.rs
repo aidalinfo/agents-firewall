@@ -178,21 +178,56 @@ async fn enrollment_rights() {
     let app = afw_api::router(state);
     for role in ["viewer", "auditor"] {
         let t = token(&pool, role, None).await;
-        let res = call(&app, "POST", "/api/v1/enrollments", Some(&t), Some(body(DELEGATED, true))).await;
+        let res = call(
+            &app,
+            "POST",
+            "/api/v1/enrollments",
+            Some(&t),
+            Some(body(DELEGATED, true)),
+        )
+        .await;
         assert_eq!(res.status, StatusCode::FORBIDDEN, "{role}");
     }
     let plugin = token(&pool, "agent_plugin", Some(Uuid::new_v4())).await;
-    let res = call(&app, "POST", "/api/v1/enrollments", Some(&plugin), Some(body(DELEGATED, true))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/enrollments",
+        Some(&plugin),
+        Some(body(DELEGATED, true)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::FORBIDDEN);
 
     // The MCP agent may enroll into a delegated zone, never into its own zone.
     let mcp = token(&pool, "mcp_agent", Some(MCP_AGENT)).await;
-    let res = call(&app, "POST", "/api/v1/enrollments", Some(&mcp), Some(body(OWN, true))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/enrollments",
+        Some(&mcp),
+        Some(body(OWN, true)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::FORBIDDEN, "own zone");
-    let res = call(&app, "POST", "/api/v1/enrollments", Some(&mcp), Some(body(Uuid::new_v4(), true))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/enrollments",
+        Some(&mcp),
+        Some(body(Uuid::new_v4(), true)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::FORBIDDEN, "unknown zone");
     assert!(policy.created.lock().unwrap().is_empty());
-    let res = call(&app, "POST", "/api/v1/enrollments", Some(&mcp), Some(body(DELEGATED, true))).await;
+    let res = call(
+        &app,
+        "POST",
+        "/api/v1/enrollments",
+        Some(&mcp),
+        Some(body(DELEGATED, true)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
     // /me of the MCP agent lists its writable zones: delegated, minus its own.
     let me = call(&app, "GET", "/api/v1/me", Some(&mcp), None).await;

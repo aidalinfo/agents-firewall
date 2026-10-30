@@ -1,5 +1,10 @@
-//! `afw-api` binary: control-plane REST API.
+//! `afw-api` binary: control-plane REST API, plus the mutual-TLS gateway listener.
 
+use std::sync::Arc;
+
+use afw_api::audit::export::AuditExportConfig;
+use afw_api::auth::oidc::{OidcSettings, OidcVerifier};
+use afw_api::gateways::GatewaySettings;
 use afw_api::{AppState, Config, auth::principal::upsert_bootstrap_token, migrate, router};
 use anyhow::Context;
 use sqlx::postgres::PgPoolOptions;
@@ -30,10 +35,37 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+    let gw = GatewaySettings::from_env(config.public_url.as_deref())?;
+    let mut state = AppState::new(config.clone(), pool.clone());
+    if let Some(settings) = OidcSettings::from_env()? {
+        tracing::info!(issuer = %settings.issuer, "OIDC enabled");
+        state.oidc = Some(Arc::new(OidcVerifier::new(settings)));
+    }
+    state.audit_export = Arc::new(AuditExportConfig::from_env()?);
+    state.gateways.offline_after = gw.offline_after;
+    state.gateways.cert_days = gw.cert_days;
+
+    if pool.is_some() {
+        let pki = Arc::new(
+            afw_tls::ConsolePki::load_or_create(&gw.pki_dir)
+                .with_context(|| format!("console PKI in {}", gw.pki_dir.display()))?,
+        );
+        state.gateways.pki = Some(pki.clone());
+        let tls = pki
+            .server_config(&gw.server_names)
+            .context("gateway listener TLS configuration")?;
+        let listener = tokio::net::TcpListener::bind(&gw.listen)
+            .await
+            .with_context(|| format!("binding {}", gw.listen))?;
+        tracing::info!(listen = %gw.listen, names = ?gw.server_names, "gateway mTLS listener");
+        tokio::spawn(afw_api::gateways::tls::serve(listener, state.clone(), tls));
+        afw_api::audit::export::spawn_periodic(state.clone());
+    }
+
     let listener = tokio::net::TcpListener::bind(&config.listen)
         .await
         .with_context(|| format!("binding {}", config.listen))?;
     tracing::info!(listen = %config.listen, "afw-api listening");
-    axum::serve(listener, router(AppState::new(config, pool))).await?;
+    axum::serve(listener, router(state)).await?;
     Ok(())
 }

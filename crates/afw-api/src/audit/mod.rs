@@ -4,6 +4,7 @@
 use afw_core::audit::{GENESIS_HASH, audit_hash};
 use afw_core::events::{Actor, AuditEntry, Interface};
 use axum::Router;
+use axum::routing::get;
 use chrono::{DateTime, Utc};
 use sqlx::types::Json;
 use sqlx::{PgConnection, PgPool};
@@ -16,12 +17,24 @@ use crate::error::ApiError;
 /// Advisory lock key serializing appends to the audit chain.
 const AUDIT_LOCK_KEY: i64 = 0x0061_6677_6175_6474; // "afwaudt"
 
+pub mod export;
+mod routes;
+pub mod sigv4;
+
+pub use routes::verify;
+
 /// Routes of this module, nested by [`crate::router`].
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/audit", get(routes::list))
+        .route("/audit/verify", get(routes::verify_handler))
+        .route(
+            "/audit/export",
+            get(routes::export_ndjson).post(routes::export_anchor),
+        )
 }
 
-fn interface_str(i: Interface) -> &'static str {
+pub(crate) fn interface_str(i: Interface) -> &'static str {
     match i {
         Interface::Ui => "ui",
         Interface::Cli => "cli",
@@ -109,7 +122,7 @@ pub async fn record_content_access(
     Ok(entry)
 }
 
-type AuditRow = (
+pub(crate) type AuditRow = (
     i64,
     DateTime<Utc>,
     Json<Actor>,
@@ -132,22 +145,26 @@ pub async fn load(pool: &PgPool, from_seq: i64, limit: i64) -> Result<Vec<AuditE
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    rows.into_iter()
-        .map(|r| {
-            let interface = serde_json::from_value(serde_json::Value::String(r.3.clone()))
-                .map_err(|_| ApiError::Internal(format!("invalid interface {:?}", r.3)))?;
-            Ok(AuditEntry {
-                seq: r.0,
-                at: r.1,
-                actor: r.2.0,
-                interface,
-                session_id: r.4,
-                action: r.5,
-                target: r.6,
-                diff: r.7.0,
-                prev_hash: r.8,
-                hash: r.9,
-            })
-        })
-        .collect()
+    rows.into_iter().map(row_to_entry).collect()
+}
+
+/// Columns of [`AuditRow`], in order.
+pub(crate) const AUDIT_COLUMNS: &str =
+    "seq, at, actor, interface, session_id, action, target, diff, prev_hash, hash";
+
+pub(crate) fn row_to_entry(r: AuditRow) -> Result<AuditEntry, ApiError> {
+    let interface = serde_json::from_value(serde_json::Value::String(r.3.clone()))
+        .map_err(|_| ApiError::Internal(format!("invalid interface {:?}", r.3)))?;
+    Ok(AuditEntry {
+        seq: r.0,
+        at: r.1,
+        actor: r.2.0,
+        interface,
+        session_id: r.4,
+        action: r.5,
+        target: r.6,
+        diff: r.7.0,
+        prev_hash: r.8,
+        hash: r.9,
+    })
 }

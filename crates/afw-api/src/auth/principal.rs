@@ -127,6 +127,22 @@ impl Principal {
         matches!(self.role, Role::Admin | Role::Auditor)
     }
 
+    /// Internal actor for actions not made by an authenticated caller (gateway registration,
+    /// periodic tasks). Lowest read role: never used for an authorization decision.
+    pub fn system(id: &str, name: &str) -> Self {
+        Self {
+            actor: Actor {
+                kind: ActorKind::System,
+                id: id.to_owned(),
+                name: name.to_owned(),
+            },
+            role: Role::Viewer,
+            interface: Interface::System,
+            token_id: None,
+            agent_id: None,
+        }
+    }
+
     /// Principal for tests, without a database.
     pub fn for_tests(role: Role) -> Self {
         Self {
@@ -166,11 +182,68 @@ fn bearer_token(parts: &Parts) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
+/// Interface declared by the `X-Afw-Interface` header (default `api`). Declarative only.
+fn declared_interface(parts: &Parts) -> Interface {
+    match parts
+        .headers
+        .get(INTERFACE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("ui") => Interface::Ui,
+        Some("cli") => Interface::Cli,
+        Some("mcp") => Interface::Mcp,
+        _ => Interface::Api,
+    }
+}
+
+/// Extra facts about the authenticated caller, inserted in the request extensions by the
+/// [`Principal`] extractor (read by `/me`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AuthDetails {
+    /// `email` claim of an OIDC token.
+    pub email: Option<String>,
+}
+
 impl FromRequestParts<AppState> for Principal {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        let token = bearer_token(parts).ok_or(ApiError::Unauthorized)?;
+        let token = bearer_token(parts)
+            .ok_or(ApiError::Unauthorized)?
+            .to_owned();
+        // OIDC first for JWT-shaped tokens; on failure, fall back to API tokens (an API token
+        // is never JWT-shaped unless chosen so for the bootstrap token).
+        if let Some(oidc) = &state.oidc
+            && super::oidc::looks_like_jwt(&token)
+        {
+            match oidc.verify(&token).await {
+                Ok(identity) => {
+                    let role = identity.role.ok_or_else(|| {
+                        ApiError::Forbidden(
+                            "no agents-firewall role granted by the identity provider".into(),
+                        )
+                    })?;
+                    parts.extensions.insert(AuthDetails {
+                        email: identity.email.clone(),
+                    });
+                    return Ok(Self {
+                        actor: Actor {
+                            kind: ActorKind::Human,
+                            id: format!("oidc:{}", identity.subject),
+                            name: identity.name,
+                        },
+                        role,
+                        interface: declared_interface(parts),
+                        token_id: None,
+                        agent_id: None,
+                    });
+                }
+                Err(ApiError::Unauthorized) => {}
+                Err(e) => tracing::warn!(error = %e, "OIDC validation unavailable"),
+            }
+        }
         let pool = state.pool.as_ref().ok_or(ApiError::Unauthorized)?;
         let row: Option<TokenRow> = sqlx::query_as(
             "SELECT id, role, actor_kind, actor_name, agent_id FROM api_tokens \
@@ -193,19 +266,9 @@ impl FromRequestParts<AppState> for Principal {
         let interface = if role == Role::McpAgent {
             Interface::Mcp
         } else {
-            match parts
-                .headers
-                .get(INTERFACE_HEADER)
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.trim().to_ascii_lowercase())
-                .as_deref()
-            {
-                Some("ui") => Interface::Ui,
-                Some("cli") => Interface::Cli,
-                Some("mcp") => Interface::Mcp,
-                _ => Interface::Api,
-            }
+            declared_interface(parts)
         };
+        parts.extensions.insert(AuthDetails::default());
         Ok(Self {
             actor: Actor {
                 kind: parse_enum(&actor_kind)?,

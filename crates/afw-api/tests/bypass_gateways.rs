@@ -130,7 +130,10 @@ async fn env(pool: sqlx::PgPool) -> Env {
         .server_config(&["localhost".to_owned(), "127.0.0.1".to_owned()])
         .unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("https://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let base = format!(
+        "https://127.0.0.1:{}",
+        listener.local_addr().unwrap().port()
+    );
     tokio::spawn(afw_api::gateways::tls::serve(
         listener,
         state.clone(),
@@ -259,12 +262,13 @@ async fn registration_token_is_single_use_and_expires() {
     let res = register(&e, &expired, &csr, "gw-d").await;
     assert_eq!(res.status().as_u16(), 401, "expired token");
     // Only the hash is stored.
-    let leaked: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM gateway_registration_tokens WHERE token_sha256 = $1")
-            .bind(&token)
-            .fetch_one(&e.pool)
-            .await
-            .unwrap();
+    let leaked: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM gateway_registration_tokens WHERE token_sha256 = $1",
+    )
+    .bind(&token)
+    .fetch_one(&e.pool)
+    .await
+    .unwrap();
     assert_eq!(leaked, 0);
     // Registration is audited.
     let audit = afw_api::audit::load(&e.pool, 1, 100).await.unwrap();
@@ -306,9 +310,7 @@ async fn gw_routes_require_a_valid_client_certificate() {
     let rogue = ConsolePki::load_or_create(rogue_dir.path()).unwrap();
     let other = tempfile::tempdir().unwrap();
     let csr = GatewayIdentity::generate(other.path()).unwrap();
-    let cert = rogue
-        .sign_gateway_csr(&csr, &gw.to_string(), 30)
-        .unwrap();
+    let cert = rogue.sign_gateway_csr(&csr, &gw.to_string(), 30).unwrap();
     GatewayIdentity::store_cert(other.path(), &cert, &e.pki.ca_cert_pem()).unwrap();
     let res = gateway_client(other.path())
         .post(format!("{}/gw/v1/heartbeat", e.base))
@@ -471,11 +473,8 @@ async fn policy_long_poll_ack_events_and_captures() {
     assert_eq!(res.status().as_u16(), 204);
     assert!(started.elapsed() >= Duration::from_millis(500));
 
-    *e.policy.installed.lock().unwrap() = Some(InstalledPolicy::new(
-        3,
-        "admin",
-        PolicyDocument::default(),
-    ));
+    *e.policy.installed.lock().unwrap() =
+        Some(InstalledPolicy::new(3, "admin", PolicyDocument::default()));
     let res = client
         .get(format!("{}/gw/v1/policy?have=2", e.base))
         .send()
@@ -495,11 +494,8 @@ async fn policy_long_poll_ack_events_and_captures() {
     let policy = e.policy.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(150)).await;
-        *policy.installed.lock().unwrap() = Some(InstalledPolicy::new(
-            4,
-            "admin",
-            PolicyDocument::default(),
-        ));
+        *policy.installed.lock().unwrap() =
+            Some(InstalledPolicy::new(4, "admin", PolicyDocument::default()));
     });
     let res = client
         .get(format!("{}/gw/v1/policy?have=3", e.base))
@@ -544,5 +540,8 @@ async fn policy_long_poll_ack_events_and_captures() {
         .unwrap();
     assert_eq!(res.status().as_u16(), 204);
     let captures = e.logs.captures.lock().unwrap();
-    assert_eq!(captures[0], (gw, capture, vec![0xd4, 0xc3, 0xb2, 0xa1, 1, 2, 3]));
+    assert_eq!(
+        captures[0],
+        (gw, capture, vec![0xd4, 0xc3, 0xb2, 0xa1, 1, 2, 3])
+    );
 }

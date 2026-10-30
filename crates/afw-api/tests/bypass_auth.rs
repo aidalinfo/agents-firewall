@@ -90,11 +90,9 @@ async fn api_token_lifecycle_secret_shown_once_and_revocation() {
     let actions: Vec<_> = audit.iter().map(|e| e.action.as_str()).collect();
     assert!(actions.contains(&"token.create"), "{actions:?}");
     assert!(actions.contains(&"token.revoke"), "{actions:?}");
-    assert!(
-        audit
-            .iter()
-            .all(|e| e.interface == afw_core::events::Interface::Cli)
-    );
+    let iface = |a: &str| audit.iter().find(|e| e.action == a).unwrap().interface;
+    assert_eq!(iface("token.create"), afw_core::events::Interface::Cli);
+    assert_eq!(iface("token.revoke"), afw_core::events::Interface::Api);
     assert!(!serde_json::to_string(&audit).unwrap().contains(&secret));
 }
 
@@ -106,7 +104,14 @@ async fn non_admins_cannot_manage_tokens_or_escalate() {
     for role in ["viewer", "auditor", "mcp_agent", "agent_plugin"] {
         let agent = matches!(role, "mcp_agent" | "agent_plugin").then(Uuid::new_v4);
         let t = token(&pool, role, agent).await;
-        let res = call(&app, "POST", "/api/v1/tokens", Some(&t), Some(new_admin.clone())).await;
+        let res = call(
+            &app,
+            "POST",
+            "/api/v1/tokens",
+            Some(&t),
+            Some(new_admin.clone()),
+        )
+        .await;
         assert_eq!(res.status, StatusCode::FORBIDDEN, "{role} creates a token");
         let res = call(&app, "GET", "/api/v1/tokens", Some(&t), None).await;
         assert_eq!(res.status, StatusCode::FORBIDDEN, "{role} lists tokens");
@@ -127,7 +132,11 @@ async fn non_admins_cannot_manage_tokens_or_escalate() {
             Some(json!({"name": "gw"})),
         )
         .await;
-        assert_eq!(res.status, StatusCode::FORBIDDEN, "{role} registers a gateway");
+        assert_eq!(
+            res.status,
+            StatusCode::FORBIDDEN,
+            "{role} registers a gateway"
+        );
     }
     // The plugin token reaches nothing of the general API.
     let plugin = token(&pool, "agent_plugin", Some(Uuid::new_v4())).await;
@@ -185,8 +194,16 @@ async fn token_creation_is_validated() {
         assert_eq!(res.headers["content-type"], "application/problem+json");
     }
     // A single active mcp_agent token.
-    let mcp = json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
-    let first = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(mcp.clone())).await;
+    let mcp =
+        json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
+    let first = call(
+        &app,
+        "POST",
+        "/api/v1/tokens",
+        Some(&admin),
+        Some(mcp.clone()),
+    )
+    .await;
     assert_eq!(first.status, StatusCode::CREATED, "{}", first.text());
     let second = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(mcp)).await;
     assert_eq!(second.status, StatusCode::CONFLICT);
@@ -308,7 +325,12 @@ async fn oidc_bypass_attempts_are_refused() {
     ];
     for (jwt, why) in cases {
         let res = call(&app, "GET", "/api/v1/me", Some(&jwt), None).await;
-        assert_eq!(res.status, StatusCode::UNAUTHORIZED, "{why}: {}", res.text());
+        assert_eq!(
+            res.status,
+            StatusCode::UNAUTHORIZED,
+            "{why}: {}",
+            res.text()
+        );
     }
     // Authenticated but no mapped group: forbidden, never a default admin.
     let jwt = idp.sign(&idp.claims(&["unrelated"]), 1, KID_1);

@@ -11,9 +11,9 @@ dans la chaîne d'audit et l'ancrer dans un stockage immuable.
 
 ## Tâches
 
-- [ ] 1. Support de test : base PostgreSQL neuve par test (`tests/support/mod.rs`, `CREATE DATABASE`),
+- [x] 1. Support de test : base PostgreSQL neuve par test (`tests/support/mod.rs`, `CREATE DATABASE`),
   faux fournisseur OIDC (axum : découverte + JWKS, jetons RS256 signés par `jsonwebtoken`).
-- [ ] 2. **Tests de contournement d'abord** (`tests/bypass_auth.rs`, `tests/bypass_gateways.rs`,
+- [x] 2. **Tests de contournement d'abord** (`tests/bypass_auth.rs`, `tests/bypass_gateways.rs`,
   `tests/audit_api.rs`) — ils doivent échouer avant l'implémentation :
   - jetons : révoqué, expiré, inconnu ; OIDC : expiré, mauvaise audience, mauvais émetteur, signature
     d'une autre clé, `alg: none`, HS256 signé avec la clé publique, aucun groupe ⇒ 403 ;
@@ -24,21 +24,21 @@ dans la chaîne d'audit et l'ancrer dans un stockage immuable.
     public ; en-têtes ne pouvant pas usurper l'identité de passerelle ;
   - audit : ligne modifiée en base ⇒ `/audit/verify` désigne le `seq` ; ligne supprimée ; ancre exportée
     différente ⇒ rupture signalée.
-- [ ] 3. Migrations : `api_tokens` (+ `email`), `oidc` rien en base ; `gateways`, `gateway_registration_tokens`,
+- [x] 3. Migrations : `api_tokens` (+ `email`), `oidc` rien en base ; `gateways`, `gateway_registration_tokens`,
   `gateway_commands` ; `audit_anchors`.
-- [ ] 4. `auth::oidc` : découverte, JWKS en cache (rafraîchi sur `kid` inconnu, borné), validation
+- [x] 4. `auth::oidc` : découverte, JWKS en cache (rafraîchi sur `kid` inconnu, borné), validation
   (iss, aud, exp, nbf, algorithmes asymétriques seulement), correspondance groupes → rôle.
   `Principal` : jeton au format JWT ⇒ OIDC, sinon `api_tokens`. `GET /auth/oidc/config` public.
-- [ ] 5. `auth::tokens` : `GET/POST /tokens`, `DELETE /tokens/{id}` (secret affiché une fois, haché en base,
+- [x] 5. `auth::tokens` : `GET/POST /tokens`, `DELETE /tokens/{id}` (secret affiché une fois, haché en base,
   audit) ; `GET /me` ; `POST /enrollments` (création d'agent déléguée à L7a par port, jeton plugin).
-- [ ] 6. `gateways` : jetons d'enregistrement, `/gw/v1/register` (CSR signée par `ConsolePki`),
+- [x] 6. `gateways` : jetons d'enregistrement, `/gw/v1/register` (CSR signée par `ConsolePki`),
   extracteur `GatewayPeer` alimenté uniquement par l'écouteur TLS (`afw_tls::peer_gateway_id` + empreinte
   du certificat épinglée en base), `/gw/v1/{policy,policy/ack,events,heartbeat,captures/{id}}`,
   `GET /gateways`, `GET/DELETE /gateways/{id}`, `POST /gateways/{id}/commands`. Ports vers L7a/L7b
   (`gateways::ports`) branchés par `AppState`.
-- [ ] 7. `audit` : `GET /audit` (filtres acteur, interface, action, période, curseur), `GET /audit/verify`
+- [x] 7. `audit` : `GET /audit` (filtres acteur, interface, action, période, curseur), `GET /audit/verify`
   (chaîne entière + ancre), `GET /audit/export` (NDJSON), `POST /audit/export` (ancre immédiate), tâche
   périodique (`AFW_AUDIT_EXPORT_INTERVAL`) vers fichier JSONL `fsync` et S3 Object Lock (SigV4 maison).
-- [ ] 8. `main.rs` : écouteur mTLS `AFW_GW_LISTEN` (défaut `0.0.0.0:8443`), OIDC, tâche d'export.
-- [ ] 9. OpenAPI : ajouts additifs (`/auth/oidc/config`, `POST /audit/export`, filtre `interface`).
-- [ ] 10. ADR 0022, fmt, clippy `-D warnings`, tests ; PR vers `dev`.
+- [x] 8. `main.rs` : écouteur mTLS `AFW_GW_LISTEN` (défaut `0.0.0.0:8443`), OIDC, tâche d'export.
+- [x] 9. OpenAPI : ajouts additifs (`/auth/oidc/config`, `POST /audit/export`, filtre `interface`).
+- [x] 10. ADR 0022, fmt, clippy `-D warnings`, tests ; PR vers `dev`.

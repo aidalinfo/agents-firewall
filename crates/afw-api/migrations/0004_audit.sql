@@ -22,3 +22,15 @@ CREATE TRIGGER audit_log_no_update_delete BEFORE UPDATE OR DELETE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
 CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log
     FOR EACH STATEMENT EXECUTE FUNCTION audit_log_append_only();
+
+-- Chain heads exported to immutable storage (lot L7c). This table only remembers what was
+-- exported; the trusted copy is the external one (append-only file, S3 Object Lock).
+CREATE TABLE audit_anchors (
+    id          bigserial PRIMARY KEY,
+    seq         bigint NOT NULL,
+    hash        text NOT NULL,
+    at          timestamptz NOT NULL,
+    exported_at timestamptz NOT NULL DEFAULT now(),
+    file        boolean NOT NULL,
+    s3_key      text NULL
+);

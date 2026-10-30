@@ -13,6 +13,8 @@ use axum::http::StatusCode;
 use serde_json::json;
 use support::*;
 
+type Seen = (String, axum::http::HeaderMap, Vec<u8>);
+
 async fn seed(pool: &sqlx::PgPool, n: usize) {
     for i in 0..n {
         let mut p = Principal::for_tests(Role::Admin);
@@ -25,7 +27,11 @@ async fn seed(pool: &sqlx::PgPool, n: usize) {
             &mut tx,
             &p,
             None,
-            if i % 3 == 0 { "rule.create" } else { "zone.update" },
+            if i % 3 == 0 {
+                "rule.create"
+            } else {
+                "zone.update"
+            },
             &format!("x:{i}"),
             json!({"i": i}),
         )
@@ -79,7 +85,14 @@ async fn list_filters_and_paginates() {
         let viewer = viewer.clone();
         let q = q.to_owned();
         async move {
-            let r = call(&app, "GET", &format!("/api/v1/audit?{q}"), Some(&viewer), None).await;
+            let r = call(
+                &app,
+                "GET",
+                &format!("/api/v1/audit?{q}"),
+                Some(&viewer),
+                None,
+            )
+            .await;
             assert_eq!(r.status, StatusCode::OK, "{q}: {}", r.text());
             r.json()["items"].as_array().unwrap().clone()
         }
@@ -93,7 +106,14 @@ async fn list_filters_and_paginates() {
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     assert_eq!(all(&format!("from={future}")).await.len(), 0);
     assert_eq!(all(&format!("to={future}")).await.len(), 7);
-    let bad = call(&app, "GET", "/api/v1/audit?interface=telnet", Some(&viewer), None).await;
+    let bad = call(
+        &app,
+        "GET",
+        "/api/v1/audit?interface=telnet",
+        Some(&viewer),
+        None,
+    )
+    .await;
     assert_eq!(bad.status, StatusCode::BAD_REQUEST);
 }
 
@@ -111,7 +131,11 @@ async fn verify_detects_a_modified_row() {
     assert_eq!(body["head_seq"], 5);
     assert_eq!(body["broken_at"], serde_json::Value::Null);
 
-    tamper(&pool, "UPDATE audit_log SET target = 'rule:innocent' WHERE seq = 3").await;
+    tamper(
+        &pool,
+        "UPDATE audit_log SET target = 'rule:innocent' WHERE seq = 3",
+    )
+    .await;
     let res = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
         .await
         .json();
@@ -153,7 +177,14 @@ async fn export_is_ndjson_and_restricted() {
     let auditor = token(&pool, "auditor", None).await;
     let res = call(&app, "GET", "/api/v1/audit/export", Some(&viewer), None).await;
     assert_eq!(res.status, StatusCode::FORBIDDEN);
-    let res = call(&app, "GET", "/api/v1/audit/export?from_seq=2", Some(&auditor), None).await;
+    let res = call(
+        &app,
+        "GET",
+        "/api/v1/audit/export?from_seq=2",
+        Some(&auditor),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.headers["content-type"], "application/x-ndjson");
     let entries: Vec<AuditEntry> = res
@@ -195,10 +226,14 @@ async fn anchor_is_appended_to_file_and_checked_by_verify() {
     assert!(line["at"].is_string());
 
     // The periodic task does not write a new line while the head did not move.
-    afw_api::audit::export::anchor_if_moved(&state).await.unwrap();
+    afw_api::audit::export::anchor_if_moved(&state)
+        .await
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap().lines().count(), 1);
     seed(&pool, 1).await;
-    afw_api::audit::export::anchor_if_moved(&state).await.unwrap();
+    afw_api::audit::export::anchor_if_moved(&state)
+        .await
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap().lines().count(), 2);
 
     let verify = call(&app, "GET", "/api/v1/audit/verify", Some(&auditor), None)
@@ -239,21 +274,21 @@ async fn anchor_is_put_to_s3_with_object_lock() {
     let pool = pool_or_skip!();
     seed(&pool, 2).await;
     // Fake S3 endpoint recording the request.
-    let seen: Arc<Mutex<Vec<(String, axum::http::HeaderMap, Vec<u8>)>>> = Default::default();
+    let seen: Arc<Mutex<Vec<Seen>>> = Default::default();
     let s = seen.clone();
-    let s3 = axum::Router::new().fallback(
-        move |req: axum::extract::Request| {
-            let s = s.clone();
-            async move {
-                let (parts, body) = req.into_parts();
-                let body = axum::body::to_bytes(body, 1 << 20).await.unwrap();
-                s.lock()
-                    .unwrap()
-                    .push((format!("{} {}", parts.method, parts.uri), parts.headers, body.to_vec()));
-                StatusCode::OK
-            }
-        },
-    );
+    let s3 = axum::Router::new().fallback(move |req: axum::extract::Request| {
+        let s = s.clone();
+        async move {
+            let (parts, body) = req.into_parts();
+            let body = axum::body::to_bytes(body, 1 << 20).await.unwrap();
+            s.lock().unwrap().push((
+                format!("{} {}", parts.method, parts.uri),
+                parts.headers,
+                body.to_vec(),
+            ));
+            StatusCode::OK
+        }
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, s3).await.unwrap() });

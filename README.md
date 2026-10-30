@@ -65,6 +65,7 @@ The most reliable way to break the trifecta is to **control what leaves**. Guard
 
 - [Specification — *cahier des charges*](docs/cahier-des-charges.md)
 - [Design document](docs/superpowers/specs/2026-10-30-agents-firewall-design.md)
+- [Instructions for coding agents](AGENTS.md)
 
 Star and watch the repository to follow progress.
 

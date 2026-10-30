@@ -122,3 +122,31 @@ def test_remote_policy_used_by_plugin(console, make_config):
         assert p.pre_tool_call(tool_name="send_mail", args={})["action"] == "block"
     finally:
         p.close()
+
+
+def test_loadable_from_copied_plugin_directory(tmp_path, monkeypatch):
+    """Hermes imports ~/.hermes/plugins/<name>/__init__.py as a package under its own name."""
+    import importlib.util
+    import shutil
+    import sys
+    from pathlib import Path
+
+    src = Path(afw_hermes.__file__).parent
+    dst = tmp_path / "plugins" / "afw-hermes"
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+    assert (dst / "plugin.yaml").read_text().startswith("name: afw-hermes")
+    monkeypatch.setenv("AFW_STATE_DIR", str(tmp_path / "state"))
+    name = "hermes_plugins.afw_hermes_copy"
+    spec = importlib.util.spec_from_file_location(name, dst / "__init__.py",
+                                                  submodule_search_locations=[str(dst)])
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+        ctx = FakeCtx()
+        mod.register(ctx)
+        out = ctx.hooks["pre_tool_call"][0](tool_name="terminal", args={"command": "terraform destroy"},
+                                            task_id="t")
+        assert out["action"] == "block"
+    finally:
+        sys.modules.pop(name, None)

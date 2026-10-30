@@ -23,8 +23,7 @@ printf '%s' "$out" | grep -qi '^x-agents-firewall: *denied' || fail "header X-Ag
 printf '%s' "$body" | grep -Eq '^blocked by agents-firewall: exfil\.example(:443)? not allowed for laurent-bot \(rule [0-9]+\)$' ||
   fail "unexpected denial body"
 [ "$elapsed" -lt 2000 ] || fail "denial took ${elapsed} ms (expected immediate, < 2 s)"
-upstream_received exfil "$marker" && fail "the request reached exfil.example"
-evidence "exfil.example received nothing"
+assert_not_received exfil "$marker" "the request"
 
 flow="$(find_flow "$(agent_id laurent-bot)" exfil.example deny "$since")" || fail "no deny flow in the log"
 evidence "log: flow $(printf '%s' "$flow" | jqx -r '.id') rule #$(printf '%s' "$flow" | jqx -r '.decision.rule_number') ($(printf '%s' "$flow" | jqx -r '.decision.reason'))"

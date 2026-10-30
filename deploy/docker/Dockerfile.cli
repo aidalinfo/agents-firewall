@@ -16,11 +16,9 @@ RUN --mount=type=cache,id=afw-cargo-registry,target=/usr/local/cargo/registry,sh
     --mount=type=cache,id=afw-docker-target,target=/src/target,sharing=locked \
     set -eux; \
     locked=""; if [ -f Cargo.lock ]; then locked="--locked"; fi; \
-    cargo build --release -p afw-cli --bin afw $locked; \
+    cargo build --release -p afw-cli --bin afw -p afw-mcp --bin afw-mcp $locked; \
     install -D -m 0755 target/release/afw /out/afw; \
-    if cargo build --release -p afw-mcp $locked; then \
-      for b in target/release/afw-mcp; do [ -x "$b" ] && install -m 0755 "$b" /out/; done; \
-    fi
+    install -D -m 0755 target/release/afw-mcp /out/afw-mcp
 
 FROM debian:bookworm-slim
 RUN set -eux; \

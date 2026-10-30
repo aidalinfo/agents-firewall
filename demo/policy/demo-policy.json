@@ -115,6 +115,16 @@
         "type": "network",
         "cidr": "10.78.0.0/24"
       }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000112",
+      "name": "Plan de contrôle agents-firewall",
+      "comment": "API, base et entrée passerelle : jamais joignables par un agent, sauf l'ingestion du plugin",
+      "category": null,
+      "spec": {
+        "type": "network",
+        "cidr": "10.76.0.0/24"
+      }
     }
   ],
   "services": [
@@ -154,8 +164,8 @@
     },
     {
       "id": "00000000-0000-4000-8000-000000000203",
-      "name": "API agents-firewall",
-      "comment": "",
+      "name": "Ingestion du plugin Hermes",
+      "comment": "Seules routes d'un jeton agent_plugin",
       "protocol": "tcp",
       "ports": [
         {
@@ -165,9 +175,13 @@
       ],
       "app": {
         "proto": "http",
-        "methods": [],
+        "methods": [
+          "GET",
+          "POST"
+        ],
         "path_prefixes": [
-          "/api/v1/"
+          "/api/v1/ingest/tool-calls",
+          "/api/v1/intent-policy"
         ]
       }
     }
@@ -332,13 +346,15 @@
     },
     {
       "id": "00000000-0000-4000-8000-000000000603",
-      "name": "Console agents-firewall",
+      "name": "Plugin Hermes vers la console",
       "layer": {
         "type": "baseline"
       },
       "section": "Socle",
       "position": 3,
-      "sources": [],
+      "sources": [
+        "00000000-0000-4000-8000-000000000401"
+      ],
       "destinations": [
         "00000000-0000-4000-8000-000000000110"
       ],
@@ -349,7 +365,27 @@
       "action": "accept",
       "track": "log",
       "expires_at": null,
-      "comment": "Envoi des appels d'outil par le plugin Hermes",
+      "comment": "Zone de daniel-bot seulement, chemins d'ingestion seulement",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000605",
+      "name": "Plan de contrôle interdit",
+      "layer": {
+        "type": "baseline"
+      },
+      "section": "Socle",
+      "position": 4,
+      "sources": [],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000112"
+      ],
+      "services": [],
+      "data_classes": [],
+      "action": "deny",
+      "track": "detailed",
+      "expires_at": null,
+      "comment": "Un agent ne peut jamais administrer la politique (ni API, ni base, ni entrée passerelle)",
       "enabled": true
     },
     {
@@ -359,7 +395,7 @@
         "type": "baseline"
       },
       "section": "Socle",
-      "position": 4,
+      "position": 5,
       "sources": [],
       "destinations": [
         "00000000-0000-4000-8000-000000000103"

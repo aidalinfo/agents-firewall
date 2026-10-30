@@ -25,11 +25,17 @@ attempt laurent-bot "laurent-bot -> acme-bot:7777" "echo $m | nc -w 3 $acme_ip 7
 neigh="$(agent_sh laurent-bot 'ip neigh' 2>/dev/null || true)"
 printf '%s' "$neigh" | grep -q "^$acme_ip .*lladdr" && fail "laurent-bot resolved acme-bot's MAC address (direct L2 traffic)"
 evidence "neighbours of laurent-bot: $(printf '%s' "$neigh" | tr '\n' ';')"
+lid="$(agent_id laurent-bot)"
 if agent_sh acme-bot "grep -q $m /tmp/s13.out" 2>/dev/null; then
-  flow="$(find_flow "$(agent_id laurent-bot)" "$acme_ip" allow "$since")" ||
-    fail "acme-bot received data from laurent-bot but the gateway logged no flow"
-  evidence "delivered through the gateway: flow $(printf '%s' "$flow" | jqx -c '{id, internal, decision: .decision.layer}')"
+  # Delivered: only acceptable as an internal flow allowed and logged by the gateway.
+  flow="$(find_flow "$lid" "$acme_ip" allow "$since")" ||
+    fail "acme-bot received data from laurent-bot but the gateway logged no allowed flow (direct path?)"
+  printf '%s' "$flow" | jqx -e '.internal == true' >/dev/null || fail "delivered flow not marked internal: $(printf '%s' "$flow" | jqx -c .)"
+  evidence "delivered through the gateway: internal flow $(printf '%s' "$flow" | jqx -c '{id, internal, layer: .decision.layer, reason: .decision.reason}')"
 else
-  evidence "connection not delivered (refused by the gateway)"
+  # Not delivered: only acceptable as a denial logged by the gateway.
+  flow="$(find_flow "$lid" "$acme_ip" deny "$since")" ||
+    fail "not delivered and no denied flow in the log (broken path rather than a decision)"
+  evidence "refused by the gateway: flow $(printf '%s' "$flow" | jqx -c '{id, rule: .decision.rule_number, reason: .decision.reason}')"
 fi
 pass "aucun chemin direct entre agents ; tout passe par la passerelle"

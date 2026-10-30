@@ -1,7 +1,8 @@
 #!/bin/sh
 # afw-netinit: network "pause" container of an enrolled agent (docs/adr/0003-isolement-reseau.md).
 # The agent shares this container's network namespace (network_mode: service:afw-net-<agent>) and has
-# no NET_ADMIN; only this container may change the network. Every AFW_ROUTE_INTERVAL seconds (default 10)
+# no NET_ADMIN; only this container may change the network. Every AFW_ROUTE_INTERVAL seconds (default 2:
+# a tampered route or an attached network is corrected within 2 s)
 # it enforces:
 #   - a single default route via the gateway, and a /32 route to the gateway as the only on-link route:
 #     the route of the internal subnet is removed, so the agent cannot reach the other agents directly;
@@ -25,7 +26,7 @@ if ! printf '%s' "$gw" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9A-Fa-f:]+$
   log "invalid AFW_GATEWAY_IP: $gw"
   exit 64
 fi
-interval="${AFW_ROUTE_INTERVAL:-10}"
+interval="${AFW_ROUTE_INTERVAL:-2}"
 case "$interval" in '' | *[!0-9]*) log "invalid AFW_ROUTE_INTERVAL: $interval"; exit 64 ;; esac
 [ "$interval" -ge 1 ] || interval=1
 ca_src="${AFW_GATEWAY_CA_FILE:-/afw-gateway-ca/inspection-ca.crt}"

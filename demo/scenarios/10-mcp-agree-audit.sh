@@ -44,6 +44,7 @@ evidence "rule in its own zone internes: $(printf '%s' "$r5" | cut -c1-200)"
 evidence "publish: $(printf '%s' "$r6" | cut -c1-200)"
 { [ -n "$r4" ] && ! failed "$r4"; } || fail "the MCP agent could not change its delegated zone"
 { [ -n "$r5" ] && failed "$r5"; } || fail "the MCP agent was able to change its own zone (EF-51)"
+printf '%s' "$r5" | grep -Eqi '403|forbidden' || fail "own-zone change refused, but not with 403 Forbidden: $r5"
 { [ -n "$r6" ] && ! failed "$r6"; } || fail "the MCP agent could not publish"
 
 audit="$(audit_since "$since" | jqx -c 'select(.interface == "mcp")')"

@@ -9,3 +9,7 @@ demo
 .git
 .github
 **/*.pyc
+**/.env
+**/.env.*
+!**/.env.example
+**/.state

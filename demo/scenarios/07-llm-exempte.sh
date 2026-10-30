@@ -11,7 +11,7 @@ out="$(agent_sh laurent-bot "curl -sS -w '\nHTTP %{http_code}' --max-time 15 -H 
 code="$(printf '%s' "$out" | sed -n 's/^HTTP \([0-9]*\)$/\1/p')"
 evidence "laurent-bot -> api.anthropic.com/v1/messages with a secret in the prompt: HTTP $code"
 [ "$code" = 200 ] || fail "LLM call blocked or failed (HTTP $code): $out"
-upstream_received fake-llm "$key" || fail "fake-llm did not receive the prompt"
+assert_received fake-llm "$key" "the prompt"
 evidence "the provider received the prompt (exemption EF-25)"
 flow="$(find_flow "$(agent_id laurent-bot)" api.anthropic.com allow "$since")" || fail "allowed LLM flow not found in the log"
 evidence "flow: llm_provider=$(printf '%s' "$flow" | jqx -r '.llm_provider'), tls_inspected=$(printf '%s' "$flow" | jqx -r '.tls_inspected'), classes $(printf '%s' "$flow" | jqx -c '.data_classes')"

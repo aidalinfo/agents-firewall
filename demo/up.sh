@@ -24,6 +24,21 @@ if ! docker volume inspect "${DEMO_PROJECT}_postgres-data" >/dev/null 2>&1; then
   rm -f "$STATE_DIR/gateway-registered" "$STATE_DIR/policy-installed" "$STATE_DIR/demo.env" "$STATE_DIR/ids.json"
 fi
 
+# Demo secrets: generated once, 0600, never committed (demo/.state is git-ignored). The content key cannot
+# change while the database volume exists (stored bodies would become unreadable).
+if [ ! -s "$SECRETS_FILE" ]; then
+  if docker volume inspect "${DEMO_PROJECT}_postgres-data" >/dev/null 2>&1; then
+    die "$SECRETS_FILE is missing but the demo database exists: run demo/down.sh --purge first"
+  fi
+  step "generate the demo admin token and content key ($SECRETS_FILE)"
+  (umask 077; printf 'AFW_DEMO_ADMIN_TOKEN=afw-demo-%s\nAFW_DEMO_DATA_KEY=%s\n' \
+    "$(LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 40)" \
+    "$(head -c 32 /dev/urandom | base64 | tr -d '\n')" >"$SECRETS_FILE")
+fi
+chmod 600 "$SECRETS_FILE"
+set -a; . "$SECRETS_FILE"; set +a
+AFW_TOKEN="$AFW_DEMO_ADMIN_TOKEN"
+
 # --- 1. images ---------------------------------------------------------------------------------------
 # service:image:source that must exist for the image to be buildable
 IMAGES="demo-pki:afw-demo-tools:local:demo/tools/Dockerfile
@@ -89,7 +104,9 @@ fi
 if api_healthy && [ ! -f "$STATE_DIR/policy-installed" ]; then
   step "load the demo policy (demo/policy/demo-policy.json)"
   session_open
-  load_policy "$DEMO_DIR/policy/demo-policy.json"
+  gw_id="$(gateway_id demo-gw 2>/dev/null || true)"
+  [ -n "$gw_id" ] || warn "no registered gateway: daniel-bot is created without enrollment (no plugin token)"
+  load_policy "$DEMO_DIR/policy/demo-policy.json" "$gw_id"
   rev1="$(publish "Démo : politique initiale (zone clients en observation)")"
   info "published revision $rev1"
   install "$rev1"
@@ -105,14 +122,6 @@ if api_healthy && [ ! -f "$STATE_DIR/policy-installed" ]; then
 fi
 
 # --- 5. agents ---------------------------------------------------------------------------------------
-if api_healthy && [ ! -s "$STATE_DIR/demo.env" ]; then
-  step "create the Hermes plugin token of daniel-bot"
-  if tok="$(agent_plugin_token "$(agent_id daniel-bot)")" && [ -n "$tok" ]; then
-    printf 'AFW_AGENT_TOKEN=%s\n' "$tok" >"$STATE_DIR/demo.env"; chmod 600 "$STATE_DIR/demo.env"
-  else
-    warn "no plugin token for daniel-bot (enrollments API): tool calls will not be correlated"
-  fi
-fi
 agents="afw-net-laurent-bot laurent-bot afw-net-acme-bot acme-bot"
 have afw-hermes-demo:local && agents="afw-net-daniel-bot daniel-bot $agents"
 step "start the agents: $agents"
@@ -129,7 +138,7 @@ fi
 cat >&2 <<INFO
 
 agents-firewall demo is up.
-  Console     http://localhost:3000   (token: $AFW_DEMO_ADMIN_TOKEN)
+  Console     http://localhost:3000   (admin token in demo/.state/secrets.env)
   API         $AFW_API_URL$API
   Scenarios   demo/scenarios/run-all.sh   (results in demo/.state/results.md)
   Stop        demo/down.sh [--purge]

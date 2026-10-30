@@ -22,6 +22,7 @@ jqx -s --arg at "$(now_iso)" '{generated_at: $at,
   scenarios: sort_by(.id)}' "$RESULTS_DIR"/[0-9][0-9]-*.json >"$STATE_DIR/results.json"
 jqx -r '"# Recette agents-firewall — résultats\n\nGénéré le \(.generated_at) : \(.summary.pass) PASS, \(.summary.fail) FAIL, \(.summary.skip) SKIP.\n\n| Scénario | Résultat | Durée | Détail |\n|---|---|---|---|",
   (.scenarios[] | "| \(.id) — \(.title) | \(.status) | \(.duration_ms / 1000 | floor) s | \(.message | gsub("\\|"; "/")) |"),
+  "\nHors démo (production) : migration de Daniel, Laurent et Vulcain et retrait de l'"'"'egress-guard actuel (cahier §8) ; à constater sur les hôtes réels.",
   "\n## Preuves\n",
   (.scenarios[] | "### \(.id) — \(.status)\n\n\(.evidence | map("- `" + gsub("`"; "'\''") + "`") | join("\n"))\n")' \
   "$STATE_DIR/results.json" >"$STATE_DIR/results.md"

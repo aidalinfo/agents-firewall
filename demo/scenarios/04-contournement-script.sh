@@ -33,6 +33,5 @@ print("\n".join(results))
 PY
 out="$(agent_sh laurent-bot 'env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy python3 /tmp/s04.py' 2>&1 || true)"
 while IFS= read -r l; do [ -n "$l" ] && evidence "$l"; done <<<"$out"
-upstream_received exfil "$m" && fail "the script reached exfil.example"
-evidence "exfil.example received nothing"
+assert_not_received exfil "$m" "the script"
 pass "le script qui ignore le proxy n'a rien fait sortir"

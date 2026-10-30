@@ -10,7 +10,9 @@ use uuid::Uuid;
 use crate::events::{
     Actor, AlertEvent, DnsEvent, FlowEvent, HttpEvent, Interface, Severity, ToolCallEvent, Verdict,
 };
-use crate::policy::{Agent, AgentKind, AppProto, L4Proto, Layer, PolicyDocument, Rule, Zone};
+use crate::policy::{
+    Agent, AgentKind, AppProto, L4Proto, Layer, PolicyDocument, Rule, Track, Zone, ZoneMode,
+};
 use crate::protocol::{GatewayCommand, GatewayStats};
 
 // ---------------------------------------------------------------------------------------------
@@ -111,6 +113,93 @@ pub struct Session {
     pub changes: u32,
     /// Set when the session needs an approval before publishing (EF-52).
     pub approval_id: Option<Uuid>,
+    /// Name given when the session was opened.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Revision published by this session (or, for `GET /sessions/current`, the caller's last
+    /// published revision) that has not been installed yet: lets a client resume the
+    /// "Install" step after a reload.
+    #[serde(default)]
+    pub pending_install: Option<u64>,
+}
+
+/// `POST /sessions` (optional body).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub struct OpenSessionRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Operation of a pending session change, relative to the last published revision.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeOp {
+    Create,
+    Update,
+    Delete,
+}
+
+/// A pending change of a session.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct SessionChange {
+    pub op: ChangeOp,
+    pub resource: ResourceRef,
+    /// State after the change; `null` for a deletion.
+    pub after: Option<serde_json::Value>,
+}
+
+/// Read view of a rule: the rule plus what the console displays next to it.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct RuleView {
+    #[serde(flatten)]
+    pub rule: Rule,
+    /// Displayed global number ([`PolicyDocument::rule_numbers`]).
+    pub number: u32,
+    /// Hits reported by the gateways (EF-06).
+    pub hits: u64,
+    pub last_hit_at: Option<DateTime<Utc>>,
+    pub expired: bool,
+    /// Owner of the session holding a lock on the rule, if any.
+    pub locked_by: Option<Actor>,
+    /// Pending change of the rule in the session given by `X-Afw-Session`.
+    pub pending_change: Option<ChangeOp>,
+}
+
+/// Consecutive rules of a layer sharing the same section.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct RuleSection {
+    /// Section name; `null` for rules outside any section.
+    pub name: Option<String>,
+    pub rules: Vec<RuleView>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct BaselineLayerView {
+    pub sections: Vec<RuleSection>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ZoneLayerView {
+    pub zone: Zone,
+    pub mode: ZoneMode,
+    pub sections: Vec<RuleSection>,
+    /// Display number of the zone's implicit cleanup rule ("deny everything"): the number
+    /// following the zone's last rule (display only, not part of the global numbering).
+    pub cleanup_number: u32,
+}
+
+/// `GET /rulebase`: the whole rule base in evaluation order (baseline, then zones by name).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct Rulebase {
+    pub baseline: BaselineLayerView,
+    pub zones: Vec<ZoneLayerView>,
 }
 
 /// `POST /sessions/{id}/publish`.
@@ -125,14 +214,39 @@ pub struct PublishRequest {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct AllowFromLogRequest {
     pub flow_id: Uuid,
+    /// How the destination is expressed (default `exact`).
+    #[serde(default)]
+    pub destination: AllowDestination,
+    /// Expiry of the created rule, in days from now.
+    #[serde(default)]
+    pub expires_in_days: Option<u32>,
+    /// Track level of the created rule (default `detailed`).
+    #[serde(default)]
+    pub track: Option<Track>,
+}
+
+/// Destination of a rule created from the log.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AllowDestination {
+    /// The exact domain (or host IP) of the flow.
+    #[default]
+    Exact,
+    /// `*.<parent domain>` (refused when the parent is a top-level domain).
+    Wildcard,
+    /// The exact domain added to the zone's "allowed from log" group.
+    Group,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct AllowFromLogResponse {
-    pub rule: Rule,
+    pub rule: RuleView,
     /// Object created for the destination when no existing object matched.
     pub created_object: Option<crate::policy::NetObject>,
+    /// Session changes made by this call.
+    #[serde(default)]
+    pub changes: Vec<SessionChange>,
 }
 
 /// Published revision (metadata).

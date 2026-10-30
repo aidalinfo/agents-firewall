@@ -1,0 +1,176 @@
+{
+  "version": 0,
+  "action_classes": [
+    {
+      "id": "infra_destructive",
+      "name": "Infrastructure destructive",
+      "tools": [
+        "terminal",
+        "*terminal*",
+        "shell",
+        "*shell*",
+        "bash",
+        "sh",
+        "zsh",
+        "execute_code",
+        "*exec*",
+        "run_command",
+        "*command*",
+        "code_interpreter",
+        "*python*",
+        "process",
+        "*ssh*"
+      ],
+      "patterns": [
+        "(?i)\\bkubectl\\b[^\\n;&|]*\\s(?:delete|drain)\\b",
+        "(?i)\\bhelm\\b[^\\n;&|]*\\s(?:uninstall|delete|rollback)\\b",
+        "(?i)\\bdocker\\b[^\\n;&|]*\\s(?:rm|rmi|kill|prune)\\b",
+        "(?i)\\bdocker(?:-compose|\\s+compose)\\b[^\\n;&|]*\\s(?:down|rm)\\b",
+        "(?i)\\bterraform\\b[^\\n;&|]*\\s-?destroy\\b",
+        "(?i)/api/v1/(?:deploy\\b|(?:applications|services|databases)/[^\\s/]+/(?:restart|stop|deploy)\\b)"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "infra_destructive",
+      "name": "Infrastructure destructive",
+      "tools": [],
+      "patterns": [
+        "(?i)\\A[^\\n]*coolify[^\\n]*(?:delete|redeploy|deploy|restart|stop|remove)",
+        "(?i)\\A[^\\n]*coolify[\\s\\S]*\\b(?:delete|redeploy|deploy|restart|stop|remove)\\b"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "infra_destructive",
+      "name": "Infrastructure destructive",
+      "tools": [
+        "fetch",
+        "*fetch*",
+        "http",
+        "http_*",
+        "*_http",
+        "*request*",
+        "curl",
+        "web_*",
+        "api_call",
+        "*api*"
+      ],
+      "patterns": [
+        "(?i)/api/v1/(?:deploy\\b|(?:applications|services|databases)/[^\\s/]+/(?:restart|stop|deploy)\\b)"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "access",
+      "name": "Partage et droits d'accès",
+      "tools": [],
+      "patterns": [
+        "(?i)\\A[^\\n]*(?:share|sharing|invite|invitation|permission|grant|collaborator|add_member|add_user|set_role|acl)",
+        "(?i)\\banyone\\s+with\\s+the\\s+link\\b|\\btype\\s*:\\s*[\\\"']?anyone\\b"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "access",
+      "name": "Partage et droits d'accès",
+      "tools": [
+        "terminal",
+        "*terminal*",
+        "shell",
+        "*shell*",
+        "bash",
+        "sh",
+        "zsh",
+        "execute_code",
+        "*exec*",
+        "run_command",
+        "*command*",
+        "code_interpreter",
+        "*python*",
+        "process",
+        "*ssh*"
+      ],
+      "patterns": [
+        "(?i)\\bchmod\\b[^\\n;&|]*(?:\\b0?[0-7]{2}[2367]\\b|\\b[oa]\\+[rx]*w)",
+        "(?i)\\bchown\\b",
+        "(?i)\\bgrant\\s+[\\w\\s,]+?\\s+on\\b",
+        "(?i)\\b(?:create|alter)\\s+(?:user|role)\\b",
+        "(?i)\\bkubectl\\b[^\\n;&|]*\\bcreate\\s+(?:cluster)?rolebinding\\b"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "irreversible",
+      "name": "Suppression irréversible",
+      "tools": [],
+      "patterns": [
+        "(?i)\\A[^\\n]*(?:(?<![a-z0-9])(?:delete|purge|destroy)_|[a-z0-9]_(?:delete|purge|destroy)(?![a-z0-9]))"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "irreversible",
+      "name": "Suppression irréversible",
+      "tools": [
+        "terminal",
+        "*terminal*",
+        "shell",
+        "*shell*",
+        "bash",
+        "sh",
+        "zsh",
+        "execute_code",
+        "*exec*",
+        "run_command",
+        "*command*",
+        "code_interpreter",
+        "*python*",
+        "process",
+        "*ssh*"
+      ],
+      "patterns": [
+        "(?i)(?<![-\\w])rm\\b[^\\n;&|]*?\\s(?:-[a-z]*r[a-z]*\\b|--recursive\\b)",
+        "(?i)(?<![-\\w])rmdir\\b",
+        "(?i)\\bshred\\b",
+        "(?i)\\bfind\\b[^\\n;&|]*\\s-delete\\b",
+        "(?i)\\bshutil\\s*\\.\\s*rmtree\\b",
+        "(?i)\\bgit\\b[^\\n;&|]*\\bpush\\b[^\\n;&|]*\\s(?:--force(?:-with-lease)?\\b|-[a-z]*f\\b|\\+\\S)",
+        "(?i)(?:\\s-X\\s*|--request[=\\s]+)[\\\"']?DELETE\\b",
+        "(?i)\\bdelete\\s+from\\b",
+        "(?i)\\b(?:drop|truncate)\\s+(?:table|database|schema|collection)\\b"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "irreversible",
+      "name": "Suppression irréversible",
+      "tools": [
+        "fetch",
+        "*fetch*",
+        "http",
+        "http_*",
+        "*_http",
+        "*request*",
+        "curl",
+        "web_*",
+        "api_call",
+        "*api*"
+      ],
+      "patterns": [
+        "(?i)\\bmethod\\s*:\\s*[\\\"']?delete\\b"
+      ],
+      "decision": "gate"
+    },
+    {
+      "id": "paid_generation",
+      "name": "Génération payante",
+      "tools": [],
+      "patterns": [
+        "(?i)\\A[^\\n]*(?:freepik|image_?gen|generate_image|image_generate|text_to_image|video_?gen|generate_video|video_generate|text_to_video|dall_?e|midjourney|runway|elevenlabs|suno)",
+        "(?i)\\bfreepik\\.com\\b"
+      ],
+      "decision": "log"
+    }
+  ]
+}

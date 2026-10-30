@@ -126,14 +126,50 @@ fn api_types_round_trip() {
         locks: vec![rref.clone()],
         changes: 1,
         approval_id: None,
+        name: Some("s".into()),
+        pending_install: Some(2),
     });
+    roundtrip(&OpenSessionRequest { name: None });
     roundtrip(&PublishRequest {
         comment: "c".into(),
     });
-    roundtrip(&AllowFromLogRequest { flow_id: id(500) });
-    roundtrip(&AllowFromLogResponse {
+    roundtrip(&AllowFromLogRequest {
+        flow_id: id(500),
+        destination: AllowDestination::Wildcard,
+        expires_in_days: Some(7),
+        track: Some(Track::Log),
+    });
+    let view = RuleView {
         rule: doc.rules[0].clone(),
+        number: 1,
+        hits: 3,
+        last_hit_at: Some(at()),
+        expired: false,
+        locked_by: Some(actor()),
+        pending_change: Some(ChangeOp::Update),
+    };
+    roundtrip(&AllowFromLogResponse {
+        rule: view.clone(),
         created_object: Some(doc.objects[0].clone()),
+        changes: vec![SessionChange {
+            op: ChangeOp::Create,
+            resource: rref.clone(),
+            after: Some(serde_json::json!({"a": 1})),
+        }],
+    });
+    roundtrip(&Rulebase {
+        baseline: BaselineLayerView {
+            sections: vec![RuleSection {
+                name: None,
+                rules: vec![view.clone()],
+            }],
+        },
+        zones: vec![ZoneLayerView {
+            zone: doc.zones[0].clone(),
+            mode: doc.zones[0].mode,
+            sections: vec![],
+            cleanup_number: 2,
+        }],
     });
     let revision = Revision {
         number: 3,

@@ -740,9 +740,22 @@ paths:
       operationId: listRules
       tags:
       - policy
-      summary: List rules
+      summary: List rules in evaluation order, with their number, hits, expiry, lock and pending change
       parameters:
       - $ref: '#/components/parameters/Session'
+      - name: zone_id
+        in: query
+        required: false
+        description: Only the rules of this zone's layer
+        schema:
+          type: string
+          format: uuid
+      - name: q
+        in: query
+        required: false
+        description: Case-insensitive text search in name, comment and section
+        schema:
+          type: string
       responses:
         '200':
           description: OK
@@ -751,7 +764,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Rule'
+                  $ref: '#/components/schemas/RuleView'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1298,6 +1311,12 @@ paths:
       tags:
       - sessions
       summary: Open an editing session
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenSessionRequest'
       responses:
         '201':
           description: Created
@@ -1320,7 +1339,7 @@ paths:
       operationId: currentSession
       tags:
       - sessions
-      summary: Caller's open session
+      summary: Caller's open session; without one, its last published session not installed yet (pending_install)
       responses:
         '200':
           description: OK
@@ -1397,7 +1416,7 @@ paths:
       operationId: publishSession
       tags:
       - sessions
-      summary: Publish a session as a new revision (409 when an approval is pending, EF-52)
+      summary: Publish a session as a new revision (202 + approval when a widening by the MCP agent needs a human, 409 when it is pending or rejected or the policy is invalid, EF-52)
       requestBody:
         required: true
         content:
@@ -1411,6 +1430,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Revision'
+        '202':
+          description: Widening change by the MCP agent; a human approval was requested (EF-52)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1456,6 +1481,64 @@ paths:
           $ref: '#/components/responses/Conflict'
         '423':
           $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/import:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: importIntoSession
+      tags:
+      - sessions
+      summary: Merge a policy document into the session (EF-70; settings replaced only when present). Human admin only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyDocument'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /rulebase:
+    get:
+      operationId: getRulebase
+      tags:
+      - policy
+      summary: Whole rule base by layer and section (baseline, then zones by name) with rule views
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rulebase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         default:
           $ref: '#/components/responses/Error'
   /revisions:
@@ -2644,7 +2727,33 @@ paths:
       operationId: getIntentPolicy
       tags:
       - hermes
-      summary: Intent policy for the calling agent (`agent_plugin` token only; format of ADR 0015)
+      summary: Intent policy (format of ADR 0015; `agent_plugin` token or any reading role). Without any version, the Hermes plugin's built-in policy (version 0)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateIntentPolicy
+      tags:
+      - hermes
+      summary: Replace the intent policy (human admin, audited; the server assigns version = previous + 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentPolicy'
       responses:
         '200':
           description: OK
@@ -3088,25 +3197,64 @@ components:
       - internal_burst
       - unusual_admin_action
       type: string
+    AllowDestination:
+      description: Destination of a rule created from the log.
+      oneOf:
+      - description: The exact domain (or host IP) of the flow.
+        enum:
+        - exact
+        type: string
+      - description: '`*.<parent domain>` (refused when the parent is a top-level domain).'
+        enum:
+        - wildcard
+        type: string
+      - description: The exact domain added to the zone's "allowed from log" group.
+        enum:
+        - group
+        type: string
     AllowFromLogRequest:
       additionalProperties: false
       description: '`POST /sessions/{id}/allow-from-log` (EF-42): creates a prefilled rule in the session.'
       properties:
+        destination:
+          $ref: '#/components/schemas/AllowDestination'
+          default: exact
+          description: How the destination is expressed (default `exact`).
+        expires_in_days:
+          default: null
+          description: Expiry of the created rule, in days from now.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         flow_id:
           format: uuid
           type: string
+        track:
+          anyOf:
+          - $ref: '#/components/schemas/Track'
+          - type: 'null'
+          default: null
+          description: Track level of the created rule (default `detailed`).
       required:
       - flow_id
       type: object
     AllowFromLogResponse:
       properties:
+        changes:
+          default: []
+          description: Session changes made by this call.
+          items:
+            $ref: '#/components/schemas/SessionChange'
+          type: array
         created_object:
           anyOf:
           - $ref: '#/components/schemas/NetObject'
           - type: 'null'
           description: Object created for the destination when no existing object matched.
         rule:
-          $ref: '#/components/schemas/Rule'
+          $ref: '#/components/schemas/RuleView'
       required:
       - rule
       type: object
@@ -3332,6 +3480,15 @@ components:
       - checked
       - ok
       type: object
+    BaselineLayerView:
+      properties:
+        sections:
+          items:
+            $ref: '#/components/schemas/RuleSection'
+          type: array
+      required:
+      - sections
+      type: object
     Body:
       description: Captured body, already masked before leaving the gateway.
       properties:
@@ -3441,6 +3598,13 @@ components:
       - added
       - removed
       - modified
+      type: string
+    ChangeOp:
+      description: Operation of a pending session change, relative to the last published revision.
+      enum:
+      - create
+      - update
+      - delete
       type: string
     Confidence:
       enum:
@@ -5038,6 +5202,16 @@ components:
         required:
         - type
         type: object
+    OpenSessionRequest:
+      additionalProperties: false
+      description: '`POST /sessions` (optional body).'
+      properties:
+        name:
+          default: null
+          type:
+          - string
+          - 'null'
+      type: object
     Page_for_Alert:
       description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
       properties:
@@ -5565,6 +5739,135 @@ components:
       - revision
       - rule_id
       type: object
+    RuleSection:
+      description: Consecutive rules of a layer sharing the same section.
+      properties:
+        name:
+          description: Section name; `null` for rules outside any section.
+          type:
+          - string
+          - 'null'
+        rules:
+          items:
+            $ref: '#/components/schemas/RuleView'
+          type: array
+      required:
+      - rules
+      type: object
+    RuleView:
+      description: 'Read view of a rule: the rule plus what the console displays next to it.'
+      properties:
+        action:
+          $ref: '#/components/schemas/Action'
+        comment:
+          default: ''
+          type: string
+        data_classes:
+          default: []
+          description: Data classes. Empty = no content condition.
+          items:
+            format: uuid
+            type: string
+          type: array
+        destinations:
+          default: []
+          description: Objects. Empty = any.
+          items:
+            format: uuid
+            type: string
+          type: array
+        enabled:
+          type: boolean
+        expired:
+          type: boolean
+        expires_at:
+          default: null
+          format: date-time
+          type:
+          - string
+          - 'null'
+        hits:
+          description: Hits reported by the gateways (EF-06).
+          format: uint64
+          minimum: 0.0
+          type: integer
+        id:
+          format: uuid
+          type: string
+        last_hit_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        layer:
+          $ref: '#/components/schemas/Layer'
+        locked_by:
+          anyOf:
+          - $ref: '#/components/schemas/Actor'
+          - type: 'null'
+          description: Owner of the session holding a lock on the rule, if any.
+        name:
+          type: string
+        number:
+          description: Displayed global number ([`PolicyDocument::rule_numbers`]).
+          format: uint32
+          minimum: 0.0
+          type: integer
+        pending_change:
+          anyOf:
+          - $ref: '#/components/schemas/ChangeOp'
+          - type: 'null'
+          description: Pending change of the rule in the session given by `X-Afw-Session`.
+        position:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        section:
+          default: null
+          type:
+          - string
+          - 'null'
+        services:
+          default: []
+          description: Services. Empty = any.
+          items:
+            format: uuid
+            type: string
+          type: array
+        sources:
+          default: []
+          description: Zones. Empty = all zones, allowed only in the baseline layer.
+          items:
+            format: uuid
+            type: string
+          type: array
+        track:
+          $ref: '#/components/schemas/Track'
+          default: detailed
+      required:
+      - action
+      - enabled
+      - expired
+      - hits
+      - id
+      - layer
+      - name
+      - number
+      - position
+      type: object
+    Rulebase:
+      description: '`GET /rulebase`: the whole rule base in evaluation order (baseline, then zones by name).'
+      properties:
+        baseline:
+          $ref: '#/components/schemas/BaselineLayerView'
+        zones:
+          items:
+            $ref: '#/components/schemas/ZoneLayerView'
+          type: array
+      required:
+      - baseline
+      - zones
+      type: object
     Service:
       additionalProperties: false
       properties:
@@ -5624,11 +5927,25 @@ components:
           items:
             $ref: '#/components/schemas/ResourceRef'
           type: array
+        name:
+          default: null
+          description: Name given when the session was opened.
+          type:
+          - string
+          - 'null'
         opened_at:
           format: date-time
           type: string
         owner:
           $ref: '#/components/schemas/Actor'
+        pending_install:
+          default: null
+          description: 'Revision published by this session (or, for `GET /sessions/current`, the caller''s last published revision) that has not been installed yet: lets a client resume the "Install" step after a reload.'
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
         state:
           $ref: '#/components/schemas/SessionState'
       required:
@@ -5638,6 +5955,19 @@ components:
       - opened_at
       - owner
       - state
+      type: object
+    SessionChange:
+      description: A pending change of a session.
+      properties:
+        after:
+          description: State after the change; `null` for a deletion.
+        op:
+          $ref: '#/components/schemas/ChangeOp'
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+      required:
+      - op
+      - resource
       type: object
     SessionState:
       enum:
@@ -5846,6 +6176,27 @@ components:
       - id
       - mode
       - name
+      type: object
+    ZoneLayerView:
+      properties:
+        cleanup_number:
+          description: 'Display number of the zone''s implicit cleanup rule ("deny everything"): the number following the zone''s last rule (display only, not part of the global numbering).'
+          format: uint32
+          minimum: 0.0
+          type: integer
+        mode:
+          $ref: '#/components/schemas/ZoneMode'
+        sections:
+          items:
+            $ref: '#/components/schemas/RuleSection'
+          type: array
+        zone:
+          $ref: '#/components/schemas/Zone'
+      required:
+      - cleanup_number
+      - mode
+      - sections
+      - zone
       type: object
     ZoneMode:
       description: '`Observe`: denials are logged but the flow is allowed (EF-12).'

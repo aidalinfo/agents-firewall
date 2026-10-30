@@ -1785,7 +1785,7 @@ paths:
       operationId: listFlows
       tags:
       - logs
-      summary: Search flows (newest first)
+      summary: Search flows (newest first), enriched with agent/zone names, rule label and correlated tool call
       parameters:
       - name: agent
         in: query
@@ -1834,7 +1834,72 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Page_for_FlowEvent'
+                $ref: '#/components/schemas/Page_for_FlowListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /logs/flows/stats:
+    get:
+      operationId: flowStats
+      tags:
+      - logs
+      summary: Flow histogram (allow / deny / observed per bucket) and totals, same filters as /logs/flows. Default period by bucket (1m = last hour, 5m = last 12 h, 1h = last 24 h); at most 2000 buckets.
+      parameters:
+      - name: agent
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: zone
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: destination
+        in: query
+        description: Domain, IP or CIDR
+        schema:
+          type: string
+      - name: verdict
+        in: query
+        schema:
+          $ref: '#/components/schemas/Verdict'
+      - name: rule
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: q
+        in: query
+        description: Free text search
+        schema:
+          type: string
+      - name: bucket
+        in: query
+        schema:
+          $ref: '#/components/schemas/StatsBucket'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowStats'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1850,7 +1915,7 @@ paths:
       operationId: getFlow
       tags:
       - logs
-      summary: Flow detail with HTTP exchanges, correlated tool call and confidence; contents only for admin/auditor, access audited (EF-54)
+      summary: Flow detail with HTTP exchanges, correlated tool call and confidence, rule trace, message received by the agent (EF-21) and allow proposal; contents only for admin/auditor, access audited (EF-54)
       responses:
         '200':
           description: OK
@@ -2163,6 +2228,11 @@ paths:
       - logs
       summary: Internal flows map (agents and internal hosts)
       parameters:
+      - name: period
+        in: query
+        description: Period ending now (default 24h); ignored when `from` is given
+        schema:
+          $ref: '#/components/schemas/MapPeriod'
       - name: from
         in: query
         schema:
@@ -3040,6 +3110,35 @@ components:
       required:
       - rule
       type: object
+    AllowProposal:
+      description: 'Rule proposed by the "Allow" button: source = the agent''s zone, accept, inserted at the top of the zone layer (see `POST /sessions/{id}/allow-from-log`).'
+      properties:
+        destinations:
+          description: 'Choices, most specific first: exact, wildcard, then existing objects.'
+          items:
+            $ref: '#/components/schemas/ProposedDestination'
+          type: array
+        rule_number:
+          description: Number the new rule would get in the current policy.
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        service:
+          $ref: '#/components/schemas/ProposedService'
+        zone_id:
+          format: uuid
+          type: string
+        zone_name:
+          type:
+          - string
+          - 'null'
+      required:
+      - destinations
+      - service
+      - zone_id
+      type: object
     ApiToken:
       description: API token (the secret is only returned once, at creation).
       properties:
@@ -3648,6 +3747,18 @@ components:
     FlowDetail:
       description: '`GET /logs/flows/{id}`.'
       properties:
+        agent_message:
+          default: null
+          description: Exact text received by the agent when the flow was denied over HTTP(S) (EF-21).
+          type:
+          - string
+          - 'null'
+        allow_proposal:
+          anyOf:
+          - $ref: '#/components/schemas/AllowProposal'
+          - type: 'null'
+          default: null
+          description: Prefilled proposal behind the "Allow" button (denied or observed flows).
         correlation:
           anyOf:
           - $ref: '#/components/schemas/Correlation'
@@ -3662,6 +3773,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ToolCallEvent'
           - type: 'null'
+        trace:
+          default: []
+          description: Rules examined for this flow, in evaluation order, recomputed on the flow's revision (empty when the revision or the engine is unavailable).
+          items:
+            $ref: '#/components/schemas/TraceStep'
+          type: array
       required:
       - flow
       - http
@@ -3752,6 +3869,118 @@ components:
       - tls_inspected
       - verdict
       type: object
+    FlowListItem:
+      description: 'Item of `GET /logs/flows`: the flow plus display fields computed by the API.'
+      properties:
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        agent_name:
+          type:
+          - string
+          - 'null'
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AppProto'
+          - type: 'null'
+        bytes_in:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_out:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        conversation_id:
+          type:
+          - string
+          - 'null'
+        correlation_confidence:
+          anyOf:
+          - $ref: '#/components/schemas/Confidence'
+          - type: 'null'
+        data_classes:
+          default: []
+          description: Names of the data classes detected in the flow.
+          items:
+            type: string
+          type: array
+        decision:
+          $ref: '#/components/schemas/DecisionRef'
+        domain:
+          type:
+          - string
+          - 'null'
+        dst:
+          type: string
+        ended_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        gateway_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        internal:
+          type: boolean
+        llm_provider:
+          type: boolean
+        observed:
+          type: boolean
+        protocol:
+          $ref: '#/components/schemas/L4Proto'
+        rule_label:
+          description: '`12 · name`, `socle · name` (baseline rule without number) or `default-deny`.'
+          type: string
+        sni:
+          type:
+          - string
+          - 'null'
+        src:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        tls_inspected:
+          type: boolean
+        tool:
+          description: Correlated tool call (ADR 0007).
+          type:
+          - string
+          - 'null'
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        zone_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        zone_name:
+          type:
+          - string
+          - 'null'
+      required:
+      - bytes_in
+      - bytes_out
+      - decision
+      - dst
+      - gateway_id
+      - id
+      - internal
+      - llm_provider
+      - observed
+      - protocol
+      - rule_label
+      - src
+      - started_at
+      - tls_inspected
+      - verdict
+      type: object
     FlowQuery:
       description: Filters of `GET /logs/flows` and `GET /logs/dns` (query string).
       properties:
@@ -3805,6 +4034,72 @@ components:
           type:
           - string
           - 'null'
+      type: object
+    FlowStats:
+      description: '`GET /logs/flows/stats`.'
+      properties:
+        allow:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bucket:
+          $ref: '#/components/schemas/StatsBucket'
+        deny:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        from:
+          format: date-time
+          type: string
+        observed:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        points:
+          items:
+            $ref: '#/components/schemas/FlowStatsPoint'
+          type: array
+        to:
+          format: date-time
+          type: string
+        total:
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - allow
+      - bucket
+      - deny
+      - from
+      - observed
+      - points
+      - to
+      - total
+      type: object
+    FlowStatsPoint:
+      description: Flow counts of one histogram bucket (`allow` excludes `observed`).
+      properties:
+        allow:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        at:
+          format: date-time
+          type: string
+        deny:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        observed:
+          description: Allowed only because the zone is in observation mode (would have been denied).
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - allow
+      - at
+      - deny
+      - observed
       type: object
     Gateway:
       properties:
@@ -4579,6 +4874,13 @@ components:
         enum:
         - internal
         type: string
+    MapPeriod:
+      description: Period shortcut of `GET /internal-map` (`from`/`to` take precedence).
+      enum:
+      - 1h
+      - 24h
+      - 7d
+      type: string
     Me:
       description: '`GET /me`.'
       properties:
@@ -4806,6 +5108,20 @@ components:
       required:
       - items
       type: object
+    Page_for_FlowListItem:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FlowListItem'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
     Page_for_Install:
       description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
       properties:
@@ -4951,6 +5267,62 @@ components:
       required:
       - status
       - title
+      type: object
+    ProposedDestination:
+      properties:
+        kind:
+          $ref: '#/components/schemas/ProposedDestinationKind'
+        label:
+          type: string
+        object_id:
+          description: Existing object (`existing`).
+          format: uuid
+          type:
+          - string
+          - 'null'
+        spec:
+          anyOf:
+          - $ref: '#/components/schemas/NetObjectSpec'
+          - type: 'null'
+          description: Object to create (`exact`, `wildcard`).
+      required:
+      - kind
+      - label
+      type: object
+    ProposedDestinationKind:
+      oneOf:
+      - description: New object matching exactly the flow's domain or IP.
+        enum:
+        - exact
+        type: string
+      - description: New wildcard domain object (`*.parent`).
+        enum:
+        - wildcard
+        type: string
+      - description: Existing object (or group) of the policy that already matches the destination.
+        enum:
+        - existing
+        type: string
+    ProposedService:
+      properties:
+        label:
+          type: string
+        port:
+          format: uint16
+          minimum: 0.0
+          type: integer
+        protocol:
+          $ref: '#/components/schemas/L4Proto'
+        service_id:
+          description: Existing service matching the protocol and port, if any.
+          format: uuid
+          type:
+          - string
+          - 'null'
+      required:
+      - label
+      - port
+      - protocol
       type: object
     PublishRequest:
       additionalProperties: false
@@ -5279,6 +5651,12 @@ components:
       - warning
       - critical
       type: string
+    StatsBucket:
+      enum:
+      - 1m
+      - 5m
+      - 1h
+      type: string
     ToolCallBatch:
       description: '`POST /ingest/tool-calls` (agent token).'
       properties:
@@ -5323,6 +5701,46 @@ components:
       - id
       - started_at
       - tool
+      type: object
+    TraceOutcome:
+      oneOf:
+      - enum:
+        - matched
+        - not_matched
+        type: string
+      - description: Not evaluated (disabled, expired, or after the matching rule).
+        enum:
+        - skipped
+        type: string
+    TraceStep:
+      description: One rule examined while evaluating a flow.
+      properties:
+        layer:
+          description: '`baseline`, `zone` or `implicit`.'
+          type: string
+        outcome:
+          $ref: '#/components/schemas/TraceOutcome'
+        reason:
+          description: Why it matched or not (e.g. `destination not in api-objects`).
+          type: string
+        rule_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        rule_label:
+          type: string
+        rule_number:
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+      required:
+      - layer
+      - outcome
+      - reason
+      - rule_label
       type: object
     Track:
       enum:

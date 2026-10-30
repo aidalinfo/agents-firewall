@@ -15,6 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let config = Config::from_env();
+    afw_api::logs::validate_config(&config)?;
     let pool = match &config.database_url {
         Some(url) => {
             let pool = PgPoolOptions::new()
@@ -68,6 +69,9 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {}", config.listen))?;
     tracing::info!(listen = %config.listen, "afw-api listening");
+    afw_api::logs::start(&state)
+        .await
+        .context("starting the log store")?;
     axum::serve(listener, router(state)).await?;
     Ok(())
 }

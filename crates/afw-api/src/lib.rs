@@ -31,6 +31,17 @@ pub struct Config {
     pub public_url: Option<String>,
     /// `AFW_BOOTSTRAP_ADMIN_TOKEN`: admin token created at startup.
     pub bootstrap_admin_token: Option<String>,
+    /// `AFW_LOG_STORE`: `postgres` (default) or `clickhouse` (lot L7b).
+    pub log_store: Option<String>,
+    /// `AFW_CLICKHOUSE_URL`, `_USER`, `_PASSWORD`, `_DATABASE` (ClickHouse HTTP interface).
+    pub clickhouse_url: Option<String>,
+    pub clickhouse_user: Option<String>,
+    pub clickhouse_password: Option<String>,
+    pub clickhouse_database: Option<String>,
+    /// `AFW_ALERT_WEBHOOK_SECRET`: HMAC-SHA256 key signing generic alert webhooks.
+    pub alert_webhook_secret: Option<String>,
+    /// `AFW_ALERT_ALLOWED_HOSTS`: hosts alert channels may reach although internal or in http.
+    pub alert_allowed_hosts: Option<String>,
 }
 
 impl Config {
@@ -42,6 +53,13 @@ impl Config {
             data_key: var("AFW_DATA_KEY"),
             public_url: var("AFW_PUBLIC_URL"),
             bootstrap_admin_token: var("AFW_BOOTSTRAP_ADMIN_TOKEN"),
+            log_store: var("AFW_LOG_STORE"),
+            clickhouse_url: var("AFW_CLICKHOUSE_URL"),
+            clickhouse_user: var("AFW_CLICKHOUSE_USER"),
+            clickhouse_password: var("AFW_CLICKHOUSE_PASSWORD"),
+            clickhouse_database: var("AFW_CLICKHOUSE_DATABASE"),
+            alert_webhook_secret: var("AFW_ALERT_WEBHOOK_SECRET"),
+            alert_allowed_hosts: var("AFW_ALERT_ALLOWED_HOSTS"),
         }
     }
 }
@@ -59,11 +77,18 @@ pub struct AppState {
     pub ports: gateways::ports::Ports,
     /// Export of the audit chain head to immutable storage (lot L7c).
     pub audit_export: Arc<audit::export::AuditExportConfig>,
+    /// Logs module state (lot L7b).
+    pub logs: logs::LogsHandle,
 }
 
 impl AppState {
     pub fn new(config: Config, pool: Option<PgPool>) -> Self {
         Self {
+            logs: logs::LogsHandle::new(&config, pool.clone()),
+            ports: gateways::ports::Ports {
+                logs: Arc::new(logs::port::LogsPortImpl),
+                ..Default::default()
+            },
             pool,
             config: Arc::new(config),
             ..Default::default()

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
@@ -22,8 +22,8 @@ use crate::{TlsError, backdated_now, certified_key, crypto_provider, default_alp
 pub const LEAF_CACHE_CAPACITY: usize = 10_000;
 /// Leaf lifetime after the 1 h backdating.
 const LEAF_VALIDITY: time::Duration = time::Duration::days(7);
-/// Cached leaves are re-minted after this age, well before they expire.
-const LEAF_REFRESH_AFTER: Duration = Duration::from_secs(6 * 24 * 3600);
+/// Cached leaves are re-minted once they are this close to their `not_after`.
+const LEAF_REFRESH_MARGIN: Duration = Duration::from_secs(24 * 3600);
 /// CA lifetime.
 const CA_VALIDITY: time::Duration = time::Duration::days(3650);
 
@@ -108,7 +108,9 @@ impl GatewayCa {
         // Mint outside the lock; on a race the first inserted leaf wins so all
         // callers share the same Arc.
         let minted = Arc::new(self.mint_leaf(&name)?);
-        Ok(self.lock_cache().insert_or_get(key, minted))
+        let not_after = leaf_not_after(&minted)
+            .ok_or_else(|| TlsError::InvalidCertificate("minted leaf has no not_after".into()))?;
+        Ok(self.lock_cache().insert_or_get(key, minted, not_after))
     }
 
     /// Server configuration for TLS inspection: certificate chosen by SNI,
@@ -211,7 +213,14 @@ struct LeafCache {
 struct Entry {
     leaf: Arc<CertifiedKey>,
     tick: u64,
-    minted: Instant,
+    not_after: SystemTime,
+}
+
+/// `not_after` of the leaf certificate (first in the chain).
+fn leaf_not_after(leaf: &CertifiedKey) -> Option<SystemTime> {
+    let (_, x) = x509_parser::parse_x509_certificate(leaf.cert.first()?).ok()?;
+    let secs = u64::try_from(x.validity().not_after.timestamp()).ok()?;
+    Some(UNIX_EPOCH + Duration::from_secs(secs))
 }
 
 impl LeafCache {
@@ -232,7 +241,9 @@ impl LeafCache {
     fn get(&mut self, key: &str) -> Option<Arc<CertifiedKey>> {
         let tick = self.next_tick();
         let entry = self.map.get_mut(key)?;
-        if entry.minted.elapsed() >= LEAF_REFRESH_AFTER {
+        // Compare to the certificate's own expiry (wall clock), so a suspended
+        // host or a clock jump never serves an expired or nearly expired leaf.
+        if SystemTime::now() + LEAF_REFRESH_MARGIN >= entry.not_after {
             let old = entry.tick;
             self.map.remove(key);
             self.order.remove(&old);
@@ -244,7 +255,12 @@ impl LeafCache {
         Some(entry.leaf.clone())
     }
 
-    fn insert_or_get(&mut self, key: String, leaf: Arc<CertifiedKey>) -> Arc<CertifiedKey> {
+    fn insert_or_get(
+        &mut self,
+        key: String,
+        leaf: Arc<CertifiedKey>,
+        not_after: SystemTime,
+    ) -> Arc<CertifiedKey> {
         if let Some(existing) = self.get(&key) {
             return existing;
         }
@@ -263,7 +279,7 @@ impl LeafCache {
             Entry {
                 leaf: leaf.clone(),
                 tick,
-                minted: Instant::now(),
+                not_after,
             },
         );
         leaf
@@ -279,15 +295,49 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ca = GatewayCa::load_or_create(dir.path(), "t").unwrap();
         let leaf = ca.leaf_for("a.test").unwrap();
+        let later = SystemTime::now() + Duration::from_secs(7 * 24 * 3600);
         let mut c = LeafCache::new(2);
-        c.insert_or_get("a".into(), leaf.clone());
-        c.insert_or_get("b".into(), leaf.clone());
+        c.insert_or_get("a".into(), leaf.clone(), later);
+        c.insert_or_get("b".into(), leaf.clone(), later);
         assert!(c.get("a").is_some()); // a is now most recent
-        c.insert_or_get("c".into(), leaf.clone());
+        c.insert_or_get("c".into(), leaf.clone(), later);
         assert!(c.get("b").is_none(), "b was least recently used");
         assert!(c.get("a").is_some());
         assert!(c.get("c").is_some());
         assert_eq!(c.map.len(), 2);
         assert_eq!(c.order.len(), 2);
+    }
+
+    #[test]
+    fn leaves_close_to_not_after_are_reminted() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = GatewayCa::load_or_create(dir.path(), "t").unwrap();
+        let leaf = ca.leaf_for("a.test").unwrap();
+        let mut c = LeafCache::new(10);
+        // Expires in 12 h: inside the 1-day refresh margin, must not be served.
+        c.insert_or_get(
+            "soon".into(),
+            leaf.clone(),
+            SystemTime::now() + Duration::from_secs(12 * 3600),
+        );
+        assert!(c.get("soon").is_none());
+        assert!(c.map.is_empty() && c.order.is_empty());
+        c.insert_or_get(
+            "fresh".into(),
+            leaf.clone(),
+            SystemTime::now() + Duration::from_secs(3 * 24 * 3600),
+        );
+        assert!(c.get("fresh").is_some());
+    }
+
+    #[test]
+    fn minted_leaf_not_after_matches_certificate() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = GatewayCa::load_or_create(dir.path(), "t").unwrap();
+        let leaf = ca.leaf_for("b.test").unwrap();
+        let not_after = leaf_not_after(&leaf).unwrap();
+        let (_, x) = x509_parser::parse_x509_certificate(&leaf.cert[0]).unwrap();
+        let expected = UNIX_EPOCH + Duration::from_secs(x.validity().not_after.timestamp() as u64);
+        assert_eq!(not_after, expected);
     }
 }

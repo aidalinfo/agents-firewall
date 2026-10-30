@@ -63,3 +63,4 @@ rand = "0.8"
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 rmcp = { version = "0.8", features = ["server", "transport-io"] }
 tempfile = "3"
+libc = "0.2"

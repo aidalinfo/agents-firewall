@@ -179,8 +179,20 @@ fn csr_public_key(csr_pem: &str) -> Result<SubjectPublicKeyInfo, TlsError> {
     }
     csr.verify_signature()
         .map_err(|e| TlsError::InvalidCsr(format!("bad self-signature: {e}")))?;
-    SubjectPublicKeyInfo::from_der(csr.certification_request_info.subject_pki.raw)
-        .map_err(|e| TlsError::InvalidCsr(format!("unsupported public key: {e}")))
+    let spki = SubjectPublicKeyInfo::from_der(csr.certification_request_info.subject_pki.raw)
+        .map_err(|e| TlsError::InvalidCsr(format!("unsupported public key: {e}")))?;
+    let alg = rcgen::PublicKeyData::algorithm(&spki);
+    let allowed = [
+        &rcgen::PKCS_ECDSA_P256_SHA256,
+        &rcgen::PKCS_ECDSA_P384_SHA384,
+        &rcgen::PKCS_ED25519,
+    ];
+    if !allowed.contains(&alg) {
+        return Err(TlsError::InvalidCsr(
+            "public key must be ECDSA P-256, ECDSA P-384 or Ed25519".into(),
+        ));
+    }
+    Ok(spki)
 }
 
 /// Extracts the gateway id from a peer certificate chain (leaf first).

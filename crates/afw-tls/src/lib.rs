@@ -36,9 +36,15 @@ pub enum TlsError {
         #[source]
         source: std::io::Error,
     },
-    #[error("insecure permissions on {path}: mode {mode:o} (group/other access is not allowed)")]
+    #[error("insecure permissions on {path}: mode {mode:o} (too open for key material)")]
     InsecurePermissions { path: PathBuf, mode: u32 },
-    #[error("refusing to use {path}: not a regular file")]
+    #[error("refusing to use {path}: owned by uid {uid}, expected {expected}")]
+    WrongOwner {
+        path: PathBuf,
+        uid: u32,
+        expected: u32,
+    },
+    #[error("refusing to use {path}: not a regular file or directory, or a symbolic link")]
     NotARegularFile { path: PathBuf },
     #[error("inconsistent key material in {dir}: {reason}")]
     InconsistentStore { dir: PathBuf, reason: String },

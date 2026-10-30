@@ -63,6 +63,13 @@ pub(crate) fn parse_leaf_name(input: &str) -> Result<LeafName, TlsError> {
             return Err(bad());
         }
     }
+    // A name whose last label is all digits is either an IP literal (handled
+    // above) or ambiguous (`1.2.3`, `10.0.0.256`): refuse it rather than mint a
+    // DNS SAN that some resolvers would treat as an address.
+    let last = name.rsplit('.').next().unwrap_or_default();
+    if last.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(bad());
+    }
     Ok(LeafName::Dns(name))
 }
 

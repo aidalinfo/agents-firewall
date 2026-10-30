@@ -155,6 +155,7 @@ pub fn ctx(agent: &str, host: Option<&str>, dst: Option<&str>, port: u16) -> Flo
     FlowContext {
         agent_ip: ip(agent),
         dst_ip: dst.map(ip),
+        dst_ip_trusted: false,
         dst_port: port,
         l4: L4Proto::Tcp,
         app: None,

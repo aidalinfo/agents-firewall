@@ -425,6 +425,7 @@ fn metadata_inside_internal_networks_is_not_implicitly_allowed() {
     let d = p.evaluate(&ctx(A, None, Some("169.254.169.254"), 80));
     assert_eq!(d.verdict, Verdict::Deny);
     assert_eq!(d.implicit, Some(Implicit::Cleanup));
+    // The whole link-local range is sensitive (ECS task metadata, AWS DNS…).
     let d = p.evaluate(&ctx(A, None, Some("169.254.1.1"), 80));
-    assert_eq!(d.implicit, Some(Implicit::InternalMonitor));
+    assert_eq!(d.implicit, Some(Implicit::Cleanup));
 }

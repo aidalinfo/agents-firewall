@@ -42,6 +42,13 @@ pub struct FlowContext {
     pub agent_ip: IpAddr,
     /// Address actually connected to (transparent mode) or resolved by the gateway.
     pub dst_ip: Option<IpAddr>,
+    /// Gateway contract (ADR 0016): `true` when `dst_ip` is the address the gateway itself
+    /// resolved for `host` (or there is no name) and really connects to; `false` when it is
+    /// the original address chosen by the agent while a name is present. With a name and an
+    /// untrusted address, no accept by address object, no implicit internal allow, no
+    /// inspection bypass and no LLM exemption are granted on that address; deny rules on
+    /// addresses still apply.
+    pub dst_ip_trusted: bool,
     pub dst_port: u16,
     pub l4: L4Proto,
     pub app: Option<AppProto>,
@@ -125,6 +132,11 @@ pub enum TraceOutcome {
     ServiceMismatch,
     /// The host or path is malformed: an accept rule depending on it does not apply.
     Indeterminate,
+    /// Accept rule that does not name a cloud metadata object or address: it cannot accept a
+    /// metadata destination.
+    MetadataProtected,
+    /// Connection stage: this rule depends on the HTTP method or path, unknown yet.
+    NeedsL7,
 }
 
 /// One rule examined during evaluation (the console's "evaluation trace").
@@ -157,6 +169,11 @@ pub struct Decision {
     pub observed: bool,
     pub llm_provider: bool,
     pub internal: bool,
+    /// Connection stage (no method nor path): a rule earlier than the deciding one depends on
+    /// the HTTP method or path. The gateway must inspect (decrypt HTTPS) and re-evaluate every
+    /// request; when such a rule is an accept, `verdict` is a provisional `Allow` given only so
+    /// that requests can be evaluated (ADR 0016).
+    pub needs_l7: bool,
     /// Policy revision that decided; `None` without a valid policy.
     pub revision: Option<u64>,
     /// Rules examined, in order, and why they (did not) match.
@@ -178,6 +195,9 @@ impl Decision {
         };
         if self.observed {
             reason = format!("{reason} (observe mode: denial not enforced)");
+        }
+        if self.needs_l7 {
+            reason.push_str("; pending per-request (L7) evaluation");
         }
         if self.llm_provider {
             reason.push_str("; llm provider: data-class rules skipped");

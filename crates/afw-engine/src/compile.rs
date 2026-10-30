@@ -15,7 +15,8 @@ use ipnet::IpNet;
 use uuid::Uuid;
 
 use crate::matching::{
-    DestSet, Host, M, Resolver, canon_ip, classify_host, leaf_of, normalize_path, path_has_prefix,
+    DestSet, Host, M, Resolver, canon_ip, canon_net, classify_host, leaf_of, normalize_path,
+    path_has_prefix,
 };
 use crate::{Decision, DecisionLayer, FlowContext, Implicit, TraceOutcome, TraceStep};
 
@@ -45,7 +46,10 @@ pub enum CompileError {
 }
 
 /// Well-known cloud metadata endpoints, always treated as `CloudMetadata` (ADR 0016).
-const BUILTIN_METADATA_NETS: [&str; 2] = ["169.254.169.254/32", "fd00:ec2::254/128"];
+/// The whole IPv4 link-local range is treated as sensitive (AWS ECS task metadata
+/// `169.254.170.2`, AWS DNS/NTP `169.254.169.253`…); `100.100.100.200` is Alibaba Cloud.
+const BUILTIN_METADATA_NETS: [&str; 3] =
+    ["169.254.0.0/16", "100.100.100.200/32", "fd00:ec2::254/128"];
 const BUILTIN_METADATA_NAMES: [&str; 2] = ["metadata.google.internal", "metadata.goog"];
 
 #[derive(Debug, Clone)]
@@ -75,6 +79,8 @@ struct CRule {
     /// Indexes into `Inner::services`; empty = any service.
     services: Vec<usize>,
     data_classes: Vec<Uuid>,
+    /// Destinations include a `cloud_metadata` object: the rule may accept metadata flows.
+    metadata_explicit: bool,
     action: Action,
     track: Track,
     expires_at: Option<DateTime<Utc>>,
@@ -121,6 +127,13 @@ pub struct CompiledPolicy {
 struct Flow<'a> {
     host: Host<'a>,
     ip: Option<IpAddr>,
+    /// `ip` is where the gateway really connects for this name (see `dst_ip_trusted`).
+    trusted: bool,
+    /// Destination is an LLM provider (EF-25).
+    llm: bool,
+    /// Destination is (possibly) cloud metadata.
+    metadata: bool,
+    l7: L7,
     path: Option<Option<String>>,
 }
 
@@ -245,6 +258,15 @@ impl CompiledPolicy {
                     Vec::new()
                 },
                 dest: dest_of(r.id, &r.destinations)?,
+                metadata_explicit: {
+                    let mut ids = HashSet::new();
+                    resolver.closure(&r.destinations, &mut ids);
+                    ids.iter().any(|id| {
+                        resolver
+                            .get(id)
+                            .is_some_and(|o| o.category == Some(DestCategory::CloudMetadata))
+                    })
+                },
                 services: svc,
                 data_classes: r.data_classes.clone(),
                 action: r.action,
@@ -311,7 +333,12 @@ impl CompiledPolicy {
                 services,
                 inspection,
                 data_classes: doc.data_classes.clone(),
-                internal_networks: doc.settings.internal_networks.clone(),
+                internal_networks: doc
+                    .settings
+                    .internal_networks
+                    .iter()
+                    .map(|n| canon_net(*n))
+                    .collect(),
                 llm: category(DestCategory::LlmProvider),
                 metadata,
                 internal_objects: category(DestCategory::Internal),
@@ -338,8 +365,8 @@ impl CompiledPolicy {
         let Some(inner) = &self.inner else {
             return false;
         };
-        let flow = Flow::new(host, ip, None);
-        inner.llm.matches(&flow.host, flow.ip) == M::Yes
+        let flow = Flow::new(host, ip, false, None);
+        inner.llm.matches(&flow.host, flow.trusted_ip()) == M::Yes
     }
 
     /// Data classes of the policy (to configure `afw-dlp` on the gateway).
@@ -360,8 +387,14 @@ impl CompiledPolicy {
 }
 
 impl<'a> Flow<'a> {
-    fn new(host: Option<&'a str>, dst_ip: Option<IpAddr>, path: Option<&str>) -> Self {
+    fn new(
+        host: Option<&'a str>,
+        dst_ip: Option<IpAddr>,
+        dst_ip_trusted: bool,
+        path: Option<&str>,
+    ) -> Self {
         let host = host.map(classify_host).unwrap_or(Host::Absent);
+        let trusted = dst_ip_trusted || matches!(host, Host::Absent | Host::Ip(_));
         let ip = dst_ip.map(canon_ip).or(match host {
             Host::Ip(ip) => Some(ip),
             _ => None,
@@ -369,9 +402,29 @@ impl<'a> Flow<'a> {
         Flow {
             host,
             ip,
+            trusted,
+            llm: false,
+            metadata: false,
+            l7: L7::Present,
             path: path.map(normalize_path),
         }
     }
+
+    /// Address usable to *grant* access: only when trusted.
+    fn trusted_ip(&self) -> Option<IpAddr> {
+        if self.trusted { self.ip } else { None }
+    }
+}
+
+/// Availability of HTTP method and path for the flow.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum L7 {
+    /// Method or path given (request stage).
+    Present,
+    /// Connection stage, the gateway can inspect and re-evaluate each request.
+    Pending,
+    /// Connection stage, requests will never be seen (TLS not inspected).
+    Unavailable,
 }
 
 fn implicit(kind: Implicit, revision: Option<u64>, trace: Vec<TraceStep>) -> Decision {
@@ -395,6 +448,7 @@ fn implicit(kind: Implicit, revision: Option<u64>, trace: Vec<TraceStep>) -> Dec
         observed: false,
         llm_provider: false,
         internal: false,
+        needs_l7: false,
         revision,
         trace,
     }
@@ -402,14 +456,20 @@ fn implicit(kind: Implicit, revision: Option<u64>, trace: Vec<TraceStep>) -> Dec
 
 impl Inner {
     fn evaluate(&self, ctx: &FlowContext) -> Decision {
-        let flow = Flow::new(ctx.host.as_deref(), ctx.dst_ip, ctx.path.as_deref());
-        let llm = self.llm.matches(&flow.host, flow.ip) == M::Yes;
-        // Cloud metadata (or possibly so): never implicitly allowed, even in observe mode.
+        let mut flow = Flow::new(
+            ctx.host.as_deref(),
+            ctx.dst_ip,
+            ctx.dst_ip_trusted,
+            ctx.path.as_deref(),
+        );
+        let tip = flow.trusted_ip();
+        let llm = self.llm.matches(&flow.host, tip) == M::Yes;
+        // Cloud metadata (or possibly so, whatever the trust): never implicitly allowed.
         let metadata = self.metadata.matches(&flow.host, flow.ip) != M::No;
-        let internal = flow.ip.is_some_and(|ip| {
+        let internal = tip.is_some_and(|ip| {
             self.internal_networks.iter().any(|n| n.contains(&ip))
                 || self.agent_by_ip.contains_key(&ip)
-        }) || self.internal_objects.matches(&flow.host, flow.ip) == M::Yes;
+        }) || self.internal_objects.matches(&flow.host, tip) == M::Yes;
 
         let Some(&agent_idx) = self.agent_by_ip.get(&canon_ip(ctx.agent_ip)) else {
             let mut d = implicit(Implicit::UnknownAgent, Some(self.revision), Vec::new());
@@ -419,10 +479,27 @@ impl Inner {
         };
         let agent = &self.agents[agent_idx];
         let zone = &self.zones[&agent.zone_id];
+        let inspect_tls = self.inspect_tls(agent.zone_id, &flow);
+        let l7 = if ctx.method.is_some() || ctx.path.is_some() {
+            L7::Present
+        } else if ctx.app == Some(AppProto::Http)
+            || (ctx.app == Some(AppProto::Https) && inspect_tls)
+        {
+            L7::Pending
+        } else {
+            L7::Unavailable
+        };
+        flow.llm = llm;
+        flow.metadata = metadata;
+        flow.l7 = l7;
+        let mut accept_pending = false;
 
         let mut trace = Vec::with_capacity(self.baseline.len() + zone.rules.len());
         let matched = self.baseline.iter().chain(zone.rules.iter()).find(|rule| {
-            let outcome = self.check(rule, agent.zone_id, ctx, &flow, llm);
+            let outcome = self.check(rule, agent.zone_id, ctx, &flow);
+            if outcome == TraceOutcome::NeedsL7 && rule.action == Action::Accept {
+                accept_pending = true;
+            }
             trace.push(TraceStep {
                 rule_id: rule.id,
                 rule_number: Some(rule.number),
@@ -452,6 +529,7 @@ impl Inner {
                 observed: false,
                 llm_provider: false,
                 internal: false,
+                needs_l7: false,
                 revision: Some(self.revision),
                 trace,
             },
@@ -466,7 +544,13 @@ impl Inner {
         d.zone_name = Some(zone.name.clone());
         d.llm_provider = llm;
         d.internal = internal;
-        d.inspect_tls = self.inspect_tls(agent.zone_id, &flow);
+        d.inspect_tls = inspect_tls;
+        d.needs_l7 = d.trace.iter().any(|s| s.outcome == TraceOutcome::NeedsL7);
+        // Connection stage: an earlier accept rule may match a request; the gateway inspects
+        // and re-evaluates every request (provisional allow, ADR 0016).
+        if d.verdict == Verdict::Deny && accept_pending {
+            d.verdict = Verdict::Allow;
+        }
 
         // EF-12: observe mode never lets cloud metadata through (ADR 0005).
         if d.verdict == Verdict::Deny && zone.mode == ZoneMode::Observe && !metadata {
@@ -482,8 +566,11 @@ impl Inner {
         zone_id: Uuid,
         ctx: &FlowContext,
         flow: &Flow<'_>,
-        llm: bool,
     ) -> TraceOutcome {
+        let (llm, metadata, l7) = (flow.llm, flow.metadata, flow.l7);
+        let accept = rule.action == Action::Accept;
+        // Deny rules match on any address; accept rules only on a trusted one.
+        let ip = if accept { flow.trusted_ip() } else { flow.ip };
         if !rule.enabled {
             return TraceOutcome::Disabled;
         }
@@ -508,19 +595,42 @@ impl Inner {
         let dest = rule
             .dest
             .as_ref()
-            .map_or(M::Yes, |d| d.matches(&flow.host, flow.ip));
+            .map_or(M::Yes, |d| d.matches(&flow.host, ip));
         if dest == M::No {
             return TraceOutcome::DestinationMismatch;
         }
+        // Metadata is accepted only by a rule naming a metadata object or its address.
+        if accept
+            && metadata
+            && !rule.metadata_explicit
+            && !rule
+                .dest
+                .as_ref()
+                .zip(ip)
+                .is_some_and(|(d, ip)| d.contains_ip(ip))
+        {
+            return TraceOutcome::MetadataProtected;
+        }
+        let mut pending = false;
         let svc = if rule.services.is_empty() {
             M::Yes
         } else {
             rule.services.iter().fold(M::No, |acc, &i| {
-                acc.or(service_matches(&self.services[i], ctx, flow))
+                acc.or(service_matches(
+                    &self.services[i],
+                    ctx,
+                    flow,
+                    l7,
+                    &mut pending,
+                ))
             })
         };
         if svc == M::No {
-            return TraceOutcome::ServiceMismatch;
+            return if pending {
+                TraceOutcome::NeedsL7
+            } else {
+                TraceOutcome::ServiceMismatch
+            };
         }
         match dest.and(svc) {
             M::Yes => TraceOutcome::Matched,
@@ -537,13 +647,19 @@ impl Inner {
                 (r.zones.is_empty() || r.zones.contains(&zone_id))
                     && r.dest
                         .as_ref()
-                        .is_none_or(|d| d.matches(&flow.host, flow.ip) == M::Yes)
+                        .is_none_or(|d| d.matches(&flow.host, flow.trusted_ip()) == M::Yes)
             })
             .is_none_or(|r| r.action == InspectionAction::Inspect)
     }
 }
 
-fn service_matches(s: &CService, ctx: &FlowContext, flow: &Flow<'_>) -> M {
+fn service_matches(
+    s: &CService,
+    ctx: &FlowContext,
+    flow: &Flow<'_>,
+    l7: L7,
+    pending: &mut bool,
+) -> M {
     if s.protocol != L4Proto::Any && s.protocol != ctx.l4 {
         return M::No;
     }
@@ -558,6 +674,17 @@ fn service_matches(s: &CService, ctx: &FlowContext, flow: &Flow<'_>) -> M {
     let Some(app) = &s.app else { return M::Yes };
     if ctx.app != Some(app.proto) {
         return M::No;
+    }
+    if !app.methods.is_empty() || !app.prefixes.is_empty() {
+        match l7 {
+            L7::Present => {}
+            L7::Pending => {
+                *pending = true;
+                return M::No;
+            }
+            // Requests will never be seen: only a deny rule may apply.
+            L7::Unavailable => return M::Unsure,
+        }
     }
     if !app.methods.is_empty() {
         let Some(m) = &ctx.method else { return M::No };

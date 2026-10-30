@@ -52,10 +52,52 @@ pub(crate) enum Host<'a> {
     Ip(IpAddr),
     /// Not a valid ASCII host name (non-ASCII, empty label, forbidden character…).
     Invalid,
+    /// Looks like an address but is not a canonical literal (`2852039166`, `0xa9fea9fe`,
+    /// `169.254.43518`, `[fe80::1%eth0]`, `host:443`…): uncertain for every set.
+    IpLike,
 }
 
+/// Canonical form of an address: IPv4-mapped (`::ffff:a.b.c.d`), NAT64 (`64:ff9b::/96`) and
+/// IPv4-compatible (`::a.b.c.d`, except `::` and `::1`) IPv6 addresses become IPv4.
 pub(crate) fn canon_ip(ip: IpAddr) -> IpAddr {
-    ip.to_canonical()
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            let low = ((s[6] as u32) << 16) | s[7] as u32;
+            let nat64 = s[..6] == [0x64, 0xff9b, 0, 0, 0, 0];
+            let compat = s[..6] == [0; 6] && low > 1;
+            if nat64 || compat {
+                IpAddr::V4(std::net::Ipv4Addr::from(low))
+            } else {
+                IpAddr::V6(v6)
+            }
+        }
+        v4 => v4,
+    }
+}
+
+/// Canonical form of a network: an IPv4-mapped IPv6 network becomes the IPv4 network.
+pub(crate) fn canon_net(net: IpNet) -> IpNet {
+    let net = net.trunc();
+    if let IpNet::V6(v6) = net
+        && v6.prefix_len() >= 96
+        && let Some(v4) = v6.network().to_ipv4_mapped()
+    {
+        return IpNet::new(IpAddr::V4(v4), v6.prefix_len() - 96)
+            .expect("prefix fits")
+            .trunc();
+    }
+    net
+}
+
+/// A name whose last label is numeric (`1234`, `0x1f`) is an inet_aton-style address form.
+fn numeric_form(name: &str) -> bool {
+    let last = name.rsplit('.').next().unwrap_or("");
+    !last.is_empty()
+        && (last.bytes().all(|c| c.is_ascii_digit())
+            || last
+                .strip_prefix("0x")
+                .is_some_and(|h| h.bytes().all(|c| c.is_ascii_hexdigit())))
 }
 
 /// Validates a lowercase name without trailing dot: ASCII labels of `[a-z0-9_-]`, 1 to 63
@@ -77,13 +119,19 @@ pub(crate) fn classify_host(raw: &str) -> Host<'_> {
     if let Some(inner) = raw.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
         return match inner.parse::<std::net::Ipv6Addr>() {
             Ok(ip) => Host::Ip(canon_ip(IpAddr::V6(ip))),
-            Err(_) => Host::Invalid,
+            Err(_) => Host::IpLike,
         };
     }
     if let Ok(ip) = raw.parse::<IpAddr>() {
         return Host::Ip(canon_ip(ip));
     }
+    if raw.contains(['[', ']', ':', '%']) {
+        return Host::IpLike;
+    }
     let name = raw.strip_suffix('.').unwrap_or(raw);
+    if numeric_form(&name.to_ascii_lowercase()) {
+        return Host::IpLike;
+    }
     if !name.is_ascii() {
         return Host::Invalid;
     }
@@ -130,7 +178,7 @@ pub(crate) fn leaf_of(spec: &NetObjectSpec) -> Option<Leaf> {
     match spec {
         NetObjectSpec::Domain { pattern } => parse_domain_pattern(pattern),
         NetObjectSpec::Host { ip } => Some(Leaf::Net(IpNet::from(canon_ip(*ip)))),
-        NetObjectSpec::Network { cidr } => Some(Leaf::Net(cidr.trunc())),
+        NetObjectSpec::Network { cidr } => Some(Leaf::Net(canon_net(*cidr))),
         NetObjectSpec::Range { start, end } => {
             let (s, e) = (canon_ip(*start), canon_ip(*end));
             (s.is_ipv4() == e.is_ipv4() && s <= e).then_some(Leaf::Range(s, e))
@@ -252,6 +300,10 @@ impl DestSet {
                 .any(|&(a, b)| a.is_ipv4() == ip.is_ipv4() && a <= ip && ip <= b)
     }
 
+    pub(crate) fn has_ips(&self) -> bool {
+        !self.nets.is_empty() || !self.ranges.is_empty()
+    }
+
     /// Matches a flow destination: names against `host`, addresses against `ip`.
     pub(crate) fn matches(&self, host: &Host<'_>, ip: Option<IpAddr>) -> M {
         if self.any {
@@ -277,6 +329,7 @@ impl DestSet {
                 }
             }
             Host::Invalid if self.has_names() => M::Unsure,
+            Host::IpLike if self.has_names() || self.has_ips() => M::Unsure,
             _ => M::No,
         }
     }
@@ -306,12 +359,15 @@ pub(crate) fn normalize_path(raw: &str) -> Option<String> {
             i += 1;
         }
     }
-    if decoded.iter().any(|&b| b < 0x20 || b == 0x7f) {
+    // A `%` left after one decoding pass (double encoding) is ambiguous: uncertain.
+    if decoded.iter().any(|&b| b < 0x20 || b == 0x7f || b == b'%') {
         return None;
     }
     let s = String::from_utf8(decoded).ok()?;
     let mut segs: Vec<&str> = Vec::new();
     for seg in s.split(['/', '\\']) {
+        // Path parameters (`/a;x`, `..;`) are dropped as servlet containers do.
+        let seg = seg.split(';').next().unwrap_or("");
         match seg {
             "" | "." => {}
             ".." => {

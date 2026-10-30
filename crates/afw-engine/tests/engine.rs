@@ -686,3 +686,144 @@ fn bench_2000_rules_10000_objects() {
         "evaluate (worst case, no match, 2000 rules / 10000 objects): p50 = {p50:.1} µs, p99 = {p99:.1} µs"
     );
 }
+
+// ------------------------------------------------------------------------------- review follow-ups
+
+#[test]
+fn trusted_destination_ip_grants_address_accepts() {
+    let (mut b, z) = base();
+    let n = b.obj(
+        "partner",
+        NetObjectSpec::Network {
+            cidr: "203.0.113.0/24".parse().unwrap(),
+        },
+    );
+    b.rule(
+        "partner",
+        Layer::Zone { zone_id: z },
+        1,
+        &[n],
+        Action::Accept,
+    );
+    let p = b.compile();
+    let mut c = ctx(A, Some("api.partner.example"), Some("203.0.113.7"), 443);
+    assert_eq!(p.evaluate(&c).verdict, Verdict::Deny);
+    c.dst_ip_trusted = true;
+    assert_eq!(p.evaluate(&c).verdict, Verdict::Allow);
+    // Internal monitor only on a trusted address.
+    let mut c = ctx(A, Some("db.internal.example"), Some("10.9.9.9"), 5432);
+    assert_eq!(p.evaluate(&c).implicit, Some(Implicit::Cleanup));
+    c.dst_ip_trusted = true;
+    assert_eq!(p.evaluate(&c).implicit, Some(Implicit::InternalMonitor));
+}
+
+#[test]
+fn deny_by_address_applies_even_when_untrusted() {
+    let (mut b, z) = base();
+    let n = b.obj(
+        "bad",
+        NetObjectSpec::Network {
+            cidr: "198.51.100.0/24".parse().unwrap(),
+        },
+    );
+    b.rule("bad", Layer::Zone { zone_id: z }, 1, &[n], Action::Deny);
+    b.rule("all", Layer::Zone { zone_id: z }, 2, &[], Action::Accept);
+    let p = b.compile();
+    let c = ctx(A, Some("good.example"), Some("198.51.100.9"), 443);
+    assert_eq!(p.evaluate(&c).rule_name, "bad");
+}
+
+#[test]
+fn metadata_needs_an_explicit_accept() {
+    let (mut b, z) = base();
+    let meta = b.obj_cat(
+        "meta",
+        NetObjectSpec::Host {
+            ip: ip("169.254.169.254"),
+        },
+        Some(DestCategory::CloudMetadata),
+    );
+    b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
+    let p = b.compile();
+    let d = p.evaluate(&ctx(A, None, Some("169.254.169.254"), 80));
+    assert_eq!(d.verdict, Verdict::Deny);
+    assert_eq!(d.trace[0].outcome, TraceOutcome::MetadataProtected);
+    b.rule(
+        "meta-ok",
+        Layer::Zone { zone_id: z },
+        0,
+        &[meta],
+        Action::Accept,
+    );
+    let p = b.compile();
+    assert_eq!(
+        p.evaluate(&ctx(A, None, Some("169.254.169.254"), 80))
+            .verdict,
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn needs_l7_at_connection_stage() {
+    let (mut b, z) = base();
+    let d = b.domain("api.example.com");
+    let admin = b.svc(
+        L4Proto::Tcp,
+        &[],
+        Some(AppMatch {
+            proto: AppProto::Https,
+            methods: vec![],
+            path_prefixes: vec!["/admin".into()],
+        }),
+    );
+    b.rule(
+        "no-admin",
+        Layer::Zone { zone_id: z },
+        1,
+        &[d],
+        Action::Deny,
+    )
+    .services = vec![admin];
+    b.rule("rest", Layer::Zone { zone_id: z }, 2, &[d], Action::Accept);
+    let p = b.compile();
+    let mut c = ctx(A, Some("api.example.com"), None, 443);
+    c.app = Some(AppProto::Https);
+    let dec = p.evaluate(&c);
+    assert_eq!(dec.verdict, Verdict::Allow);
+    assert!(
+        dec.needs_l7,
+        "the deny on /admin must be checked per request"
+    );
+    assert_eq!(dec.trace[0].outcome, TraceOutcome::NeedsL7);
+    assert!(dec.to_ref().reason.contains("L7"));
+
+    // TLS not inspected: requests will never be seen, the deny-by-path applies to the connection.
+    b.doc.inspection_rules.push(InspectionRule {
+        id: Uuid::new_v4(),
+        name: "bypass".into(),
+        position: 1,
+        zones: vec![],
+        destinations: vec![d],
+        action: InspectionAction::Bypass,
+    });
+    let p = b.compile();
+    let mut c = ctx(A, Some("api.example.com"), None, 443);
+    c.app = Some(AppProto::Https);
+    let dec = p.evaluate(&c);
+    assert_eq!(dec.verdict, Verdict::Deny);
+    assert!(!dec.needs_l7);
+}
+
+#[test]
+fn verify_empty_group_is_not_shadowed() {
+    let (mut b, z) = base();
+    let empty = b.obj("empty", NetObjectSpec::Group { members: vec![] });
+    let a = b.domain("a.com");
+    b.rule("a", Layer::Zone { zone_id: z }, 1, &[a], Action::Accept);
+    b.rule("e", Layer::Zone { zone_id: z }, 2, &[empty], Action::Accept);
+    assert!(
+        !verify(&b.doc, now())
+            .iter()
+            .any(|f| matches!(f, VerifyFinding::Shadowed { .. }))
+    );
+}

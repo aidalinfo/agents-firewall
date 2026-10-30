@@ -43,7 +43,38 @@ correspondances (noms, chemins, informations manquantes) et quelques cas que les
 11. **Masquage (EF-11)** conservateur : une règle n'est signalée masquée que si une règle active plus haute de la même
     couche, sans classe de données, couvre prouvablement sa source, sa destination (feuilles résolues) et son service.
 
+## Compléments après revue (PR #10)
+12. **Contrat passerelle — `FlowContext::dst_ip_trusted`.** `true` quand `dst_ip` est l'adresse que la passerelle a
+    elle-même résolue pour `host` (ou qu'il n'y a pas de nom) et vers laquelle elle se connecte réellement ; `false`
+    quand c'est l'adresse d'origine choisie par l'agent alors qu'un nom est présent. Avec un nom et une adresse non
+    fiable : aucune acceptation par objet IP/réseau/plage, pas d'acceptation implicite « interne surveillé », pas de
+    contournement d'inspection ni d'exemption LLM fondés sur l'adresse. Les règles Deny par adresse s'appliquent
+    toujours. **La passerelle résout le nom, se connecte à cette adresse et passe `dst_ip_trusted = true`.**
+13. **Chemins** : les paramètres `;…` de chaque segment sont retirés avant la résolution de `..` (`/x/..;/admin` →
+    `/admin`) ; un `%` restant après le décodage (double encodage) rend le chemin incertain.
+14. **Hôtes « presque IP »** : formes numériques (`2852039166`, `0xa9fea9fe`, `0251.0376.0251.0376`, `169.254.43518`)
+    et tout hôte contenant `[`, `]`, `:` ou `%` (port, identifiant de zone IPv6) sont incertains pour tout ensemble
+    (noms comme adresses) : Deny possible, Accept impossible.
+15. **Adresses canoniques** : IPv4 mappée, NAT64 `64:ff9b::/96` et IPv4 compatible (`::a.b.c.d`) ramenées à IPv4 ;
+    les objets réseau et `internal_networks` IPv4 mappés en IPv6 sont normalisés de même.
+16. **Métadonnées** : liste intégrée étendue à tout `169.254.0.0/16` (lien local sensible : `169.254.170.2`,
+    `169.254.169.253`…), `100.100.100.200` et `fd00:ec2::254`. Une destination de métadonnées n'est acceptée que par
+    une règle dont la destination contient explicitement cette adresse (adresse fiable) ou un objet `cloud_metadata`,
+    jamais par un domaine ni par « any » (`TraceOutcome::MetadataProtected`).
+17. **`Decision::needs_l7`** : au stade connexion (ni méthode ni chemin), si une règle plus haute que la règle
+    décisive dépend de la méthode ou du chemin, `needs_l7 = true` ; la passerelle doit alors inspecter (MITM HTTPS) et
+    réévaluer chaque requête. Si l'une de ces règles est un Accept et que la décision est un refus, le verdict devient
+    un `Allow` **provisoire** destiné uniquement à permettre l'évaluation par requête. Si la requête ne pourra jamais
+    être vue (HTTPS non inspecté ou protocole non HTTP), les conditions de méthode/chemin sont incertaines : un Deny
+    par chemin s'applique à toute la connexion, un Accept par chemin jamais.
+18. Un groupe vide ne produit pas de faux masquage.
+
+## Limites
+- Chemins sensibles à la casse : `/ADMIN` ne correspond pas à un préfixe `/admin` (un serveur insensible à la casse
+  peut donc contourner un Deny par chemin ; écrire les variantes ou refuser plus largement).
+- Un `%25` légitime dans un chemin rend la requête incertaine : une règle Accept par chemin ne s'y applique pas.
+
 ## Conséquences
 - Un encodage, une casse ou un point final ne permettent pas d'échapper à une règle Deny ni d'élargir une règle Accept.
 - La passerelle doit fournir des hôtes en ASCII/punycode et évaluer chaque requête HTTP(S) inspectée.
-- Performance mesurée (release, 2 000 règles, 10 000 objets, aucune correspondance) : p50 ≈ 5 µs, p99 ≈ 8 µs.
+- Performance mesurée (release, 2 000 règles, 10 000 objets, aucune correspondance) : p50 ≈ 5 µs, p99 ≈ 8 à 90 µs selon la charge du poste partagé.

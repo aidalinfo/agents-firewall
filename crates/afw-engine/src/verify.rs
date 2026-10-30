@@ -281,9 +281,9 @@ fn covers_dest(a: &Rule, b: &Rule, leaves: &HashMap<Uuid, Vec<Leaf>>) -> bool {
     if b.destinations.is_empty() {
         return la.contains(&Leaf::Any);
     }
-    leaves[&b.id]
-        .iter()
-        .all(|lb| la.iter().any(|x| leaf_covers(x, lb)))
+    let lb = &leaves[&b.id];
+    // An empty group matches nothing: do not report it as shadowed.
+    !lb.is_empty() && lb.iter().all(|l| la.iter().any(|x| leaf_covers(x, l)))
 }
 
 fn leaf_covers(a: &Leaf, b: &Leaf) -> bool {

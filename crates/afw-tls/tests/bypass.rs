@@ -78,7 +78,7 @@ fn gateway_identity_key_with_open_permissions_is_refused() {
     let console_dir = tempfile::tempdir().unwrap();
     let gw_dir = tempfile::tempdir().unwrap();
     let pki = ConsolePki::load_or_create(console_dir.path()).unwrap();
-    let (_key, csr) = GatewayIdentity::generate(gw_dir.path()).unwrap();
+    let csr = GatewayIdentity::generate(gw_dir.path()).unwrap();
     let cert = pki.sign_gateway_csr(&csr, "gw1", 30).unwrap();
     GatewayIdentity::store_cert(gw_dir.path(), &cert, &pki.ca_cert_pem()).unwrap();
     assert!(GatewayIdentity::client_config(gw_dir.path()).is_ok());
@@ -120,6 +120,12 @@ fn invalid_server_names_get_no_leaf() {
         "bad\0.example.com",
         "évil.example.com",
         &"a".repeat(64),
+        // M-4: all-numeric final label that is not a valid IP literal.
+        "1.2.3",
+        "999.1.1.1",
+        "10.0.0.256",
+        "example.123",
+        "0x7f.1",
         &format!("{}.com", "a.".repeat(130)),
     ] {
         assert!(ca.leaf_for(bad).is_err(), "{bad:?} must be refused");
@@ -136,7 +142,7 @@ async fn client_certificate_from_another_ca_is_refused() {
 
     // The gateway gets a certificate signed by a rogue CA, but trusts the real
     // console CA for the server side.
-    let (_key, csr) = GatewayIdentity::generate(gw_dir.path()).unwrap();
+    let csr = GatewayIdentity::generate(gw_dir.path()).unwrap();
     let cert = rogue.sign_gateway_csr(&csr, "gw1", 30).unwrap();
     GatewayIdentity::store_cert(gw_dir.path(), &cert, &console.ca_cert_pem()).unwrap();
     let client = GatewayIdentity::client_config(gw_dir.path()).unwrap();
@@ -213,7 +219,7 @@ fn invalid_gateway_ids_are_refused() {
     let console_dir = tempfile::tempdir().unwrap();
     let gw_dir = tempfile::tempdir().unwrap();
     let console = ConsolePki::load_or_create(console_dir.path()).unwrap();
-    let (_k, csr) = GatewayIdentity::generate(gw_dir.path()).unwrap();
+    let csr = GatewayIdentity::generate(gw_dir.path()).unwrap();
     for bad in ["", "a,b", "gw:x", "a/b", "a b", "x\n", &"a".repeat(129)] {
         assert!(console.sign_gateway_csr(&csr, bad, 30).is_err(), "{bad:?}");
     }
@@ -225,7 +231,7 @@ fn tampered_csr_is_refused() {
     let console_dir = tempfile::tempdir().unwrap();
     let gw_dir = tempfile::tempdir().unwrap();
     let console = ConsolePki::load_or_create(console_dir.path()).unwrap();
-    let (_k, csr) = GatewayIdentity::generate(gw_dir.path()).unwrap();
+    let csr = GatewayIdentity::generate(gw_dir.path()).unwrap();
     let mut der = rustls_pemfile::csr(&mut csr.as_bytes())
         .unwrap()
         .unwrap()
@@ -312,4 +318,144 @@ fn base64_encode(data: &[u8]) -> String {
         }
     }
     out
+}
+
+// ---- Review fixes: ownership, directory and symlink hardening (I-1, I-2, M-1, M-2) ----
+
+#[cfg(unix)]
+fn is_root() -> bool {
+    use std::os::unix::fs::MetadataExt;
+    // A file we just created is owned by our effective uid.
+    let f = tempfile::NamedTempFile::new().unwrap();
+    std::fs::metadata(f.path()).unwrap().uid() == 0
+}
+
+#[cfg(unix)]
+#[test]
+fn key_owned_by_another_user_is_refused() {
+    if !is_root() {
+        eprintln!("skipped: chown needs root");
+        return;
+    }
+    let console_dir = tempfile::tempdir().unwrap();
+    let gw_dir = tempfile::tempdir().unwrap();
+    let ca_dir = tempfile::tempdir().unwrap();
+    GatewayCa::load_or_create(ca_dir.path(), "gw").unwrap();
+    let pki = ConsolePki::load_or_create(console_dir.path()).unwrap();
+    let csr = GatewayIdentity::generate(gw_dir.path()).unwrap();
+    let cert = pki.sign_gateway_csr(&csr, "gw1", 30).unwrap();
+    GatewayIdentity::store_cert(gw_dir.path(), &cert, &pki.ca_cert_pem()).unwrap();
+
+    for key in [
+        ca_dir.path().join("ca.key"),
+        console_dir.path().join("ca.key"),
+        gw_dir.path().join("gateway.key"),
+    ] {
+        std::os::unix::fs::chown(&key, Some(12345), Some(12345)).unwrap();
+    }
+    assert!(GatewayCa::load_or_create(ca_dir.path(), "gw").is_err());
+    assert!(ConsolePki::load_or_create(console_dir.path()).is_err());
+    assert!(GatewayIdentity::client_config(gw_dir.path()).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn storage_dir_writable_by_group_or_others_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    GatewayCa::load_or_create(dir.path(), "gw").unwrap();
+    for mode in [0o770, 0o707, 0o777, 0o720] {
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(mode)).unwrap();
+        assert!(
+            GatewayCa::load_or_create(dir.path(), "gw").is_err(),
+            "{mode:o}"
+        );
+        assert!(ConsolePki::load_or_create(dir.path()).is_err(), "{mode:o}");
+        assert!(GatewayIdentity::generate(dir.path()).is_err(), "{mode:o}");
+    }
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(GatewayCa::load_or_create(dir.path(), "gw").is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn storage_dir_owned_by_another_user_is_refused() {
+    if !is_root() {
+        eprintln!("skipped: chown needs root");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::chown(dir.path(), Some(12345), Some(12345)).unwrap();
+    assert!(GatewayCa::load_or_create(dir.path(), "gw").is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn created_storage_dir_is_0700() {
+    use std::os::unix::fs::PermissionsExt;
+    let parent = tempfile::tempdir().unwrap();
+    for sub in ["gwca", "console", "identity"] {
+        let d = parent.path().join(sub).join("nested");
+        match sub {
+            "gwca" => drop(GatewayCa::load_or_create(&d, "gw").unwrap()),
+            "console" => drop(ConsolePki::load_or_create(&d).unwrap()),
+            _ => drop(GatewayIdentity::generate(&d).unwrap()),
+        }
+        let mode = std::fs::metadata(&d).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{sub}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_key_is_refused() {
+    let real = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    GatewayCa::load_or_create(real.path(), "gw").unwrap();
+    std::fs::copy(real.path().join("ca.crt"), dir.path().join("ca.crt")).unwrap();
+    std::os::unix::fs::symlink(real.path().join("ca.key"), dir.path().join("ca.key")).unwrap();
+    assert!(GatewayCa::load_or_create(dir.path(), "gw").is_err());
+}
+
+#[test]
+fn interrupted_creation_is_recovered_from_complete_staging() {
+    // Crash after the key was moved into place but before the certificate.
+    let src = tempfile::tempdir().unwrap();
+    let ca = GatewayCa::load_or_create(src.path(), "gw").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let staging = dir.path().join(".ca-staging");
+    std::fs::create_dir(&staging).unwrap();
+    for f in ["ca.key", "ca.crt"] {
+        std::fs::copy(src.path().join(f), staging.join(f)).unwrap();
+    }
+    std::fs::copy(src.path().join("ca.key"), dir.path().join("ca.key")).unwrap();
+    let again = GatewayCa::load_or_create(dir.path(), "gw").unwrap();
+    assert_eq!(again.fingerprint_sha256(), ca.fingerprint_sha256());
+    assert!(!staging.exists());
+}
+
+#[test]
+fn incomplete_staging_is_discarded() {
+    // Crash while writing the staging pair: nothing was committed.
+    let dir = tempfile::tempdir().unwrap();
+    let staging = dir.path().join(".ca-staging");
+    std::fs::create_dir(&staging).unwrap();
+    std::fs::write(staging.join("ca.key"), "partial").unwrap();
+    assert!(GatewayCa::load_or_create(dir.path(), "gw").is_ok());
+    assert!(!staging.exists());
+}
+
+#[test]
+fn staging_conflicting_with_committed_material_is_refused() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    GatewayCa::load_or_create(a.path(), "gw").unwrap();
+    GatewayCa::load_or_create(b.path(), "gw").unwrap();
+    let staging = a.path().join(".ca-staging");
+    std::fs::create_dir(&staging).unwrap();
+    for f in ["ca.key", "ca.crt"] {
+        std::fs::copy(b.path().join(f), staging.join(f)).unwrap();
+    }
+    std::fs::remove_file(a.path().join("ca.crt")).unwrap();
+    assert!(GatewayCa::load_or_create(a.path(), "gw").is_err());
 }

@@ -28,6 +28,9 @@ pub const AGENT_IP: &str = "127.0.0.1";
 pub const UNKNOWN_IP: &str = "127.0.0.2";
 pub const EVIL_IP: &str = "127.0.0.3";
 pub const INTERNAL_IP: &str = "127.0.0.4";
+/// Address of the "public" test upstreams (distinct from the agent's address, which the
+/// engine treats as internal).
+pub const UPSTREAM_IP: &str = "127.0.0.5";
 pub const AWS_KEY: &str = "AKIAIOSFODNN7EXAMPLE";
 
 pub fn id(n: u128) -> Uuid {
@@ -163,6 +166,8 @@ impl Log {
 pub struct Harness {
     pub gw: RunningGateway,
     pub events: broadcast::Receiver<GatewayEvent>,
+    /// Events received but not matched yet (a later wait may look for them).
+    pub seen: Vec<GatewayEvent>,
     pub upstream_addr: SocketAddr,
     pub plain_addr: SocketAddr,
     pub internal_addr: SocketAddr,
@@ -181,8 +186,8 @@ pub async fn harness_with(policy: Option<InstalledPolicy>, tweak: impl FnOnce(&m
     let up_dir = tempfile::tempdir().unwrap();
     let up_ca = afw_tls::GatewayCa::load_or_create(&up_dir.path().join("ca"), "upstream test CA").unwrap();
     let log = Log::default();
-    let upstream_addr = spawn_upstream("127.0.0.1:0".parse().unwrap(), Some(up_ca.clone()), log.clone()).await;
-    let plain_addr = spawn_upstream("127.0.0.1:0".parse().unwrap(), None, log.clone()).await;
+    let upstream_addr = spawn_upstream(format!("{UPSTREAM_IP}:0").parse().unwrap(), Some(up_ca.clone()), log.clone()).await;
+    let plain_addr = spawn_upstream(format!("{UPSTREAM_IP}:0").parse().unwrap(), None, log.clone()).await;
     let internal_addr = spawn_echo(format!("{INTERNAL_IP}:0").parse().unwrap()).await;
 
     if let Some(p) = &policy {
@@ -190,7 +195,7 @@ pub async fn harness_with(policy: Option<InstalledPolicy>, tweak: impl FnOnce(&m
     }
     let mut hosts: HashMap<String, Vec<IpAddr>> = HashMap::new();
     for h in ["allowed.test", "llm.test", "denied.test", "k8s.test", "other.test"] {
-        hosts.insert(h.into(), vec!["127.0.0.1".parse().unwrap()]);
+        hosts.insert(h.into(), vec![UPSTREAM_IP.parse().unwrap()]);
     }
     hosts.insert("metadata.test".into(), vec!["169.254.169.254".parse().unwrap()]);
     let orig = Arc::new(MapOrigDst::default());
@@ -204,6 +209,7 @@ pub async fn harness_with(policy: Option<InstalledPolicy>, tweak: impl FnOnce(&m
     Harness {
         gw,
         events,
+        seen: Vec::new(),
         upstream_addr,
         plain_addr,
         internal_addr,
@@ -241,16 +247,24 @@ impl Harness {
         tls_with(tcp, sni, &self.inspection_ca(), vec![b"http/1.1".to_vec()]).await
     }
 
-    /// Waits for the first event matching `pred`.
+    /// Waits for the first event matching `pred` (including events already received).
     pub async fn wait_event(&mut self, pred: impl Fn(&GatewayEvent) -> bool) -> GatewayEvent {
+        if let Some(i) = self.seen.iter().position(&pred) {
+            return self.seen.remove(i);
+        }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
             match tokio::time::timeout_at(deadline, self.events.recv()).await {
                 Ok(Ok(ev)) if pred(&ev) => return ev,
-                Ok(Ok(_)) => continue,
+                Ok(Ok(ev)) => {
+                    if std::env::var("AFW_TEST_DEBUG").is_ok() {
+                        eprintln!("event: {}", serde_json::to_string(&ev).unwrap());
+                    }
+                    self.seen.push(ev);
+                }
                 Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
                 Ok(Err(e)) => panic!("event channel closed: {e}"),
-                Err(_) => panic!("timed out waiting for event"),
+                Err(_) => panic!("timed out waiting for event; seen: {:?}", self.seen),
             }
         }
     }

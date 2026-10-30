@@ -13,7 +13,6 @@ pub mod console_client;
 pub mod dlp;
 pub mod dns;
 pub mod engine;
-mod engine_shim;
 pub mod events;
 pub mod explicit_proxy;
 pub mod flow;

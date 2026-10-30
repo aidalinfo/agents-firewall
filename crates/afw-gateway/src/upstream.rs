@@ -20,15 +20,23 @@ const DNS_TIMEOUT: Duration = Duration::from_secs(4);
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Cloud metadata endpoints (AWS/GCP/Azure/OpenStack IPv4, AWS IPv6).
+/// Aligned with the engine's built-in list (ADR 0016 §16): all of 169.254.0.0/16 (link
+/// local), 100.100.100.200 (Alibaba) and fd00:ec2::254 (AWS IPv6); mapped IPv4 included.
 pub fn is_cloud_metadata(ip: IpAddr) -> bool {
-    ip == IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))
-        || ip == IpAddr::V6(Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254))
+    let ip = match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        v4 => v4,
+    };
+    match ip {
+        IpAddr::V4(v4) => (v4.octets()[0] == 169 && v4.octets()[1] == 254) || v4 == Ipv4Addr::new(100, 100, 100, 200),
+        IpAddr::V6(v6) => v6 == Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254),
+    }
 }
 
 /// Well-known metadata host names.
 pub fn is_cloud_metadata_name(name: &str) -> bool {
     let n = name.trim_end_matches('.').to_ascii_lowercase();
-    n == "metadata.google.internal" || n == "metadata" || n == "instance-data" || n == "instance-data.ec2.internal"
+    n == "metadata.google.internal" || n == "metadata.goog" || n == "metadata" || n == "instance-data" || n == "instance-data.ec2.internal"
 }
 
 pub trait Resolver: Send + Sync {

@@ -48,7 +48,7 @@ pub struct RunArgs {
     #[arg(long, env = "AFW_STATE_DIR", default_value = "/var/lib/afw")]
     pub state_dir: PathBuf,
     /// Where to export the PUBLIC inspection CA certificate (never the key).
-    #[arg(long, env = "AFW_CA_EXPORT", default_value = "/var/lib/afw/public/inspection-ca.crt")]
+    #[arg(long, env = "AFW_CA_EXPORT", default_value = "/var/lib/afw/public/gateway.crt")]
     pub ca_export: PathBuf,
     /// Upstream DNS server (`ip` or `ip:port`); default: first nameserver of /etc/resolv.conf.
     #[arg(long, env = "AFW_UPSTREAM_DNS")]

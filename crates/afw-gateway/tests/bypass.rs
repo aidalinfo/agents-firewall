@@ -50,7 +50,7 @@ async fn no_policy_denies_everything() {
     let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut buf)).await.unwrap();
     assert!(matches!(r, Ok(0) | Err(_)), "connection must be refused: {r:?}");
     let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.decision.revision.is_none())).await;
-    assert_eq!(flow(&ev).unwrap().decision.reason, "no-policy");
+    assert_eq!(flow(&ev).unwrap().decision.rule_name, "no-policy");
     assert!(h.log.all().is_empty(), "nothing may reach an upstream");
 }
 
@@ -129,7 +129,7 @@ async fn denied_tcp_is_reset_and_logged() {
     let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny)).await;
     let f = flow(&ev).unwrap();
     assert_eq!(f.dst, dst);
-    assert_eq!(f.decision.reason, "default-deny");
+    assert_eq!(f.decision.rule_name, "default-deny");
 }
 
 #[tokio::test]
@@ -273,7 +273,9 @@ async fn secret_split_across_chunks_blocked() {
     let mut first = filler.clone();
     first.extend_from_slice(b" ");
     first.extend_from_slice(a.as_bytes());
-    for chunk in [first, b.as_bytes().to_vec(), vec![b'z'; 1024]] {
+    let mut tail = b" ".to_vec();
+    tail.extend_from_slice(&[b'z'; 1024]);
+    for chunk in [first, b.as_bytes().to_vec(), tail] {
         tls.write_all(format!("{:x}\r\n", chunk.len()).as_bytes()).await.unwrap();
         tls.write_all(&chunk).await.unwrap();
         tls.write_all(b"\r\n").await.unwrap();
@@ -422,7 +424,7 @@ async fn internal_flow_allowed_and_logged_detailed() {
     let ev = h.wait_event(|e| flow(e).is_some_and(|f| f.internal)).await;
     let f = flow(&ev).unwrap();
     assert_eq!(f.verdict, Verdict::Allow);
-    assert_eq!(f.decision.reason, "internal-monitor");
+    assert_eq!(f.decision.rule_name, "internal-monitor");
     assert!(f.bytes_out >= 5 && f.bytes_in >= 5, "{f:?}");
     h.wait_event(|e| matches!(e, GatewayEvent::Alert(a) if a.kind == AlertKind::NewInternalHost)).await;
 }

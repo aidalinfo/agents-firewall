@@ -1,6 +1,3 @@
-//! Rule engine used by the gateway. Points to the stand-in until `afw-engine` (lot L5) is
-//! merged; then this module becomes `pub use afw_engine::{...}` with no other change.
+//! Rule engine used by the gateway (`afw-engine`, lot L5; contract in ADR 0016 §12–18).
 
-pub use crate::engine_shim::{
-    CompileError, CompiledPolicy, Decision, DecisionLayer, FlowContext, Implicit,
-};
+pub use afw_engine::{CompileError, CompiledPolicy, Decision, DecisionLayer, FlowContext, Implicit};

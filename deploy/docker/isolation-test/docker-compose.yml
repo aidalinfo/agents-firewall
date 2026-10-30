@@ -1,0 +1,94 @@
+# Real network isolation test of the gateway (ENF-07, ADR 0003). Run with ./run.sh.
+# Topology: agent (no NET_ADMIN) shares the namespace of afw-net (route to the gateway only) on an
+# internal network; the gateway is the only member of both the internal network and the "wan".
+name: afw-isolation-test
+
+services:
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/Dockerfile.gateway
+    image: afw-gateway:local
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - afw-gateway seal-policy /policy/document.json --out /tmp/policy.json && exec gateway-entrypoint --standalone-policy /tmp/policy.json
+    environment:
+      AFW_INTERNAL_SUBNETS: 10.99.0.0/24
+      AFW_STATE_DIR: /var/lib/afw
+      AFW_CA_EXPORT: /var/lib/afw/public/gateway.crt
+      RUST_LOG: info
+    volumes:
+      - ./policy-document.json:/policy/document.json:ro
+      - gateway-public:/var/lib/afw/public
+    networks:
+      internal:
+        ipv4_address: 10.99.0.2
+      wan:
+        ipv4_address: 198.18.99.2
+
+  web:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /www && echo hello-from-web > /www/index.html
+        (while true; do nc -l -p 4444 -e /bin/cat; done) &
+        exec httpd -f -v -p 80 -h /www
+    networks:
+      wan:
+        ipv4_address: 198.18.99.20
+        aliases: [allowed.example, denied.example]
+
+  afw-net:
+    build:
+      context: ..
+      dockerfile: Dockerfile.netinit
+    image: afw-netinit:local
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    environment:
+      AFW_GATEWAY_IP: 10.99.0.2
+      AFW_AGENT_IP: 10.99.0.10
+    volumes:
+      - gateway-public:/afw-ca-src:ro
+      - agent-ca:/afw-ca
+    networks:
+      internal:
+        ipv4_address: 10.99.0.10
+    depends_on: [gateway]
+
+  agent:
+    build:
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN apk add --no-cache curl bind-tools netcat-openbsd iproute2
+    image: afw-isolation-agent:local
+    network_mode: service:afw-net
+    cap_drop: [NET_ADMIN, NET_RAW]
+    environment:
+      CURL_CA_BUNDLE: /afw-ca/bundle.pem
+    volumes:
+      - agent-ca:/afw-ca:ro
+    command: ["sleep", "infinity"]
+    depends_on: [afw-net]
+
+networks:
+  internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.99.0.0/24
+  wan:
+    internal: true
+    ipam:
+      config:
+        - subnet: 198.18.99.0/24
+
+volumes:
+  gateway-public:
+  agent-ca:

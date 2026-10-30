@@ -24,6 +24,20 @@ pub enum Cmd {
     Run(RunArgs),
     /// Register with the console using a one-time token, then exit.
     Register(RegisterArgs),
+    /// Wraps a PolicyDocument (JSON) into a sealed InstalledPolicy for `--standalone-policy`
+    /// (recette and tests without a console).
+    SealPolicy(SealArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SealArgs {
+    /// PolicyDocument JSON file.
+    pub document: PathBuf,
+    #[arg(long, default_value_t = 1)]
+    pub revision: u64,
+    /// Output file (default: standard output).
+    #[arg(long)]
+    pub out: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

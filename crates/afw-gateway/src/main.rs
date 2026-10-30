@@ -34,13 +34,24 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Cmd::Run(a)) => run(a).await,
+        Some(Cmd::SealPolicy(a)) => {
+            let doc: afw_core::policy::PolicyDocument = serde_json::from_slice(&std::fs::read(&a.document)?)?;
+            let sealed = afw_core::InstalledPolicy::new(a.revision, "afw-gateway seal-policy", doc);
+            afw_engine::CompiledPolicy::compile(&sealed, chrono::Utc::now()).map_err(|e| anyhow::anyhow!("policy does not compile: {e}"))?;
+            let json = serde_json::to_vec_pretty(&sealed)?;
+            match a.out {
+                Some(p) => std::fs::write(p, json)?,
+                None => println!("{}", String::from_utf8_lossy(&json)),
+            }
+            Ok(())
+        }
         None => run(cli.run).await,
     }
 }
 
 async fn run(a: RunArgs) -> anyhow::Result<()> {
     if let (Some(url), Some(token)) = (
-        &a.console_url,
+        a.console_url.as_ref().filter(|u| !u.is_empty()),
         a.registration_token.as_deref().filter(|t| !t.is_empty()),
     ) && !is_registered(&a.state_dir)
     {
@@ -50,7 +61,7 @@ async fn run(a: RunArgs) -> anyhow::Result<()> {
             .filter(|p| !p.as_os_str().is_empty())
             .map(std::fs::read_to_string)
             .transpose()?;
-        let name = a.gateway_name.clone().unwrap_or_else(hostname);
+        let name = a.gateway_name.clone().filter(|n| !n.is_empty()).unwrap_or_else(hostname);
         match register(url, token, &name, ca, &a.state_dir).await {
             Ok(id) => tracing::info!(%id, "registered with the console"),
             Err(e) => {

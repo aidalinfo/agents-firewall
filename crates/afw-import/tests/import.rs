@@ -29,14 +29,14 @@ fn has_warning(plan: &afw_import::ImportPlan, needle: &str) -> bool {
 #[test]
 fn full_example_counts() {
     let plan = import_example();
-    // 11 allowed + 3 denied hosts, 5 tier groups + 1 denied group.
+    // 10 allowed + 3 denied hosts, 5 tier groups + 1 denied group.
     let leaves = plan
         .objects
         .iter()
         .filter(|o| !matches!(o.spec, NetObjectSpec::Group { .. }))
         .count();
     let groups = plan.objects.len() - leaves;
-    assert_eq!((leaves, groups), (14, 6), "{:#?}", plan.objects);
+    assert_eq!((leaves, groups), (13, 6), "{:#?}", plan.objects);
     // One TCP/587 service for the partner SMTP host.
     assert_eq!(plan.services.len(), 1);
     assert_eq!(plan.services[0].ports[0].start, 587);
@@ -133,7 +133,10 @@ fn destination_tiers_become_groups_with_categories() {
         object(&plan, "egress-guard/assistant/internal").category,
         Some(DestCategory::Internal)
     );
-    assert_eq!(object(&plan, "egress-guard/assistant/public").category, None);
+    assert_eq!(
+        object(&plan, "egress-guard/assistant/public").category,
+        None
+    );
     // Leaf objects carry their tier category too.
     assert_eq!(
         object(&plan, "api.openai.com").category,
@@ -183,8 +186,16 @@ fn matrix_becomes_content_rules() {
         .collect();
     let first_plain_accept = kinds.iter().position(|k| k.1).unwrap();
     assert!(kinds[..5].iter().all(|k| *k == (Action::Deny, false)));
-    assert!(kinds[5..first_plain_accept].iter().all(|k| *k == (Action::Accept, false)));
-    assert!(kinds[first_plain_accept..].iter().all(|k| *k == (Action::Accept, true)));
+    assert!(
+        kinds[5..first_plain_accept]
+            .iter()
+            .all(|k| *k == (Action::Accept, false))
+    );
+    assert!(
+        kinds[first_plain_accept..]
+            .iter()
+            .all(|k| *k == (Action::Accept, true))
+    );
 
     let policy = compile(&plan);
     // deny
@@ -232,9 +243,12 @@ fn data_class_categories_and_detectors() {
         id: "aws_access_key".into()
     }));
     // ...custom patterns that do not match presigned URLs are kept...
-    assert!(secrets.detectors.iter().any(
-        |d| matches!(d, Detector::Regex { name, .. } if name == "example_api_key")
-    ));
+    assert!(
+        secrets
+            .detectors
+            .iter()
+            .any(|d| matches!(d, Detector::Regex { name, .. } if name == "example_api_key"))
+    );
     // ...and the ones that caught presigned uploads are dropped (EF-72).
     assert!(!secrets.detectors.iter().any(
         |d| matches!(d, Detector::Regex { name, .. } if name == "aws_signature" || name == "aws_access_key")
@@ -251,7 +265,12 @@ fn action_classes_become_intent_policy() {
     let ids: Vec<&str> = ip.action_classes.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(
         ids,
-        ["irreversible", "access", "infra_destructive", "paid_generation"]
+        [
+            "irreversible",
+            "access",
+            "infra_destructive",
+            "paid_generation"
+        ]
     );
     let infra = &ip.action_classes[2];
     assert_eq!(infra.name, "Infrastructure destructive");
@@ -410,16 +429,13 @@ fn reuses_existing_objects_and_zone() {
 fn session_changes_are_ordered_by_dependency() {
     let plan = import_example();
     let changes = plan.to_session_changes();
-    let total = plan.objects.len()
-        + plan.services.len()
-        + plan.data_classes.len()
-        + 1
-        + plan.rules.len();
+    let total =
+        plan.objects.len() + plan.services.len() + plan.data_classes.len() + 1 + plan.rules.len();
     assert_eq!(changes.len(), total);
     let pos = |pred: &dyn Fn(&SessionChange) -> bool| changes.iter().position(pred).unwrap();
-    let first_group = pos(&|c| {
-        matches!(c, SessionChange::CreateObject(o) if matches!(o.spec, NetObjectSpec::Group{..}))
-    });
+    let first_group = pos(
+        &|c| matches!(c, SessionChange::CreateObject(o) if matches!(o.spec, NetObjectSpec::Group{..})),
+    );
     let last_leaf = changes
         .iter()
         .rposition(|c| {

@@ -124,12 +124,8 @@ fn global_wildcard_is_never_any() {
     let yaml =
         "destinations:\n  allow:\n    - { host: '*', tier: t }\n    - { host: '*.*', tier: t }\n";
     let plan = import_enforced(yaml);
-    assert!(
-        !plan
-            .objects
-            .iter()
-            .any(|o| o.spec == NetObjectSpec::Any || matches!(&o.spec, NetObjectSpec::Domain { pattern } if pattern.contains("*.*")))
-    );
+    assert!(!plan.objects.iter().any(|o| o.spec == NetObjectSpec::Any
+        || matches!(&o.spec, NetObjectSpec::Domain { pattern } if pattern.contains("*.*"))));
     assert!(plan.rules.iter().all(|r| r.action == Action::Deny));
     let policy = compile(&plan);
     assert_eq!(
@@ -140,7 +136,8 @@ fn global_wildcard_is_never_any() {
 
 #[test]
 fn default_allow_does_not_disable_default_deny() {
-    let yaml = "destinations:\n  default: allow\n  allow:\n    - { host: api.example.com, tier: t }\n";
+    let yaml =
+        "destinations:\n  default: allow\n  allow:\n    - { host: api.example.com, tier: t }\n";
     let plan = import_enforced(yaml);
     assert!(
         plan.report
@@ -165,14 +162,24 @@ fn unknown_matrix_decision_is_strictest() {
         verdict(&policy, "api.example.com", 443, vec![s]).0,
         Verdict::Deny
     );
-    assert!(plan.report.warnings.iter().any(|w| w.message.contains("allwo")));
+    assert!(
+        plan.report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("allwo"))
+    );
 }
 
 #[test]
 fn llm_tier_defined_by_category_only_is_exempt_but_reported() {
     let yaml = "tiers:\n  ai: { category: llm_provider }\ndata_classes:\n  secrets:\n    patterns: ['exk_[a-z0-9]{32}']\ndestinations:\n  allow:\n    - { host: api.llm.example, tier: ai }\nmatrix:\n  secrets: { ai: deny }\n";
     let plan = import_enforced(yaml);
-    assert!(plan.report.warnings.iter().any(|w| w.message.contains("EF-25")));
+    assert!(
+        plan.report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("EF-25"))
+    );
 }
 
 // ---- EF-72: presigned S3 uploads ------------------------------------------------------------
@@ -228,7 +235,11 @@ fn scanner_for(plan: &afw_import::ImportPlan) -> Scanner {
 fn presigned_s3_upload_is_not_blocked_ef72() {
     let plan = import_enforced(EXAMPLE);
     let scanner = scanner_for(&plan);
-    assert!(scanner.scan_url(PRESIGNED).is_empty(), "{:#?}", scanner.scan_url(PRESIGNED));
+    assert!(
+        scanner.scan_url(PRESIGNED).is_empty(),
+        "{:#?}",
+        scanner.scan_url(PRESIGNED)
+    );
     let body = format!("{{\"upload_url\":\"{PRESIGNED}\"}}");
     let found = scanner.scan(body.as_bytes(), "body");
     assert!(found.is_empty(), "{found:#?}");

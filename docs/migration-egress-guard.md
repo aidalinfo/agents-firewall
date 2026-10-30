@@ -2,7 +2,7 @@
 
 Ce guide décrit le passage d'un agent Hermes protégé par l'**egress-guard** (le hook `pre_tool_call` qui inspecte les arguments des outils) à agents-firewall. Il prend l'exemple de **Daniel**, le premier bot qui en était équipé ; la démarche est la même pour les autres agents (Laurent, Vulcain…).
 
-> **État d'avancement.** L'outil d'import et la CLI sont en cours de construction (à venir). La correspondance décrite ci-dessous est celle fixée par le plan d'implémentation.
+> **État d'avancement.** La conversion (crate `afw-import`, [ADR 0026](adr/0026-import-egress-guard.md)) est disponible ; la commande `afw import egress-guard` qui l'applique dans une session est livrée avec la CLI.
 
 ## Pourquoi migrer
 
@@ -20,15 +20,18 @@ L'egress-guard a posé de bons principes : décision par du code déterministe, 
 
 | egress-guard (`pulse-mcp-guardrails.yaml`) | agents-firewall |
 |---|---|
-| hôtes autorisés | objets destination + règles `accept` de la zone de l'agent |
-| hôtes refusés | objets + règles `deny` (zone ou socle commun) |
-| refus par défaut | règle de nettoyage implicite |
-| classes de sensibilité (regex : secrets, inventaire infra, commercial) | classes de données |
-| matrice « classe de donnée × tier de destination » | règles de contenu (règles avec classes de données), portées par la **passerelle** |
+| hôtes autorisés | objets destination, un groupe par tier (`egress-guard/<zone>/<tier>`), une règle `accept` par tier dans la zone de l'agent (et une par liste de ports) |
+| hôtes refusés | objets + une règle `deny` du **socle commun**, limitée à la zone importée (à élargir si elle vaut pour toute la flotte) |
+| refus par défaut | règle de nettoyage implicite (toujours active, quelle que soit la valeur de `default`) |
+| classes de sensibilité (regex : secrets, inventaire infra, commercial) | classes de données ; la classe des secrets reçoit les détecteurs intégrés, les motifs qui attrapaient les URL présignées sont retirés |
+| matrice « classe de donnée × tier de destination » | règles de contenu de la zone, portées par la **passerelle** : `deny` et `gate` → refus, `log` → acceptation journalisée par une règle dédiée, `allow` → rien |
 | classes d'actions (irréversible, accès, infra destructive, génération payante) et « gate » | **politique d'intention** du plugin Hermes |
+| expéditeurs autorisés | non converti (pas d'équivalent réseau), signalé dans le rapport |
 | journal JSONL `data/logs/egress-guard.log` | journal de la console (flux, DNS, HTTP, appels d'outil) |
 
-La matrice n'est **pas** dupliquée dans le plugin : la passerelle voit le contenu réellement envoyé, c'est elle qui décide sur les destinations et les données. Le plugin ne garde que les classes d'actions.
+La matrice n'est **pas** dupliquée dans le plugin : la passerelle voit le contenu réellement envoyé, c'est elle qui décide sur les destinations et les données. Le plugin ne garde que les classes d'actions. Comme la passerelle n'a pas de file de validation en V1, un « gate » de la matrice devient un refus (le rapport le signale) ; les fournisseurs de LLM restent exemptés du blocage par classe de données.
+
+Le format accepté est décrit et illustré par le fichier d'exemple anonymisé [`examples/egress-guard/guardrails.example.yaml`](../examples/egress-guard/guardrails.example.yaml). Tout champ inconnu est signalé dans le rapport, jamais ignoré en silence.
 
 ## Étapes
 
@@ -43,9 +46,9 @@ La matrice n'est **pas** dupliquée dans le plugin : la passerelle voit le conte
 afw import egress-guard pulse-mcp-guardrails.yaml --zone daniel
 ```
 
-L'import ouvre une session, crée les objets, classes de données et règles, prépare la politique d'intention, puis affiche un **rapport d'import** (ce qui a été converti, ce qui demande une relecture). Relisez la session avant de la publier. Un fichier d'exemple anonymisé sera fourni dans `examples/` (à venir).
+L'import ouvre une session, crée les objets, classes de données et règles, prépare la politique d'intention, puis affiche un **rapport d'import** en trois parties : converti, avertissements (à relire : approximations, jokers, motifs retirés, champs inconnus) et non converti. Relisez la session avant de la publier. Un second import du même fichier ne crée rien de plus (objets, classes et règles existants sont réutilisés).
 
-Placez la zone `daniel` en **mode observation**, puis publiez et installez.
+La zone `daniel` est créée en **mode observation** par défaut ; publiez et installez.
 
 > Pourquoi une zone dédiée ? Il n'y a pas d'exception par agent : un bot aux besoins particuliers reçoit sa propre zone. Si plusieurs bots ont les mêmes besoins, ils peuvent la partager.
 

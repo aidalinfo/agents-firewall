@@ -1,0 +1,2 @@
+-- Reserved migration: policy model, sessions, revisions, installs, approvals (lot L7a).
+-- Intentionally empty in L0; the owning lot fills it.

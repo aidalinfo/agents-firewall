@@ -1,0 +1,36 @@
+[package]
+name = "afw-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "agents-firewall control-plane API"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "afw-api"
+path = "src/main.rs"
+
+[dependencies]
+afw-core = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+serde_yaml = { workspace = true }
+schemars = { workspace = true }
+http-body-util = { workspace = true }

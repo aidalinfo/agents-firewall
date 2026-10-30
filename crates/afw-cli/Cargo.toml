@@ -1,0 +1,20 @@
+[package]
+name = "afw-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "agents-firewall command-line interface (afw)"
+
+[dependencies]
+afw-core = { workspace = true }
+afw-client = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "afw"
+path = "src/main.rs"

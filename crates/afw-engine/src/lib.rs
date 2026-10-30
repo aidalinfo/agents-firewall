@@ -174,6 +174,11 @@ pub struct Decision {
     /// request; when such a rule is an accept, `verdict` is a provisional `Allow` given only so
     /// that requests can be evaluated (ADR 0016).
     pub needs_l7: bool,
+    /// Connection stage without content analysis (`data_classes` empty, no method/path): a deny
+    /// rule earlier than the deciding one has a data-class condition and would otherwise match
+    /// this flow. When the gateway cannot inspect the content (raw TCP), it must refuse the
+    /// flow instead of relaying it (ADR 0016 §19, ADR 0017).
+    pub content_rules_apply: bool,
     /// Policy revision that decided; `None` without a valid policy.
     pub revision: Option<u64>,
     /// Rules examined, in order, and why they (did not) match.

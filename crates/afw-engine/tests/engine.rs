@@ -827,3 +827,48 @@ fn verify_empty_group_is_not_shadowed() {
             .any(|f| matches!(f, VerifyFinding::Shadowed { .. }))
     );
 }
+
+#[test]
+fn content_rules_apply_flags_uninspectable_flows() {
+    let (mut b, z) = base();
+    let api = b.domain("api.example.com");
+    let other = b.domain("other.example.com");
+    let llm = b.obj_cat(
+        "llm",
+        NetObjectSpec::Domain { pattern: "llm.example.com".into() },
+        Some(DestCategory::LlmProvider),
+    );
+    let secrets = b.class("secrets");
+    b.rule("no secrets to api", Layer::Baseline, 1, &[api], Action::Deny).data_classes = vec![secrets];
+    b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
+    let p = b.compile();
+
+    // Raw TCP to api: accepted, but a deny-by-content rule above could apply and the content
+    // will never be seen.
+    let dec = p.evaluate(&ctx(A, Some("api.example.com"), None, 22));
+    assert_eq!(dec.verdict, Verdict::Allow);
+    assert!(dec.content_rules_apply);
+    // Other destination: the content rule cannot target it.
+    let dec = p.evaluate(&ctx(A, Some("other.example.com"), None, 22));
+    assert!(!dec.content_rules_apply);
+    let _ = other;
+    // LLM provider: data-class rules are skipped (EF-25).
+    b.rule("no secrets anywhere", Layer::Baseline, 2, &[], Action::Deny).data_classes = vec![secrets];
+    let p = b.compile();
+    let dec = p.evaluate(&ctx(A, Some("llm.example.com"), None, 22));
+    assert!(!dec.content_rules_apply);
+    let _ = llm;
+    // Request stage with content already analysed: not set.
+    let mut c = http(A, "other.example.com", "POST", "/x");
+    c.data_classes = vec![];
+    let dec = p.evaluate(&c);
+    assert!(!dec.content_rules_apply);
+    // A deny-by-content rule BELOW the deciding rule does not count.
+    let (mut b, z) = base();
+    let api = b.domain("api.example.com");
+    let secrets = b.class("secrets");
+    b.rule("allow api", Layer::Baseline, 1, &[api], Action::Accept);
+    b.rule("no secrets", Layer::Zone { zone_id: z }, 1, &[], Action::Deny).data_classes = vec![secrets];
+    let p = b.compile();
+    assert!(!p.evaluate(&ctx(A, Some("api.example.com"), None, 22)).content_rules_apply);
+}

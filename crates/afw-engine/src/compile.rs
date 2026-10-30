@@ -449,6 +449,7 @@ fn implicit(kind: Implicit, revision: Option<u64>, trace: Vec<TraceStep>) -> Dec
         llm_provider: false,
         internal: false,
         needs_l7: false,
+        content_rules_apply: false,
         revision,
         trace,
     }
@@ -493,12 +494,24 @@ impl Inner {
         flow.metadata = metadata;
         flow.l7 = l7;
         let mut accept_pending = false;
+        let mut content_pending = false;
+        let content_stage = ctx.data_classes.is_empty() && ctx.method.is_none() && ctx.path.is_none();
 
         let mut trace = Vec::with_capacity(self.baseline.len() + zone.rules.len());
         let matched = self.baseline.iter().chain(zone.rules.iter()).find(|rule| {
             let outcome = self.check(rule, agent.zone_id, ctx, &flow);
             if outcome == TraceOutcome::NeedsL7 && rule.action == Action::Accept {
                 accept_pending = true;
+            }
+            if content_stage
+                && outcome == TraceOutcome::DataClassMismatch
+                && rule.action == Action::Deny
+                && !content_pending
+            {
+                // Would the rule match if one of its classes were found in the content?
+                let mut probe = ctx.clone();
+                probe.data_classes = rule.data_classes.clone();
+                content_pending = self.check(rule, agent.zone_id, &probe, &flow) == TraceOutcome::Matched;
             }
             trace.push(TraceStep {
                 rule_id: rule.id,
@@ -530,6 +543,7 @@ impl Inner {
                 llm_provider: false,
                 internal: false,
                 needs_l7: false,
+                content_rules_apply: false,
                 revision: Some(self.revision),
                 trace,
             },
@@ -546,6 +560,7 @@ impl Inner {
         d.internal = internal;
         d.inspect_tls = inspect_tls;
         d.needs_l7 = d.trace.iter().any(|s| s.outcome == TraceOutcome::NeedsL7);
+        d.content_rules_apply = content_pending;
         // Connection stage: an earlier accept rule may match a request; the gateway inspects
         // and re-evaluates every request (provisional allow, ADR 0016).
         if d.verdict == Verdict::Deny && accept_pending {

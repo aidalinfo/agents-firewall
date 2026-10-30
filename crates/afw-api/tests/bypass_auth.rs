@@ -238,7 +238,8 @@ async fn agent_token_requires_a_known_agent_even_without_policy() {
     // No published policy (unwired policy module): agent tokens cannot be bound (fail closed).
     let app = afw_api::router(state(&pool));
     let admin = token(&pool, "admin", None).await;
-    let body = json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
+    let body =
+        json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
     let res = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(body)).await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST, "{}", res.text());
 }
@@ -250,11 +251,13 @@ async fn expired_mcp_agent_token_is_revoked_when_a_new_one_is_created() {
     let app = afw_api::router(state_with_agents(&pool, &[agent]));
     let admin = token(&pool, "admin", None).await;
     let old = token(&pool, "mcp_agent", Some(agent)).await;
-    sqlx::query("UPDATE api_tokens SET expires_at = now() - interval '1 second' WHERE token_sha256 = $1")
-        .bind(afw_core::sha256_hex(old.as_bytes()))
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE api_tokens SET expires_at = now() - interval '1 second' WHERE token_sha256 = $1",
+    )
+    .bind(afw_core::sha256_hex(old.as_bytes()))
+    .execute(&pool)
+    .await
+    .unwrap();
     let body = json!({"name": "m2", "role": "mcp_agent", "agent_id": agent, "expires_at": null});
     let res = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(body)).await;
     assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
@@ -266,7 +269,10 @@ async fn expired_mcp_agent_token_is_revoked_when_a_new_one_is_created() {
             .unwrap();
     assert!(revoked, "the expired mcp_agent token must be revoked");
     let audit = afw_api::audit::load(&pool, 1, 100).await.unwrap();
-    assert!(audit.iter().any(|e| e.action == "token.revoke"), "revocation audited");
+    assert!(
+        audit.iter().any(|e| e.action == "token.revoke"),
+        "revocation audited"
+    );
 }
 
 #[tokio::test]
@@ -296,7 +302,11 @@ async fn oidc_discovery_failure_is_negatively_cached() {
         assert_eq!(res.status, StatusCode::UNAUTHORIZED);
         call(&app, "GET", "/api/v1/auth/oidc/config", None, None).await;
     }
-    assert_eq!(*hits.lock().unwrap(), 1, "discovery retried before the 30 s cool-down");
+    assert_eq!(
+        *hits.lock().unwrap(),
+        1,
+        "discovery retried before the 30 s cool-down"
+    );
 }
 
 #[tokio::test]

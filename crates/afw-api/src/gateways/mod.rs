@@ -40,6 +40,12 @@ pub struct GatewayContext {
     pub offline_after: Duration,
     /// Validity of gateway client certificates (`AFW_GW_CERT_DAYS`, 365).
     pub cert_days: u32,
+    /// Simultaneous connections on the gateway listener (`AFW_GW_MAX_CONNECTIONS`, 1024);
+    /// connections beyond are closed at once.
+    pub max_connections: usize,
+    /// Time allowed to receive the headers of a request (`AFW_GW_HEADER_TIMEOUT_SECS`, 10 s),
+    /// including the first one after the handshake.
+    pub header_read_timeout: Duration,
 }
 
 impl Default for GatewayContext {
@@ -50,6 +56,8 @@ impl Default for GatewayContext {
             poll_interval: Duration::from_secs(1),
             offline_after: Duration::from_secs(90),
             cert_days: 365,
+            max_connections: 1024,
+            header_read_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -66,6 +74,8 @@ pub struct GatewaySettings {
     pub server_names: Vec<String>,
     pub offline_after: Duration,
     pub cert_days: u32,
+    pub max_connections: usize,
+    pub header_read_timeout: Duration,
 }
 
 impl GatewaySettings {
@@ -106,6 +116,8 @@ impl GatewaySettings {
             server_names,
             offline_after: Duration::from_secs(num("AFW_GW_OFFLINE_AFTER_SECS", 90)?),
             cert_days: u32::try_from(num("AFW_GW_CERT_DAYS", 365)?)?,
+            max_connections: usize::try_from(num("AFW_GW_MAX_CONNECTIONS", 1024)?.max(1))?,
+            header_read_timeout: Duration::from_secs(num("AFW_GW_HEADER_TIMEOUT_SECS", 10)?.max(1)),
         })
     }
 }

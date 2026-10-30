@@ -45,15 +45,20 @@ pub async fn register(
     let db = pool(&state)?;
     let digest = sha256_hex(req.token.as_bytes());
     // Cheap check first: no signature work for unauthenticated callers.
-    let valid: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM gateway_registration_tokens \
+    let valid: Option<(Uuid, Option<String>)> = sqlx::query_as(
+        "SELECT id, name FROM gateway_registration_tokens \
          WHERE token_sha256 = $1 AND used_at IS NULL AND expires_at > now()",
     )
     .bind(&digest)
     .fetch_optional(db)
     .await?;
-    let token_id = valid.ok_or(ApiError::Unauthorized)?;
-    check_label("name", &req.name)?;
+    let (token_id, imposed) = valid.ok_or(ApiError::Unauthorized)?;
+    // The name chosen by the administrator in the token wins over the gateway's own.
+    let name = imposed
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| req.name.clone());
+    let name = name.trim();
+    check_label("name", name)?;
     check_label("hostname", &req.hostname)?;
 
     let gateway_id = Uuid::new_v4();
@@ -73,7 +78,7 @@ pub async fn register(
     let mut tx = db.begin().await?;
     sqlx::query("INSERT INTO gateways (id, name, hostname, cert_sha256) VALUES ($1, $2, $3, $4)")
         .bind(gateway_id)
-        .bind(req.name.trim())
+        .bind(name)
         .bind(req.hostname.trim())
         .bind(&cert_sha256)
         .execute(&mut *tx)
@@ -81,7 +86,7 @@ pub async fn register(
         .map_err(|e| {
             if is_unique_violation(&e) {
                 ApiError::Conflict {
-                    message: format!("a gateway named {:?} already exists", req.name.trim()),
+                    message: format!("a gateway named {name:?} already exists"),
                 }
             } else {
                 e.into()
@@ -99,7 +104,7 @@ pub async fn register(
     if consumed.rows_affected() != 1 {
         return Err(ApiError::Unauthorized);
     }
-    let principal = Principal::system(&format!("gateway:{gateway_id}"), req.name.trim());
+    let principal = Principal::system(&format!("gateway:{gateway_id}"), name);
     audit::record(
         &mut tx,
         &principal,
@@ -107,7 +112,7 @@ pub async fn register(
         "gateway.register",
         &format!("gateway:{gateway_id}"),
         serde_json::json!({"after": {
-            "id": gateway_id, "name": req.name.trim(), "hostname": req.hostname.trim(),
+            "id": gateway_id, "name": name, "requested_name": req.name.trim(), "hostname": req.hostname.trim(),
             "cert_sha256": cert_sha256, "registration_token": token_id,
         }}),
     )
@@ -176,35 +181,45 @@ fn stamp(gateway: Uuid, events: &mut [GatewayEvent]) {
     }
 }
 
-/// `POST /gw/v1/events`: ingested once per `batch_id`.
+/// `POST /gw/v1/events`: ingested once per `(gateway, batch_id)`. The batch is reserved
+/// atomically before ingestion (a concurrent duplicate sees the reservation and is acknowledged
+/// without being ingested); the reservation is released when ingestion fails, so the gateway's
+/// retry is ingested.
 pub async fn events(
     State(state): State<AppState>,
     AuthenticatedGateway(gateway): AuthenticatedGateway,
     JsonBody(mut batch): JsonBody<EventBatch>,
 ) -> Result<StatusCode, ApiError> {
     let db = pool(&state)?;
-    let seen: Option<Uuid> =
-        sqlx::query_scalar("SELECT batch_id FROM gateway_event_batches WHERE batch_id = $1")
-            .bind(batch.batch_id)
-            .fetch_optional(db)
-            .await?;
-    if seen.is_some() {
+    let reserved: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO gateway_event_batches (gateway_id, batch_id) VALUES ($1, $2) \
+         ON CONFLICT (gateway_id, batch_id) DO NOTHING RETURNING batch_id",
+    )
+    .bind(gateway)
+    .bind(batch.batch_id)
+    .fetch_optional(db)
+    .await?;
+    if reserved.is_none() {
         return Ok(StatusCode::ACCEPTED);
     }
     stamp(gateway, &mut batch.events);
-    state
+    if let Err(e) = state
         .ports
         .logs
         .ingest_gateway_events(&state, gateway, batch.events)
-        .await?;
-    sqlx::query(
-        "INSERT INTO gateway_event_batches (batch_id, gateway_id) VALUES ($1, $2) \
-         ON CONFLICT (batch_id) DO NOTHING",
-    )
-    .bind(batch.batch_id)
-    .bind(gateway)
-    .execute(db)
-    .await?;
+        .await
+    {
+        if let Err(release) =
+            sqlx::query("DELETE FROM gateway_event_batches WHERE gateway_id = $1 AND batch_id = $2")
+                .bind(gateway)
+                .bind(batch.batch_id)
+                .execute(db)
+                .await
+        {
+            tracing::error!(error = %release, "releasing an event batch reservation");
+        }
+        return Err(e);
+    }
     Ok(StatusCode::ACCEPTED)
 }
 

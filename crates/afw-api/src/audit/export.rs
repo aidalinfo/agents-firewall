@@ -173,43 +173,47 @@ pub fn read_file_anchors(dir: &Path) -> Result<Vec<Anchor>, ApiError> {
         .collect()
 }
 
-async fn put_s3(cfg: &S3Config, anchor: &Anchor, body: &[u8]) -> Result<String, ApiError> {
-    let key = format!(
-        "{}audit-anchor-{:020}-{}.json",
-        cfg.prefix,
-        anchor.seq,
-        anchor.at.format("%Y%m%dT%H%M%SZ")
-    );
-    let path: String = std::iter::once(cfg.bucket.as_str())
-        .chain(key.split('/'))
-        .map(sigv4::uri_encode_segment)
-        .collect::<Vec<_>>()
-        .join("/");
-    let url = reqwest::Url::parse(&format!("{}/{path}", cfg.endpoint))
+/// Prefix of anchor object keys (after the configured prefix).
+const S3_KEY_STEM: &str = "audit-anchor-";
+
+/// Sends a SigV4-signed request to `<endpoint>/<bucket>[/<key>][?<query>]`. `query` holds
+/// already encoded `name=value` pairs; any path of the endpoint is part of the signature.
+async fn s3_request(
+    cfg: &S3Config,
+    method: reqwest::Method,
+    key: Option<&str>,
+    query: &[(String, String)],
+    body: Vec<u8>,
+    extra_headers: Vec<(String, String)>,
+) -> Result<reqwest::Response, ApiError> {
+    let mut path = sigv4::uri_encode_segment(&cfg.bucket);
+    if let Some(key) = key {
+        for seg in key.split('/') {
+            path.push('/');
+            path.push_str(&sigv4::uri_encode_segment(seg));
+        }
+    }
+    let mut query: Vec<String> = query.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    query.sort();
+    let query = query.join("&");
+    let mut raw = format!("{}/{path}", cfg.endpoint.trim_end_matches('/'));
+    if !query.is_empty() {
+        raw.push('?');
+        raw.push_str(&query);
+    }
+    let url = reqwest::Url::parse(&raw)
         .map_err(|e| ApiError::Internal(format!("invalid S3 endpoint: {e}")))?;
     let host = match (url.host_str(), url.port()) {
         (Some(h), Some(p)) => format!("{h}:{p}"),
         (Some(h), None) => h.to_owned(),
         _ => return Err(ApiError::Internal("S3 endpoint without host".into())),
     };
-    let digest = Sha256::digest(body);
-    let payload_hex = hex::encode(digest);
-    let retain_until = (Utc::now() + chrono::Duration::days(i64::from(cfg.retention_days)))
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let payload_hex = hex::encode(Sha256::digest(&body));
     let now = Utc::now();
-    let headers: Vec<(String, String)> = vec![
-        ("content-type".into(), "application/json".into()),
-        ("host".into(), host),
-        (
-            "x-amz-checksum-sha256".into(),
-            base64::engine::general_purpose::STANDARD.encode(digest),
-        ),
-        ("x-amz-content-sha256".into(), payload_hex.clone()),
-        ("x-amz-date".into(), sigv4::amz_date(now)),
-        ("x-amz-object-lock-mode".into(), "COMPLIANCE".into()),
-        ("x-amz-object-lock-retain-until-date".into(), retain_until),
-        ("x-amz-sdk-checksum-algorithm".into(), "SHA256".into()),
-    ];
+    let mut headers = extra_headers;
+    headers.push(("host".into(), host));
+    headers.push(("x-amz-content-sha256".into(), payload_hex.clone()));
+    headers.push(("x-amz-date".into(), sigv4::amz_date(now)));
     let auth = sigv4::authorization(
         &sigv4::SigningParams {
             access_key_id: &cfg.access_key_id,
@@ -218,35 +222,133 @@ async fn put_s3(cfg: &S3Config, anchor: &Anchor, body: &[u8]) -> Result<String, 
             service: "s3",
             at: now,
         },
-        "PUT",
-        &format!("/{path}"),
+        method.as_str(),
+        url.path(),
+        url.query().unwrap_or(""),
         &headers,
         &payload_hex,
     );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    let mut req = client
-        .put(url)
-        .header("authorization", auth)
-        .body(body.to_vec());
+    let mut req = client.request(method, url).header("authorization", auth);
+    if !body.is_empty() {
+        req = req.body(body);
+    }
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
     let res = req
         .send()
         .await
-        .map_err(|e| ApiError::Internal(format!("S3 export: {e}")))?;
+        .map_err(|e| ApiError::Internal(format!("S3 request: {e}")))?;
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await.unwrap_or_default();
         return Err(ApiError::Internal(format!(
-            "S3 export refused ({status}): {}",
+            "S3 request refused ({status}): {}",
             text.chars().take(500).collect::<String>()
         )));
     }
+    Ok(res)
+}
+
+async fn put_s3(cfg: &S3Config, anchor: &Anchor, body: &[u8]) -> Result<String, ApiError> {
+    let key = format!(
+        "{}{S3_KEY_STEM}{:020}-{}.json",
+        cfg.prefix,
+        anchor.seq,
+        anchor.at.format("%Y%m%dT%H%M%SZ")
+    );
+    let digest = Sha256::digest(body);
+    let retain_until = (Utc::now() + chrono::Duration::days(i64::from(cfg.retention_days)))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let headers: Vec<(String, String)> = vec![
+        ("content-type".into(), "application/json".into()),
+        (
+            "x-amz-checksum-sha256".into(),
+            base64::engine::general_purpose::STANDARD.encode(digest),
+        ),
+        ("x-amz-object-lock-mode".into(), "COMPLIANCE".into()),
+        ("x-amz-object-lock-retain-until-date".into(), retain_until),
+        ("x-amz-sdk-checksum-algorithm".into(), "SHA256".into()),
+    ];
+    s3_request(
+        cfg,
+        reqwest::Method::PUT,
+        Some(&key),
+        &[],
+        body.to_vec(),
+        headers,
+    )
+    .await?;
     Ok(key)
+}
+
+fn xml_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+/// Text of every `<tag>…</tag>` of a (flat) XML document.
+fn xml_values(xml: &str, tag: &str) -> Vec<String> {
+    let (open, close) = (format!("<{tag}>"), format!("</{tag}>"));
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find(&open) {
+        rest = &rest[start + open.len()..];
+        let Some(end) = rest.find(&close) else { break };
+        out.push(xml_unescape(&rest[..end]));
+        rest = &rest[end + close.len()..];
+    }
+    out
+}
+
+/// Anchors stored in S3 (ListObjectsV2 of the prefix, then a signed GET of each object).
+pub async fn read_s3_anchors(cfg: &S3Config) -> Result<Vec<Anchor>, ApiError> {
+    let prefix = format!("{}{S3_KEY_STEM}", cfg.prefix);
+    let mut keys = Vec::new();
+    let mut continuation: Option<String> = None;
+    loop {
+        let mut query = vec![
+            ("list-type".to_owned(), "2".to_owned()),
+            ("prefix".to_owned(), sigv4::uri_encode_segment(&prefix)),
+        ];
+        if let Some(c) = &continuation {
+            query.push(("continuation-token".into(), sigv4::uri_encode_segment(c)));
+        }
+        let res = s3_request(cfg, reqwest::Method::GET, None, &query, vec![], vec![]).await?;
+        let xml = res
+            .text()
+            .await
+            .map_err(|e| ApiError::Internal(format!("S3 list: {e}")))?;
+        keys.extend(xml_values(&xml, "Key"));
+        let truncated = xml_values(&xml, "IsTruncated")
+            .first()
+            .is_some_and(|v| v == "true");
+        continuation = xml_values(&xml, "NextContinuationToken").into_iter().next();
+        if !truncated || continuation.is_none() {
+            break;
+        }
+    }
+    let mut out = Vec::with_capacity(keys.len());
+    for key in keys {
+        let res = s3_request(cfg, reqwest::Method::GET, Some(&key), &[], vec![], vec![]).await?;
+        let body = res
+            .bytes()
+            .await
+            .map_err(|e| ApiError::Internal(format!("S3 get {key}: {e}")))?;
+        out.push(
+            serde_json::from_slice(&body)
+                .map_err(|e| ApiError::Internal(format!("malformed S3 anchor {key}: {e}")))?,
+        );
+    }
+    Ok(out)
 }
 
 /// Exports the current chain head to every configured target and records it.
@@ -335,6 +437,15 @@ pub fn spawn_periodic(state: AppState) -> Option<tokio::task::JoinHandle<()>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xml_listing() {
+        let xml = "<ListBucketResult><Contents><Key>a&amp;b</Key></Contents>\
+                   <Contents><Key>c</Key></Contents><IsTruncated>true</IsTruncated>\
+                   <NextContinuationToken>t1</NextContinuationToken></ListBucketResult>";
+        assert_eq!(xml_values(xml, "Key"), ["a&b", "c"]);
+        assert_eq!(xml_values(xml, "NextContinuationToken"), ["t1"]);
+    }
 
     #[test]
     fn intervals() {

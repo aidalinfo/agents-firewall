@@ -44,6 +44,8 @@ async fn main() -> anyhow::Result<()> {
     state.audit_export = Arc::new(AuditExportConfig::from_env()?);
     state.gateways.offline_after = gw.offline_after;
     state.gateways.cert_days = gw.cert_days;
+    state.gateways.max_connections = gw.max_connections;
+    state.gateways.header_read_timeout = gw.header_read_timeout;
 
     if pool.is_some() {
         let pki = Arc::new(

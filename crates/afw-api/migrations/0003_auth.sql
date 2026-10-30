@@ -64,9 +64,11 @@ CREATE TABLE gateway_commands (
 CREATE INDEX gateway_commands_pending ON gateway_commands (gateway_id, created_at)
     WHERE delivered_at IS NULL;
 
--- Event batches already ingested (`EventBatch.batch_id` idempotency key).
+-- Event batches reserved or ingested (`EventBatch.batch_id` idempotency key, per gateway). A
+-- reservation is taken before ingestion and removed if ingestion fails.
 CREATE TABLE gateway_event_batches (
-    batch_id    uuid PRIMARY KEY,
     gateway_id  uuid NOT NULL REFERENCES gateways (id),
-    received_at timestamptz NOT NULL DEFAULT now()
+    batch_id    uuid NOT NULL,
+    received_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (gateway_id, batch_id)
 );

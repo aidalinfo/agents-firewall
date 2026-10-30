@@ -2275,14 +2275,24 @@ paths:
       operationId: verifyAudit
       tags:
       - audit
-      summary: Verify the hash chain
+      summary: Verify the hash chain against every exported anchor (database, file, S3)
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuditVerifyResult'
+                allOf:
+                - $ref: '#/components/schemas/AuditVerifyResult'
+                - type: object
+                  required: [anchor_sources]
+                  properties:
+                    anchor_sources:
+                      description: Anchor sources compared, among `db`, `file`, `s3`.
+                      type: array
+                      items:
+                        type: string
+                        enum: [db, file, s3]
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

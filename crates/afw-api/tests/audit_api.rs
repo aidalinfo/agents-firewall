@@ -13,8 +13,6 @@ use axum::http::StatusCode;
 use serde_json::json;
 use support::*;
 
-type Seen = (String, axum::http::HeaderMap, Vec<u8>);
-
 async fn seed(pool: &sqlx::PgPool, n: usize) {
     for i in 0..n {
         let mut p = Principal::for_tests(Role::Admin);
@@ -277,11 +275,7 @@ struct FakeS3 {
     requests: Arc<Mutex<Vec<(String, axum::http::HeaderMap)>>>,
 }
 
-fn check_signature(
-    method: &str,
-    uri: &axum::http::Uri,
-    headers: &axum::http::HeaderMap,
-) -> bool {
+fn check_signature(method: &str, uri: &axum::http::Uri, headers: &axum::http::HeaderMap) -> bool {
     use afw_api::audit::sigv4;
     let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
         return false;
@@ -297,7 +291,10 @@ fn check_signature(
     if parts.len() != 5 {
         return false;
     }
-    let signed: Vec<String> = field("SignedHeaders=").split(';').map(str::to_owned).collect();
+    let signed: Vec<String> = field("SignedHeaders=")
+        .split(';')
+        .map(str::to_owned)
+        .collect();
     let hv: Vec<(String, String)> = signed
         .iter()
         .map(|h| {
@@ -315,7 +312,12 @@ fn check_signature(
     let at = chrono::NaiveDateTime::parse_from_str(date, "%Y%m%dT%H%M%SZ")
         .unwrap()
         .and_utc();
-    let mut query: Vec<&str> = uri.query().unwrap_or("").split('&').filter(|q| !q.is_empty()).collect();
+    let mut query: Vec<&str> = uri
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .filter(|q| !q.is_empty())
+        .collect();
     query.sort();
     let expected = sigv4::authorization(
         &sigv4::SigningParams {
@@ -345,9 +347,10 @@ impl FakeS3 {
                 use axum::response::IntoResponse;
                 let (parts, body) = req.into_parts();
                 let body = axum::body::to_bytes(body, 1 << 20).await.unwrap();
-                r.lock()
-                    .unwrap()
-                    .push((format!("{} {}", parts.method, parts.uri), parts.headers.clone()));
+                r.lock().unwrap().push((
+                    format!("{} {}", parts.method, parts.uri),
+                    parts.headers.clone(),
+                ));
                 if !check_signature(parts.method.as_str(), &parts.uri, &parts.headers) {
                     return (StatusCode::FORBIDDEN, "SignatureDoesNotMatch").into_response();
                 }
@@ -477,14 +480,20 @@ async fn anchor_is_put_to_s3_with_object_lock() {
 
     // Complete rewrite AND removal of the database anchors: the S3 anchor still catches it.
     forge_complete_rewrite(&pool).await;
-    sqlx::query("DELETE FROM audit_anchors").execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM audit_anchors")
+        .execute(&pool)
+        .await
+        .unwrap();
     let verify = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
         .await
         .json();
     assert_eq!(verify["ok"], false, "{verify}");
     assert_eq!(verify["broken_at"], 2);
     let reqs = s3.requests.lock().unwrap();
-    assert!(reqs.iter().any(|(l, _)| l.starts_with("GET /s3base/afw-audit?")));
+    assert!(
+        reqs.iter()
+            .any(|(l, _)| l.starts_with("GET /s3base/afw-audit?"))
+    );
 }
 
 #[tokio::test]
@@ -495,13 +504,17 @@ async fn verify_reports_its_anchor_sources() {
     let mut st = state(&pool);
     let app = afw_api::router(st.clone());
     let viewer = token(&pool, "viewer", None).await;
-    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None).await.json();
+    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
+        .await
+        .json();
     assert_eq!(v["anchor_sources"], json!(["db"]));
     st.audit_export = Arc::new(AuditExportConfig {
         dir: Some(dir.path().to_path_buf()),
         ..Default::default()
     });
     let app = afw_api::router(st);
-    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None).await.json();
+    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
+        .await
+        .json();
     assert_eq!(v["anchor_sources"], json!(["db", "file"]));
 }

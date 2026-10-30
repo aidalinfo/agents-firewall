@@ -85,6 +85,29 @@ pub async fn create_token(
     } else {
         TOKEN_PREFIX
     });
+    if req.role == Role::McpAgent {
+        // An expired mcp_agent token still counts for the single-active-token index: revoke the
+        // expired ones first, in the same transaction, so a new one can be issued.
+        let expired: Vec<(Uuid, String)> = sqlx::query_as(
+            "UPDATE api_tokens SET revoked_at = now() WHERE role = 'mcp_agent' \
+             AND revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= now() \
+             RETURNING id, name",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        for (id, name) in expired {
+            audit::record(
+                conn,
+                principal,
+                session_id,
+                "token.revoke",
+                &format!("token:{id}"),
+                serde_json::json!({"before": {"id": id, "name": name, "role": "mcp_agent"},
+                                   "reason": "expired"}),
+            )
+            .await?;
+        }
+    }
     // Tokens of human roles are used by tools (CLI, automation): their actor kind is `cli`.
     let actor_kind = if agent_role { "agent" } else { "cli" };
     let row: (Uuid, DateTime<Utc>) = sqlx::query_as(
@@ -188,6 +211,21 @@ pub async fn create(
     JsonBody(req): JsonBody<CreateApiToken>,
 ) -> Result<(StatusCode, Json<CreatedApiToken>), ApiError> {
     principal.require(Role::Admin)?;
+    validate(&req)?;
+    if let Some(agent) = req.agent_id {
+        // The agent must exist in the published policy (fail closed when it is unknown).
+        let known = state
+            .ports
+            .policy
+            .current_policy(&state)
+            .await?
+            .is_some_and(|doc| doc.agents.iter().any(|a| a.id == agent));
+        if !known {
+            return Err(ApiError::BadRequest(format!(
+                "agent {agent} is not in the published policy"
+            )));
+        }
+    }
     let mut tx = pool(&state)?.begin().await?;
     let created = create_token(&mut tx, &principal, None, &req).await?;
     tx.commit().await?;

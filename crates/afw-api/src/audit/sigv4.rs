@@ -49,13 +49,15 @@ pub fn amz_date(at: DateTime<Utc>) -> String {
     at.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
-/// Returns the `Authorization` header for a request without query string. `canonical_path` is
-/// already URI-encoded; `headers` are `(lowercase name, value)` and must include `host`,
+/// Returns the `Authorization` header. `canonical_path` is the URI-encoded path as sent
+/// (including any path of the endpoint); `canonical_query` is the encoded query string with its
+/// parameters sorted (empty when none); `headers` are `(lowercase name, value)` and must include `host`,
 /// `x-amz-date` and `x-amz-content-sha256`; `payload_sha256` is the hex SHA-256 of the body.
 pub fn authorization(
     p: &SigningParams<'_>,
     method: &str,
     canonical_path: &str,
+    canonical_query: &str,
     headers: &[(String, String)],
     payload_sha256: &str,
 ) -> String {
@@ -71,7 +73,7 @@ pub fn authorization(
         .collect::<Vec<_>>()
         .join(";");
     let canonical_request = format!(
-        "{method}\n{canonical_path}\n\n{canonical_headers}\n{signed_headers}\n{payload_sha256}"
+        "{method}\n{canonical_path}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\n{payload_sha256}"
     );
     let date = p.at.format("%Y%m%d").to_string();
     let scope = format!("{date}/{}/{}/aws4_request", p.region, p.service);
@@ -135,7 +137,7 @@ mod tests {
             ("x-amz-date".into(), amz_date(at)),
         ];
         assert_eq!(
-            authorization(&p, "GET", "/test.txt", &headers, empty),
+            authorization(&p, "GET", "/test.txt", "", &headers, empty),
             "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, \
              SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, \
              Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"

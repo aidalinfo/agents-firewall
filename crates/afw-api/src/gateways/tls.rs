@@ -15,8 +15,9 @@ use axum::extract::FromRequestParts;
 use axum::http::Request;
 use axum::http::request::Parts;
 use hyper::body::Incoming;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tokio_rustls::TlsAcceptor;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -40,8 +41,14 @@ pub struct PeerCertificate {
 pub struct PeerIdentity(pub Option<PeerCertificate>);
 
 /// Serves the gateway protocol on `listener` with mutual TLS until the task is dropped.
+/// HTTP/1.1 only (ALPN `http/1.1`), so the header read timeout applies to every request; at
+/// most `state.gateways.max_connections` connections are served at once.
 pub async fn serve(listener: TcpListener, state: AppState, config: Arc<rustls::ServerConfig>) {
-    let acceptor = TlsAcceptor::from(config);
+    let mut config = (*config).clone();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let limit = Arc::new(Semaphore::new(state.gateways.max_connections.max(1)));
+    let header_timeout = state.gateways.header_read_timeout;
     let app = super::gw_router(state);
     loop {
         let (tcp, remote) = match listener.accept().await {
@@ -52,9 +59,15 @@ pub async fn serve(listener: TcpListener, state: AppState, config: Arc<rustls::S
                 continue;
             }
         };
+        let Ok(permit) = limit.clone().try_acquire_owned() else {
+            tracing::warn!(%remote, "gateway connection refused: too many connections");
+            drop(tcp);
+            continue;
+        };
         let acceptor = acceptor.clone();
         let app = app.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             let tls = match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp)).await {
                 Ok(Ok(tls)) => tls,
                 Ok(Err(e)) => {
@@ -76,7 +89,9 @@ pub async fn serve(listener: TcpListener, state: AppState, config: Arc<rustls::S
             let service = hyper::service::service_fn(move |req: Request<Incoming>| {
                 app.clone().oneshot(req.map(Body::new))
             });
-            if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                .timer(TokioTimer::new())
+                .header_read_timeout(header_timeout)
                 .serve_connection(TokioIo::new(tls), service)
                 .await
             {

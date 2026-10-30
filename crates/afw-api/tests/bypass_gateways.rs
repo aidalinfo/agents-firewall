@@ -581,7 +581,14 @@ async fn gateway_name_is_imposed_by_the_registration_token() {
     assert_eq!(res.status().as_u16(), 201);
     let body: serde_json::Value = res.json().await.unwrap();
     let id = body["gateway_id"].as_str().unwrap();
-    let g = call(&e.app, "GET", &format!("/api/v1/gateways/{id}"), Some(&e.admin), None).await;
+    let g = call(
+        &e.app,
+        "GET",
+        &format!("/api/v1/gateways/{id}"),
+        Some(&e.admin),
+        None,
+    )
+    .await;
     assert_eq!(g.json()["name"], "gw-expected");
 }
 
@@ -639,7 +646,10 @@ async fn listener_limits_connections() {
         .json(&heartbeat())
         .send()
         .await;
-    assert!(res.is_err(), "a connection beyond the limit must be refused");
+    assert!(
+        res.is_err(),
+        "a connection beyond the limit must be refused"
+    );
     drop(hold);
     tokio::time::sleep(Duration::from_millis(200)).await;
     let res = gateway_client(dir.path())

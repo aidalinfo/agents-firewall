@@ -12,7 +12,7 @@ use axum::extract::{Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 
 use super::export::{self, Anchor, AuditExportConfig};
@@ -109,34 +109,54 @@ pub async fn list(
     Ok(Json(Page { items, next_cursor }))
 }
 
-/// Trusted anchors: the export file (when configured) and the anchors table.
-async fn anchors(pool: &PgPool, cfg: &AuditExportConfig) -> Result<Vec<Anchor>, ApiError> {
-    let mut out = match &cfg.dir {
-        Some(dir) => {
-            let dir = dir.clone();
-            tokio::task::spawn_blocking(move || export::read_file_anchors(&dir))
-                .await
-                .map_err(|e| ApiError::Internal(e.to_string()))??
-        }
-        None => vec![],
-    };
+/// `GET /audit/verify` response: [`AuditVerifyResult`] plus the anchor sources compared.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct AuditVerifyReport {
+    #[serde(flatten)]
+    pub result: AuditVerifyResult,
+    /// Sources of the anchors the chain was compared with, in order: `db` (anchors table),
+    /// `file` (`AFW_AUDIT_EXPORT_DIR`), `s3` (`AFW_AUDIT_S3_*`).
+    pub anchor_sources: Vec<&'static str>,
+}
+
+/// Anchors from every source: the anchors table, the export file and the S3 bucket when
+/// configured. A configured source that cannot be read is an error (never skipped).
+async fn anchors(
+    pool: &PgPool,
+    cfg: &AuditExportConfig,
+) -> Result<(Vec<Anchor>, Vec<&'static str>), ApiError> {
     let rows: Vec<(i64, String, DateTime<Utc>)> =
         sqlx::query_as("SELECT seq, hash, at FROM audit_anchors ORDER BY id")
             .fetch_all(pool)
             .await?;
-    out.extend(
-        rows.into_iter()
-            .map(|(seq, hash, at)| Anchor { seq, hash, at }),
-    );
-    Ok(out)
+    let mut out: Vec<Anchor> = rows
+        .into_iter()
+        .map(|(seq, hash, at)| Anchor { seq, hash, at })
+        .collect();
+    let mut sources = vec!["db"];
+    if let Some(dir) = &cfg.dir {
+        let dir = dir.clone();
+        out.extend(
+            tokio::task::spawn_blocking(move || export::read_file_anchors(&dir))
+                .await
+                .map_err(|e| ApiError::Internal(e.to_string()))??,
+        );
+        sources.push("file");
+    }
+    if let Some(s3) = &cfg.s3 {
+        out.extend(export::read_s3_anchors(s3).await?);
+        sources.push("s3");
+    }
+    Ok((out, sources))
 }
 
 /// Verifies the whole chain from the genesis: contiguous `seq` from 1, chaining, recomputed
 /// hashes, and agreement with every exported anchor. `broken_at` is the first broken `seq`.
-pub async fn verify(pool: &PgPool, cfg: &AuditExportConfig) -> Result<AuditVerifyResult, ApiError> {
+pub async fn verify(pool: &PgPool, cfg: &AuditExportConfig) -> Result<AuditVerifyReport, ApiError> {
     // seq -> expected hashes (several anchors may name the same seq).
     let mut expected: BTreeMap<i64, Vec<String>> = BTreeMap::new();
-    for a in anchors(pool, cfg).await? {
+    let (all, anchor_sources) = anchors(pool, cfg).await?;
+    for a in all {
         expected.entry(a.seq).or_default().push(a.hash);
     }
     let head: Option<(i64, String)> =
@@ -180,12 +200,15 @@ pub async fn verify(pool: &PgPool, cfg: &AuditExportConfig) -> Result<AuditVerif
     {
         broken_at = Some(seq);
     }
-    Ok(AuditVerifyResult {
-        ok: broken_at.is_none(),
-        checked,
-        broken_at,
-        head_seq: head.as_ref().map(|h| h.0),
-        head_hash: head.map(|h| h.1),
+    Ok(AuditVerifyReport {
+        result: AuditVerifyResult {
+            ok: broken_at.is_none(),
+            checked,
+            broken_at,
+            head_seq: head.as_ref().map(|h| h.0),
+            head_hash: head.map(|h| h.1),
+        },
+        anchor_sources,
     })
 }
 
@@ -193,7 +216,7 @@ pub async fn verify(pool: &PgPool, cfg: &AuditExportConfig) -> Result<AuditVerif
 pub async fn verify_handler(
     State(state): State<AppState>,
     principal: Principal,
-) -> Result<Json<AuditVerifyResult>, ApiError> {
+) -> Result<Json<AuditVerifyReport>, ApiError> {
     principal.require(Role::Viewer)?;
     verify(pool(&state)?, &state.audit_export).await.map(Json)
 }

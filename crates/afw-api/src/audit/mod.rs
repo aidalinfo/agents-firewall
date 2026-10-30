@@ -21,7 +21,7 @@ pub mod export;
 mod routes;
 pub mod sigv4;
 
-pub use routes::verify;
+pub use routes::{AuditVerifyReport, verify};
 
 /// Routes of this module, nested by [`crate::router`].
 pub fn routes() -> Router<AppState> {

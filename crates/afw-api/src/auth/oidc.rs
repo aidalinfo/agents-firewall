@@ -23,6 +23,9 @@ const JWKS_TTL: Duration = Duration::from_secs(600);
 const FORCED_REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
 /// Clock skew tolerated on `exp`, `nbf`, `iat`.
 const LEEWAY_SECS: u64 = 60;
+/// After a failed discovery or JWKS fetch, the provider is not contacted again for this long
+/// (negative cache: an unreachable provider must not be hit on every request).
+const FAILURE_COOLDOWN: Duration = Duration::from_secs(30);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// OIDC settings (`AFW_OIDC_*`).
@@ -151,6 +154,7 @@ pub struct OidcVerifier {
     discovery: RwLock<Option<Discovery>>,
     keys: RwLock<Option<Keys>>,
     last_forced_refresh: Mutex<Option<Instant>>,
+    last_failure: std::sync::Mutex<Option<Instant>>,
 }
 
 impl std::fmt::Debug for OidcVerifier {
@@ -204,6 +208,7 @@ impl OidcVerifier {
             discovery: RwLock::new(None),
             keys: RwLock::new(None),
             last_forced_refresh: Mutex::new(None),
+            last_failure: std::sync::Mutex::new(None),
         }
     }
 
@@ -211,7 +216,26 @@ impl OidcVerifier {
         &self.settings
     }
 
+    /// [`Self::fetch_json`] behind the negative cache.
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, ApiError> {
+        let recent = self
+            .last_failure
+            .lock()
+            .map(|f| f.is_some_and(|t| t.elapsed() < FAILURE_COOLDOWN))
+            .unwrap_or(false);
+        if recent {
+            return Err(ApiError::Internal(
+                "OIDC provider failed recently; retrying later".into(),
+            ));
+        }
+        let out = self.fetch_json(url).await;
+        if let Ok(mut f) = self.last_failure.lock() {
+            *f = out.is_err().then(Instant::now);
+        }
+        out
+    }
+
+    async fn fetch_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, ApiError> {
         if !allowed_url(url) {
             return Err(ApiError::Internal(format!(
                 "OIDC URL {url:?} must use https (http only on loopback)"

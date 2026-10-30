@@ -1,0 +1,12 @@
+# afw-netinit: network namespace holder of an enrolled agent (ADR 0003, motif « pause »).
+# Build: docker build -t afw-netinit:local -f deploy/docker/Dockerfile.netinit deploy/docker
+FROM alpine:3.20
+RUN apk add --no-cache iproute2
+COPY netinit.sh /usr/local/bin/afw-netinit
+RUN chmod 0755 /usr/local/bin/afw-netinit
+LABEL org.opencontainers.image.title="afw-netinit" \
+      org.opencontainers.image.description="agents-firewall: default route of an enrolled agent to its gateway" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/aidalinfo/agents-firewall"
+# Runs as root inside the container, but the container only receives NET_ADMIN (cap_drop: ALL elsewhere).
+ENTRYPOINT ["/usr/local/bin/afw-netinit"]

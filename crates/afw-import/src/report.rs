@@ -32,6 +32,10 @@ pub struct ImportReport {
     pub warnings: Vec<ReportItem>,
     /// Elements with no equivalent, or rejected (invalid pattern, global wildcard…).
     pub unsupported: Vec<ReportItem>,
+    /// `deny`/`gate` decisions of the source that the plan does not enforce (unknown class or
+    /// tier, LLM exemption…). Non-empty ⇒ [`crate::ImportPlan::is_safe`] is false.
+    #[serde(default)]
+    pub blocking: Vec<ReportItem>,
 }
 
 impl ImportReport {
@@ -42,6 +46,7 @@ impl ImportReport {
             mapped: Vec::new(),
             warnings: Vec::new(),
             unsupported: Vec::new(),
+            blocking: Vec::new(),
         }
     }
 
@@ -66,6 +71,13 @@ impl ImportReport {
         });
     }
 
+    pub(crate) fn block(&mut self, path: impl Into<String>, message: impl Into<String>) {
+        self.blocking.push(ReportItem {
+            path: path.into(),
+            message: message.into(),
+        });
+    }
+
     /// Human-readable report (Markdown, French).
     pub fn to_markdown(&self) -> String {
         let mode = match self.zone_mode {
@@ -76,12 +88,27 @@ impl ImportReport {
         };
         let mut md = String::from("# Rapport d'import egress-guard\n\n");
         md.push_str(&format!(
-            "- Zone : `{}`, mode {mode}\n- Converti : {} élément(s)\n- Avertissements : {}\n- Non converti : {}\n\n",
+            "- Zone : `{}`, mode {mode}\n- Converti : {} élément(s)\n- Avertissements : {}\n- Non converti : {}\n- Bloquant : {}\n\n",
             escape(&self.zone),
             self.mapped.len(),
             self.warnings.len(),
-            self.unsupported.len()
+            self.unsupported.len(),
+            self.blocking.len()
         ));
+        if !self.blocking.is_empty() {
+            md.push_str(
+                "## Bloquant\n\nCes refus de la politique source ne sont **pas** appliqués par le plan : \
+                 corrigez le fichier ou ajoutez les règles à la main avant de publier.\n\n",
+            );
+            for i in &self.blocking {
+                md.push_str(&format!(
+                    "- `{}` : {}\n",
+                    escape(&i.path),
+                    escape(&i.message)
+                ));
+            }
+            md.push('\n');
+        }
         md.push_str("## Converti\n\n");
         if self.mapped.is_empty() {
             md.push_str("_Rien._\n");

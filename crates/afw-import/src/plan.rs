@@ -122,6 +122,29 @@ impl ImportPlan {
         out
     }
 
+    /// `false` when a `deny`/`gate` of the source is not enforced by the plan
+    /// (`report.blocking`): the CLI must not publish such a plan without review.
+    pub fn is_safe(&self) -> bool {
+        self.report.blocking.is_empty()
+    }
+
+    /// Policy fragment sent to `POST /sessions/{id}/import`: objects (created or updated),
+    /// services, data classes, the zone and the rules. `agents` is empty and `settings` is the
+    /// default value: both are placeholders the API must ignore (an import never changes
+    /// agents nor settings). The intent policy is not part of it (`PUT /intent-policy`).
+    pub fn to_policy_fragment(&self) -> PolicyDocument {
+        PolicyDocument {
+            objects: self.objects.clone(),
+            services: self.services.clone(),
+            data_classes: self.data_classes.clone(),
+            zones: vec![self.zone.clone()],
+            agents: Vec::new(),
+            rules: self.rules.clone(),
+            inspection_rules: Vec::new(),
+            settings: Default::default(),
+        }
+    }
+
     /// The document `base` would become once the plan is applied (dry run, tests).
     pub fn merged_into(&self, base: &PolicyDocument) -> PolicyDocument {
         let mut doc = base.clone();

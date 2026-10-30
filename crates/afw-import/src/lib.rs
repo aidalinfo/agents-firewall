@@ -24,6 +24,9 @@ pub enum ImportError {
     /// The YAML is valid but does not have the egress-guard shape.
     #[error("invalid egress-guard policy at `{path}`: {message}")]
     Invalid { path: String, message: String },
+    /// A size limit was exceeded (file, nesting, number of patterns).
+    #[error("import limit exceeded: {0}")]
+    Limit(String),
     #[error("invalid import options: {0}")]
     Options(String),
 }

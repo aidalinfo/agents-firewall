@@ -43,6 +43,9 @@ pub struct ImportOptions<'a> {
     /// Current policy: objects (same domain/address), services, data classes (same name),
     /// the zone (same name) and rules (same name in the same layer) are reused.
     pub existing: Option<&'a PolicyDocument>,
+    /// Allows changing the mode of an existing zone (for example enforce → observe). Without
+    /// it, an existing zone keeps its mode: an import never downgrades a zone (review I1).
+    pub downgrade: bool,
 }
 
 impl<'a> ImportOptions<'a> {
@@ -51,6 +54,7 @@ impl<'a> ImportOptions<'a> {
             zone_name: zone_name.into(),
             zone_mode: ZoneMode::Observe,
             existing: None,
+            downgrade: false,
         }
     }
 }
@@ -59,6 +63,15 @@ impl<'a> ImportOptions<'a> {
 const ANY_TIERS: [&str; 2] = ["any", "*"];
 /// Matrix tier keys meaning « destinations not listed » (already denied by default).
 const UNLISTED_TIERS: [&str; 4] = ["unlisted", "unknown", "other", "others"];
+/// Largest accepted file (review I4).
+pub const MAX_YAML_BYTES: usize = 1024 * 1024;
+/// Deepest `[`/`{` nesting accepted, counted before parsing.
+pub const MAX_FLOW_DEPTH: usize = 64;
+/// Patterns per data class or action class.
+pub const MAX_PATTERNS: usize = 200;
+/// Characters per pattern.
+pub const MAX_PATTERN_LEN: usize = 512;
+
 /// Tier of allowed hosts declared without one.
 const DEFAULT_TIER: &str = "default";
 /// Standard action classes of the plugin's built-in policy (ADR 0015).
@@ -75,6 +88,18 @@ pub fn import(yaml: &str, opts: &ImportOptions<'_>) -> Result<ImportPlan, Import
     let zone_name = opts.zone_name.trim();
     if zone_name.is_empty() {
         return Err(ImportError::Options("zone name must not be empty".into()));
+    }
+    if yaml.len() > MAX_YAML_BYTES {
+        return Err(ImportError::Limit(format!(
+            "file larger than {MAX_YAML_BYTES} bytes ({} bytes)",
+            yaml.len()
+        )));
+    }
+    let depth = flow_depth(yaml);
+    if depth > MAX_FLOW_DEPTH {
+        return Err(ImportError::Limit(format!(
+            "nesting deeper than {MAX_FLOW_DEPTH} levels of `[`/`{{` ({depth})"
+        )));
     }
     let value: Value = serde_yaml::from_str(yaml).map_err(|e| ImportError::Yaml(e.to_string()))?;
     let root: Root = match value {
@@ -102,7 +127,23 @@ pub fn import(yaml: &str, opts: &ImportOptions<'_>) -> Result<ImportPlan, Import
         class_ids: BTreeMap::new(),
         rules: Vec::new(),
     };
-    cx.run(root, opts.zone_mode)
+    cx.run(root, opts.zone_mode, opts.downgrade)
+}
+
+/// Maximum nesting of `[`/`{` (simple count, quotes not interpreted: conservative).
+fn flow_depth(yaml: &str) -> usize {
+    let (mut depth, mut max) = (0usize, 0usize);
+    for b in yaml.bytes() {
+        match b {
+            b'[' | b'{' => {
+                depth += 1;
+                max = max.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    max
 }
 
 /// Destination handling of one tier.
@@ -140,7 +181,12 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    fn run(mut self, root: Root, zone_mode: ZoneMode) -> Result<ImportPlan, ImportError> {
+    fn run(
+        mut self,
+        root: Root,
+        zone_mode: ZoneMode,
+        downgrade: bool,
+    ) -> Result<ImportPlan, ImportError> {
         self.extra("", &root.extra);
         match &root.version {
             None => self
@@ -181,7 +227,8 @@ impl Ctx<'_> {
             );
         }
 
-        let zone = self.zone(&root, zone_mode);
+        let zone = self.zone(&root, zone_mode, downgrade);
+        self.report.zone_mode = zone.0.mode;
         let zone_id = zone.0.id;
         let mut tiers = self.tiers(root.tiers.as_ref())?;
         self.destinations(root.destinations.unwrap_or_default(), &mut tiers, zone_id)?;
@@ -189,6 +236,7 @@ impl Ctx<'_> {
         self.matrix(root.matrix.as_ref(), &tiers, zone_id)?;
         self.tier_accepts(&tiers, zone_id);
         let intent_policy = self.actions(root.action_classes.as_ref())?;
+        self.assign_positions();
 
         Ok(ImportPlan {
             objects: self.objects,
@@ -214,7 +262,7 @@ impl Ctx<'_> {
 
     // ---- zone ---------------------------------------------------------------------------------
 
-    fn zone(&mut self, root: &Root, mode: ZoneMode) -> (Zone, ZoneChange) {
+    fn zone(&mut self, root: &Root, mode: ZoneMode, downgrade: bool) -> (Zone, ZoneChange) {
         let label = root
             .profile
             .as_ref()
@@ -238,10 +286,23 @@ impl Ctx<'_> {
                     .map("zone", format!("zone existante « {} » réutilisée", z.name));
                 return (zone, ZoneChange::Unchanged);
             }
+            if !downgrade {
+                self.report.warn(
+                    "zone",
+                    format!(
+                        "zone existante « {} » : mode {} conservé (mode {} demandé) ; \
+                         l'import ne change jamais le mode d'une zone existante sans `downgrade`",
+                        z.name,
+                        mode_str(zone.mode),
+                        mode_str(mode)
+                    ),
+                );
+                return (zone, ZoneChange::Unchanged);
+            }
             self.report.warn(
                 "zone",
                 format!(
-                    "zone existante « {} » : mode {} → {}",
+                    "zone existante « {} » : mode {} → {} (downgrade explicite)",
                     z.name,
                     mode_str(zone.mode),
                     mode_str(mode)
@@ -274,8 +335,16 @@ impl Ctx<'_> {
 
     fn tiers(&mut self, map: Option<&Mapping>) -> Result<BTreeMap<String, Tier>, ImportError> {
         let mut tiers = BTreeMap::new();
-        for (key, v) in entries(map, "tiers")? {
-            let path = format!("tiers.{key}");
+        for (raw_key, v) in entries(map, "tiers")? {
+            let path = format!("tiers.{raw_key}");
+            let key = raw_key.trim().to_ascii_lowercase();
+            if tiers.contains_key(&key) {
+                self.report.warn(
+                    &path,
+                    format!("tier « {raw_key} » déclaré deux fois (casse ignorée) : seconde déclaration ignorée"),
+                );
+                continue;
+            }
             let spec: TierSpec = from_value(v, &path)?;
             self.extra(&path, &spec.extra);
             let category = match spec
@@ -347,13 +416,24 @@ impl Ctx<'_> {
                     "tier et ports ignorés pour un hôte refusé : refusé sur tous les ports",
                 );
             }
-            let Some(spec) = self.host_spec(host, &path) else {
+            let Some(spec) = self.host_spec(host, &path, false) else {
                 continue;
             };
-            let id = self.leaf(&spec, None, comment, &path);
-            if !denied.contains(&id) {
-                denied.push(id);
-                denied_specs.push(spec);
+            // A denied wildcard also covers its apex (review M1).
+            let mut specs = vec![spec.clone()];
+            if let NetObjectSpec::Domain { pattern } = &spec
+                && let Some(apex) = pattern.strip_prefix("*.")
+            {
+                specs.push(NetObjectSpec::Domain {
+                    pattern: apex.to_string(),
+                });
+            }
+            for spec in specs {
+                let id = self.leaf(&spec, None, comment, &path);
+                if !denied.contains(&id) {
+                    denied.push(id);
+                    denied_specs.push(spec);
+                }
             }
         }
 
@@ -365,7 +445,7 @@ impl Ctx<'_> {
                 self.extra(&path, extra);
             }
             let tier_key = match tier {
-                Some(t) if !t.trim().is_empty() => t.trim().to_string(),
+                Some(t) if !t.trim().is_empty() => t.trim().to_ascii_lowercase(),
                 _ => {
                     self.report.warn(
                         &path,
@@ -385,7 +465,28 @@ impl Ctx<'_> {
                 }
                 tiers.insert(tier_key.clone(), Tier::default());
             }
-            let Some(spec) = self.host_spec(host, &path) else {
+            let ports = if ports.is_empty() {
+                None
+            } else {
+                let mut p = ports.to_vec();
+                p.sort_unstable();
+                p.dedup();
+                if p.contains(&0) {
+                    self.report.warn(format!("{path}.ports"), "port 0 ignoré");
+                    p.retain(|x| *x != 0);
+                }
+                if p.is_empty() {
+                    self.report.unsupported(
+                        &path,
+                        format!(
+                            "« {host} » : liste de ports vide après nettoyage, hôte non ouvert"
+                        ),
+                    );
+                    continue;
+                }
+                Some(p)
+            };
+            let Some(spec) = self.host_spec(host, &path, true) else {
                 continue;
             };
             if denied_specs.iter().any(|d| same_leaf(d, &spec)) {
@@ -407,21 +508,9 @@ impl Ctx<'_> {
             let id = self.leaf(&spec, category, comment, &path);
             let t = tiers.get_mut(&tier_key).expect("tier inserted above");
             t.members.push(id);
-            if ports.is_empty() {
-                t.plain.push(id);
-            } else {
-                let mut p = ports.to_vec();
-                p.sort_unstable();
-                p.dedup();
-                if p.contains(&0) {
-                    self.report.warn(format!("{path}.ports"), "port 0 ignoré");
-                    p.retain(|x| *x != 0);
-                }
-                if p.is_empty() {
-                    t.plain.push(id);
-                } else {
-                    t.ported.entry(p).or_default().push(id);
-                }
+            match ports {
+                None => t.plain.push(id),
+                Some(p) => t.ported.entry(p).or_default().push(id),
             }
         }
 
@@ -472,12 +561,38 @@ impl Ctx<'_> {
     }
 
     /// Parses an egress-guard host into an object spec; `None` (reported) when not convertible.
-    fn host_spec(&mut self, raw: &str, path: &str) -> Option<NetObjectSpec> {
+    fn host_spec(&mut self, raw: &str, path: &str, allow: bool) -> Option<NetObjectSpec> {
         let h = raw.trim();
         if let Ok(ip) = h.parse::<IpAddr>() {
             return Some(NetObjectSpec::Host { ip });
         }
         if let Ok(net) = h.parse::<IpNet>() {
+            let prefix = net.prefix_len();
+            if prefix == 0 {
+                self.report.unsupported(
+                    path,
+                    format!(
+                        "réseau « {raw} » (/0) non converti : il couvrirait toutes les adresses"
+                    ),
+                );
+                return None;
+            }
+            let broad = match net {
+                IpNet::V4(_) => prefix < 8,
+                IpNet::V6(_) => prefix < 32,
+            };
+            if allow && broad {
+                self.report.unsupported(
+                    path,
+                    format!("réseau « {raw} » trop large pour une autorisation (plus large que /8 en IPv4 ou /32 en IPv6) : non converti"),
+                );
+                self.report.warn(
+                    path,
+                    format!("ATTENTION : l'egress-guard autorisait « {raw} », une part très large d'Internet ; \
+                             autorisation non reprise, à remplacer par des destinations précises"),
+                );
+                return None;
+            }
             return Some(NetObjectSpec::Network { cidr: net.trunc() });
         }
         let lower = h.strip_suffix('.').unwrap_or(h).to_ascii_lowercase();
@@ -509,13 +624,18 @@ impl Ctx<'_> {
             );
             return None;
         }
-        if wildcard {
+        if wildcard && allow {
             self.report.warn(
                 path,
                 format!(
                     "joker « {lower} » : couvre les sous-domaines de {name}, pas {name} lui-même ; \
                      ajoutez-le explicitement s'il est concerné"
                 ),
+            );
+        } else if wildcard {
+            self.report.map(
+                path,
+                format!("refus de « {lower} » étendu au domaine {name} lui-même"),
             );
         }
         Some(NetObjectSpec::Domain { pattern: lower })
@@ -667,7 +787,14 @@ impl Ctx<'_> {
                 continue;
             }
 
-            let mut detectors = Vec::new();
+            if spec.patterns.len() > MAX_PATTERNS {
+                return Err(ImportError::Limit(format!(
+                    "{path}.patterns: more than {MAX_PATTERNS} patterns ({})",
+                    spec.patterns.len()
+                )));
+            }
+            // (path, unique name, regex) of the candidate patterns.
+            let mut candidates: Vec<(String, String, String)> = Vec::new();
             for (i, p) in spec.patterns.iter().enumerate() {
                 let ppath = format!("{path}.patterns[{i}]");
                 let (pname, regex) = match p {
@@ -680,23 +807,41 @@ impl Ctx<'_> {
                         )
                     }
                 };
-                match check_detector(&pname, &regex) {
-                    Err(reason) => self
+                if regex.chars().count() > MAX_PATTERN_LEN {
+                    self.report.unsupported(
+                        &ppath,
+                        format!(
+                            "motif « {pname} » non converti : plus de {MAX_PATTERN_LEN} caractères"
+                        ),
+                    );
+                    continue;
+                }
+                let mut unique = pname.clone();
+                let mut n = 2;
+                while candidates.iter().any(|(_, u, _)| *u == unique) {
+                    unique = format!("{pname}_{n}");
+                    n += 1;
+                }
+                candidates.push((ppath, unique, regex));
+            }
+            for (ppath, pname, reason) in check_patterns(&mut candidates) {
+                match reason {
+                    Some(reason) => self
                         .report
                         .unsupported(&ppath, format!("motif « {pname} » non converti : {reason}")),
-                    Ok(true) => self.report.warn(
+                    None => self.report.warn(
                         &ppath,
                         format!(
                             "motif « {pname} » retiré : il détecte les URL S3/GCS présignées \
                              (faux positif quotidien, EF-72)"
                         ),
                     ),
-                    Ok(false) => detectors.push(Detector::Regex {
-                        name: pname,
-                        pattern: regex,
-                    }),
                 }
             }
+            let mut detectors: Vec<Detector> = candidates
+                .into_iter()
+                .map(|(_, name, pattern)| Detector::Regex { name, pattern })
+                .collect();
             if category == DataCategory::Secret {
                 let builtin = afw_dlp::builtin_classes()
                     .into_iter()
@@ -765,12 +910,12 @@ impl Ctx<'_> {
         let mut logs: Vec<(String, Vec<String>)> = Vec::new();
         for (class_key, row) in entries(map, "matrix")? {
             let path = format!("matrix.{class_key}");
-            if !self.class_ids.contains_key(&class_key) {
+            let known_class = self.class_ids.contains_key(&class_key);
+            if !known_class {
                 self.report.unsupported(
                     &path,
                     format!("classe « {class_key} » inconnue ou non convertie : ligne ignorée"),
                 );
-                continue;
             }
             let row = match row {
                 Value::Mapping(m) => m,
@@ -804,8 +949,20 @@ impl Ctx<'_> {
                         "deny".into()
                     }
                 };
-                let tk = tier_key.to_ascii_lowercase();
-                if UNLISTED_TIERS.contains(&tk.as_str()) {
+                let strict = decision == "deny" || decision == "gate";
+                if !known_class {
+                    if strict {
+                        self.report.block(
+                            &cpath,
+                            format!("« {decision} » non appliqué : classe « {class_key} » inconnue ou non convertie"),
+                        );
+                    }
+                    continue;
+                }
+                let tier_key = tier_key.trim().to_ascii_lowercase();
+                let declared = tiers.contains_key(&tier_key);
+                // Reserved names only when no tier of that name is declared (review C1).
+                if !declared && UNLISTED_TIERS.contains(&tier_key.as_str()) {
                     if decision == "allow" || decision == "log" {
                         self.report.warn(
                             &cpath,
@@ -816,13 +973,21 @@ impl Ctx<'_> {
                     }
                     continue;
                 }
-                let any = ANY_TIERS.contains(&tk.as_str());
+                let any = !declared && ANY_TIERS.contains(&tier_key.as_str());
                 if !any {
                     let Some(t) = tiers.get(&tier_key) else {
                         self.report.unsupported(
                             &cpath,
                             format!("tier « {tier_key} » inconnu : case ignorée"),
                         );
+                        if strict {
+                            self.report.block(
+                                &cpath,
+                                format!(
+                                    "« {decision} » non appliqué : tier « {tier_key} » inconnu"
+                                ),
+                            );
+                        }
                         continue;
                     };
                     if t.group.is_none() {
@@ -833,13 +998,17 @@ impl Ctx<'_> {
                         continue;
                     }
                     if t.category == Some(DestCategory::LlmProvider) {
-                        if decision == "deny" || decision == "gate" {
+                        if strict {
                             self.report.warn(
                                 &cpath,
                                 format!(
                                     "tier « {tier_key} » = fournisseurs de LLM : exemptés du blocage par \
                                      classe de données (EF-25), « {decision} » non repris ; trafic journalisé en détail"
                                 ),
+                            );
+                            self.report.block(
+                                &cpath,
+                                format!("« {decision} » non appliqué : fournisseurs de LLM exemptés (EF-25)"),
                             );
                         } else {
                             self.report
@@ -877,7 +1046,7 @@ impl Ctx<'_> {
         // Deny rules first: a log (accept) rule must never shadow a deny on another class.
         for (class_key, decision, tiers_of) in denies {
             let class = self.class_ids[&class_key];
-            let destinations: Vec<Uuid> = if tiers_of.iter().any(|t| is_any(t)) {
+            let destinations: Vec<Uuid> = if tiers_of.iter().any(|t| is_any(t, tiers)) {
                 vec![]
             } else {
                 tiers_of.iter().filter_map(|t| tiers[t].group).collect()
@@ -905,7 +1074,7 @@ impl Ctx<'_> {
         }
         for (class_key, tiers_of) in logs {
             let class = self.class_ids[&class_key];
-            let only = if tiers_of.iter().any(|t| is_any(t)) {
+            let only = if tiers_of.iter().any(|t| is_any(t, tiers)) {
                 None
             } else {
                 Some(tiers_of.as_slice())
@@ -966,26 +1135,54 @@ impl Ctx<'_> {
         comment: &str,
         path: &str,
     ) {
-        if self
+        let sorted = |v: &[Uuid]| {
+            let mut v = v.to_vec();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let mut name = name;
+        if let Some(r) = self
             .existing
             .rules
             .iter()
-            .any(|r| r.layer == layer && r.name == name)
+            .find(|r| r.layer == layer && r.name == name)
         {
-            self.report
-                .map(path, format!("règle existante « {name} » conservée"));
-            return;
+            // Reused only when identical in effect (review I3).
+            if r.enabled
+                && r.action == action
+                && sorted(&r.destinations) == sorted(&destinations)
+                && sorted(&r.services) == sorted(&services)
+                && sorted(&r.data_classes) == sorted(&data_classes)
+                && sorted(&r.sources) == vec![zone_id]
+                && r.expires_at.is_none()
+            {
+                self.report.map(
+                    path,
+                    format!("règle existante « {name} » conservée (identique)"),
+                );
+                return;
+            }
+            let base = name.clone();
+            let mut n = 2;
+            while self
+                .existing
+                .rules
+                .iter()
+                .any(|r| r.layer == layer && r.name == name)
+            {
+                name = format!("{base} (import {n})");
+                n += 1;
+            }
+            self.report.warn(
+                path,
+                format!(
+                    "une règle « {base} » existe déjà mais diffère (action, destinations, services, \
+                     classes ou activation) : nouvelle règle « {name} » créée ; relisez l'ancienne"
+                ),
+            );
         }
-        let in_layer = |r: &&Rule| r.layer == layer;
-        let last = self
-            .existing
-            .rules
-            .iter()
-            .chain(self.rules.iter())
-            .filter(in_layer)
-            .map(|r| r.position)
-            .max();
-        let position = last.map_or(10, |p| p.saturating_add(10));
+        let position = 0; // assigned by `assign_positions`
         let section = match layer {
             Layer::Baseline => "egress-guard : destinations refusées",
             Layer::Zone { .. } if data_classes.is_empty() => "egress-guard : destinations",
@@ -1008,6 +1205,57 @@ impl Ctx<'_> {
             comment: comment.into(),
             enabled: true,
         });
+    }
+
+    /// Places imported rules before the existing rules of their layer when there is room,
+    /// otherwise after them with a shadowing warning (review M2).
+    fn assign_positions(&mut self) {
+        let mut layers: Vec<Layer> = Vec::new();
+        for r in &self.rules {
+            if !layers.contains(&r.layer) {
+                layers.push(r.layer);
+            }
+        }
+        for layer in layers {
+            let existing: Vec<u32> = self
+                .existing
+                .rules
+                .iter()
+                .filter(|r| r.layer == layer)
+                .map(|r| r.position)
+                .collect();
+            let n = self.rules.iter().filter(|r| r.layer == layer).count() as u32;
+            let (start, step) = match (existing.iter().min(), existing.iter().max()) {
+                (None, _) | (_, None) => (10, 10),
+                (Some(&min), _) if min > n => {
+                    let step = ((min - 1) / n).clamp(1, 10);
+                    (step, step)
+                }
+                (_, Some(&max)) => {
+                    let what = match layer {
+                        Layer::Baseline => "du socle".to_string(),
+                        Layer::Zone { .. } => format!("de la zone « {} »", self.zone_name),
+                    };
+                    self.report.warn(
+                        "rules",
+                        format!(
+                            "pas de place avant les règles existantes {what} : règles importées placées \
+                             après elles, elles peuvent être masquées par une règle existante plus haute ; \
+                             renumérotez les règles existantes ou déplacez les règles importées"
+                        ),
+                    );
+                    (max.saturating_add(10), 10)
+                }
+            };
+            for (i, r) in self
+                .rules
+                .iter_mut()
+                .filter(|r| r.layer == layer)
+                .enumerate()
+            {
+                r.position = start.saturating_add(step.saturating_mul(i as u32));
+            }
+        }
     }
 
     // ---- action classes -----------------------------------------------------------------------
@@ -1052,8 +1300,29 @@ impl Ctx<'_> {
                     IntentDecision::Deny
                 }
             };
+            if spec.patterns.len() > MAX_PATTERNS {
+                return Err(ImportError::Limit(format!(
+                    "{path}.patterns: more than {MAX_PATTERNS} patterns ({})",
+                    spec.patterns.len()
+                )));
+            }
             let mut patterns = Vec::new();
             for (i, p) in spec.patterns.iter().enumerate() {
+                if p.chars().count() > MAX_PATTERN_LEN {
+                    self.report.unsupported(
+                        format!("{path}.patterns[{i}]"),
+                        format!("motif non converti : plus de {MAX_PATTERN_LEN} caractères"),
+                    );
+                    continue;
+                }
+                if nested_quantifier(p) {
+                    self.report.unsupported(
+                        format!("{path}.patterns[{i}]"),
+                        "motif non converti : quantificateurs imbriqués (risque de retour arrière \
+                         exponentiel dans le moteur Python du plugin)",
+                    );
+                    continue;
+                }
                 if regex::Regex::new(p).is_err() {
                     self.report.warn(
                         format!("{path}.patterns[{i}]"),
@@ -1095,11 +1364,58 @@ impl Ctx<'_> {
                 );
             }
         }
+        if !classes.is_empty() {
+            self.report.warn(
+                "action_classes",
+                "la politique d'intention s'applique par PUT /intent-policy, qui remplace toute la \
+                 politique servie aux plugins (pas de fusion avec l'existante)",
+            );
+        }
         Ok(IntentPolicy {
             version: 1,
             action_classes: classes,
         })
     }
+}
+
+/// Heuristic for nested quantifiers: a group whose body contains an unescaped `+` or `*`,
+/// directly followed by `+`, `*` or `{` (`(a+)+`, `(?:\w*)*`, `(ab+)*`).
+fn nested_quantifier(p: &str) -> bool {
+    let b = p.as_bytes();
+    // Stack of (group start, body has a quantifier).
+    let mut stack: Vec<bool> = Vec::new();
+    let mut i = 0;
+    let mut in_class = false;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            b'[' if !in_class => in_class = true,
+            b']' if in_class => in_class = false,
+            _ if in_class => {}
+            b'(' => stack.push(false),
+            b'+' | b'*' => {
+                if let Some(top) = stack.last_mut() {
+                    *top = true;
+                }
+            }
+            b')' => {
+                let quantified = stack.pop().unwrap_or(false);
+                let next = b.get(i + 1).copied();
+                if quantified && matches!(next, Some(b'+' | b'*' | b'{')) {
+                    return true;
+                }
+                if quantified && let Some(top) = stack.last_mut() {
+                    *top = true;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
 }
 
 fn push_cell(cells: &mut Vec<(String, Vec<String>)>, class: &str, tier: &str) {
@@ -1109,8 +1425,8 @@ fn push_cell(cells: &mut Vec<(String, Vec<String>)>, class: &str, tier: &str) {
     }
 }
 
-fn is_any(t: &str) -> bool {
-    ANY_TIERS.contains(&t.to_ascii_lowercase().as_str())
+fn is_any(t: &str, tiers: &BTreeMap<String, Tier>) -> bool {
+    !tiers.contains_key(t) && ANY_TIERS.contains(&t)
 }
 
 /// Accept destination sets: plain hosts (any port) and one set per port list. With
@@ -1169,30 +1485,79 @@ fn ports_str(p: &[u16]) -> String {
     p.iter().map(u16::to_string).collect::<Vec<_>>().join(",")
 }
 
-/// Checks a custom pattern with `afw-dlp` (the gateway compiles it the same way) and tells
-/// whether it fires on a presigned URL (EF-72).
-fn check_detector(name: &str, pattern: &str) -> Result<bool, String> {
-    let class = afw_dlp::ClassSpec {
-        id: "import-check".into(),
-        name: "import-check".into(),
-        category: afw_dlp::DataCategory::Custom,
-        detectors: vec![afw_dlp::DetectorSpec::Regex {
-            name: name.to_string(),
-            pattern: pattern.to_string(),
-        }],
-    };
-    let scanner = afw_dlp::Scanner::new(&[class], afw_dlp::ScannerOptions::default())
-        .map_err(|e| e.to_string())?;
-    Ok(presigned_samples().iter().any(|s| {
-        !scanner.scan_url(s).is_empty()
-            || !scanner.scan(s.as_bytes(), "body").is_empty()
-            || !scanner
-                .scan(format!("{{\"upload_url\":\"{s}\"}}").as_bytes(), "body")
-                .is_empty()
-            || !scanner
-                .scan(s.replace("%2F", "/").as_bytes(), "body")
-                .is_empty()
-    }))
+/// Compiles the candidate patterns of one class with `afw-dlp` (as the gateway does), once
+/// per class: invalid patterns are removed (reason `Some`), then patterns firing on a
+/// presigned URL are removed (reason `None`, EF-72). Returns the removed patterns.
+fn check_patterns(
+    candidates: &mut Vec<(String, String, String)>,
+) -> Vec<(String, String, Option<String>)> {
+    let mut removed = Vec::new();
+    let samples = presigned_samples();
+    loop {
+        if candidates.is_empty() {
+            return removed;
+        }
+        let class = afw_dlp::ClassSpec {
+            id: "import-check".into(),
+            name: "import-check".into(),
+            category: afw_dlp::DataCategory::Custom,
+            detectors: candidates
+                .iter()
+                .map(|(_, name, pattern)| afw_dlp::DetectorSpec::Regex {
+                    name: name.clone(),
+                    pattern: pattern.clone(),
+                })
+                .collect(),
+        };
+        let scanner = match afw_dlp::Scanner::new(&[class], afw_dlp::ScannerOptions::default()) {
+            Ok(s) => s,
+            Err(e) => {
+                // Remove the faulty pattern (named in the error) or, failing that, all.
+                let name = match &e {
+                    afw_dlp::DlpError::InvalidPattern { name, .. } => Some(name.clone()),
+                    _ => None,
+                };
+                let idx = name.and_then(|n| candidates.iter().position(|c| c.1 == n));
+                match idx {
+                    Some(i) => {
+                        let (p, n, _) = candidates.remove(i);
+                        removed.push((p, n, Some(e.to_string())));
+                    }
+                    None => {
+                        for (p, n, _) in candidates.drain(..) {
+                            removed.push((p, n, Some(e.to_string())));
+                        }
+                    }
+                }
+                continue;
+            }
+        };
+        let mut hits: BTreeSet<String> = BTreeSet::new();
+        for s in &samples {
+            let json = format!("{{\"upload_url\":\"{s}\"}}");
+            let decoded = s.replace("%2F", "/");
+            for f in scanner
+                .scan_url(s)
+                .into_iter()
+                .chain(scanner.scan(s.as_bytes(), "body"))
+                .chain(scanner.scan(json.as_bytes(), "body"))
+                .chain(scanner.scan(decoded.as_bytes(), "body"))
+            {
+                hits.insert(f.kind);
+            }
+        }
+        if hits.is_empty() {
+            return removed;
+        }
+        candidates.retain(|(p, n, _)| {
+            if hits.contains(n) {
+                removed.push((p.clone(), n.clone(), None));
+                false
+            } else {
+                true
+            }
+        });
+    }
 }
 
 /// Representative presigned upload URLs (SigV4 with session token, SigV2, GCS V4). The

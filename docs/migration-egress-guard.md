@@ -48,7 +48,9 @@ afw import egress-guard pulse-mcp-guardrails.yaml --zone daniel
 
 L'import ouvre une session, crée les objets, classes de données et règles, prépare la politique d'intention, puis affiche un **rapport d'import** en trois parties : converti, avertissements (à relire : approximations, jokers, motifs retirés, champs inconnus) et non converti. Relisez la session avant de la publier. Un second import du même fichier ne crée rien de plus (objets, classes et règles existants sont réutilisés).
 
-La zone `daniel` est créée en **mode observation** par défaut ; publiez et installez.
+La zone `daniel` est créée en **mode observation** par défaut ; une zone existante garde son mode (l'import ne la fait jamais repasser en observation sans demande explicite). Si le rapport contient une section **Bloquant** (un refus de l'egress-guard que l'import n'a pas pu traduire), corrigez avant de publier. Publiez et installez.
+
+La politique d'intention (classes d'actions) est appliquée séparément : elle **remplace** toute la politique d'intention servie aux plugins.
 
 > Pourquoi une zone dédiée ? Il n'y a pas d'exception par agent : un bot aux besoins particuliers reçoit sa propre zone. Si plusieurs bots ont les mêmes besoins, ils peuvent la partager.
 

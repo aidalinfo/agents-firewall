@@ -81,15 +81,40 @@ allow/deny avec refus par défaut, matrice classe × tier → allow/log/gate/den
 
 ### Zone, dédoublonnage et application
 18. Zone créée (ou réutilisée si le nom existe) en mode **observation par défaut** (`ImportOptions::new`,
-    EF-71). Réutiliser une zone existante dans un autre mode la passe au mode demandé, avec avertissement.
+    EF-71). Une zone existante garde son mode (voir 24).
 19. Dédoublonnage avec la politique existante : objet feuille de même domaine (casse et point final
     ignorés) / adresse / réseau → réutilisé ; groupe de même nom → complété (union) ; service TCP de mêmes
     ports → réutilisé ; classe de données de même nom → réutilisée telle quelle ; règle de même nom dans la
-    même couche → conservée. Un second import du même fichier ne produit donc aucune opération.
+    même couche et de même effet → conservée (voir 26). Un second import du même fichier ne produit donc aucune opération.
 20. `ImportPlan::to_session_changes()` donne les opérations dans l'ordre des dépendances (services, objets
     feuilles, groupes, classes de données, zone, règles du socle puis de zone) avec `endpoint()` (méthode et
-    chemin de l'API). `merged_into()` calcule le document résultant (aperçu, tests). Les règles sont
-    numérotées de 10 en 10 après les règles existantes de la couche.
+    chemin de l'API). `merged_into()` calcule le document résultant (aperçu, tests). Positions : voir 29.
+
+## Compléments après revue (PR #14) : un import n'élargit jamais l'accès
+21. **Tiers réservés** (C1) : `unlisted`/`unknown`/`other`/`others` (« non listé ») et `any`/`*` ne prennent ce
+    sens que si aucun tier de ce nom n'est déclaré dans `tiers`. Noms de tiers comparés sans la casse (I2).
+22. **Ports** (C2) : un hôte dont la liste de ports est vide après nettoyage (`ports: [0]`) est non converti,
+    jamais ouvert sur tous les ports.
+23. **Réseaux** (C3) : `/0` refusé (autorisation comme refus). En autorisation, un préfixe plus large que /8
+    (IPv4) ou /32 (IPv6) est non converti, avec un avertissement « ATTENTION ».
+24. **Zone existante** (I1) : elle garde son mode ; seul `ImportOptions::downgrade = true` permet de le changer.
+25. **Refus perdus** (I2) : toute case `deny`/`gate` de la matrice non appliquée (classe ou tier inconnu,
+    fournisseur LLM exempté) va dans `report.blocking` ; `ImportPlan::is_safe()` est faux s'il n'est pas vide.
+    La CLI ne doit pas publier un plan non sûr sans relecture.
+26. **Règle existante de même nom** (I3) : réutilisée seulement si action, destinations, services, classes,
+    source, activation et absence d'expiration sont identiques ; sinon nouvelle règle « … (import N) » et
+    avertissement.
+27. **Plafonds** (I4, I5) : fichier ≤ 1 Mio, imbrication `[`/`{` ≤ 64 (compte simple avant analyse),
+    ≤ 200 motifs par classe (erreur `ImportError::Limit`), ≤ 512 caractères par motif (non converti). Un seul
+    scanner `afw-dlp` par classe (les motifs invalides, nommés par l'erreur, sont retirés un à un). Motifs de
+    classes d'actions à quantificateurs imbriqués (`(…+)+`, `(…*)*`, `(…+)*`, `(…)+{n}`) : non convertis
+    (retour arrière exponentiel dans le moteur Python du plugin).
+28. **Joker refusé** (M1) : `*.x` en refus couvre aussi `x` (objet supplémentaire).
+29. **Position** (M2) : les règles importées sont placées **avant** les règles existantes de leur couche quand
+    les positions libres le permettent (pas ≤ 10) ; sinon après, avec un avertissement de masquage.
+30. `ImportPlan::to_policy_fragment()` : document envoyé à `POST /sessions/{id}/import` (objets, services,
+    classes, zone, règles) ; `agents` vide et `settings` par défaut sont des emplacements que l'API doit
+    ignorer. Le rapport rappelle que `PUT /intent-policy` remplace toute la politique d'intention.
 
 ## Conséquences et limites
 - Le format exact du fichier réel peut différer : un champ inattendu apparaît dans le rapport, un type

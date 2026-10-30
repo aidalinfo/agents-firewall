@@ -29,14 +29,15 @@ fn has_warning(plan: &afw_import::ImportPlan, needle: &str) -> bool {
 #[test]
 fn full_example_counts() {
     let plan = import_example();
-    // 10 allowed + 3 denied hosts, 5 tier groups + 1 denied group.
+    // 10 allowed + 3 denied hosts (+ the apex of the denied `*.ngrok.io`), 5 tier groups +
+    // 1 denied group.
     let leaves = plan
         .objects
         .iter()
         .filter(|o| !matches!(o.spec, NetObjectSpec::Group { .. }))
         .count();
     let groups = plan.objects.len() - leaves;
-    assert_eq!((leaves, groups), (13, 6), "{:#?}", plan.objects);
+    assert_eq!((leaves, groups), (14, 6), "{:#?}", plan.objects);
     // One TCP/587 service for the partner SMTP host.
     assert_eq!(plan.services.len(), 1);
     assert_eq!(plan.services[0].ports[0].start, 587);
@@ -398,21 +399,27 @@ fn reuses_existing_objects_and_zone() {
         panic!()
     };
     assert!(members.contains(&existing_obj.id));
-    // Existing zone reused (same id), switched to observe and reported.
+    // Existing zone reused (same id): an import never downgrades it (review I1).
     assert_eq!(plan.zone.id, zone.id);
-    assert_eq!(plan.zone.mode, ZoneMode::Observe);
+    assert_eq!(plan.zone.mode, ZoneMode::Enforce);
+    assert_eq!(plan.zone_change, afw_import::ZoneChange::Unchanged);
     let changes = plan.to_session_changes();
+    assert!(!changes.iter().any(|c| matches!(
+        c,
+        SessionChange::UpdateZone(_) | SessionChange::CreateZone(_)
+    )));
+    assert!(has_warning(&plan, "downgrade"));
+    // Explicit downgrade switches it to observe.
+    let mut o = opts("assistant");
+    o.existing = Some(&existing);
+    o.downgrade = true;
+    let down = import(EXAMPLE, &o).unwrap();
+    assert_eq!(down.zone.mode, ZoneMode::Observe);
     assert!(
-        changes
+        down.to_session_changes()
             .iter()
             .any(|c| matches!(c, SessionChange::UpdateZone(z) if z.id == zone.id))
     );
-    assert!(
-        !changes
-            .iter()
-            .any(|c| matches!(c, SessionChange::CreateZone(_)))
-    );
-    assert!(has_warning(&plan, "observe"));
     // Re-importing the merged result creates nothing new for the same objects.
     let merged = plan.merged_into(&existing);
     let mut o = opts("assistant");

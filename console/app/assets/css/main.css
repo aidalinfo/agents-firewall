@@ -120,30 +120,32 @@
   --color-syn-key: var(--syn-key);
 }
 
-html,
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.45;
-}
+@layer base {
+  html,
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+  }
 
-a {
-  color: var(--pri);
-}
+  a {
+    color: var(--pri);
+  }
 
-a:hover {
-  color: var(--text);
-}
+  a:hover {
+    color: var(--text);
+  }
 
-:focus-visible {
-  outline: 2px solid var(--pri);
-  outline-offset: 1px;
-}
+  :focus-visible {
+    outline: 2px solid var(--pri);
+    outline-offset: 1px;
+  }
 
-input::placeholder {
-  color: var(--text3);
+  input::placeholder {
+    color: var(--text3);
+  }
 }
 
 .grid-bg {

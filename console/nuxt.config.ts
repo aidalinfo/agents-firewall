@@ -45,7 +45,8 @@ export default defineNuxtConfig({
   i18n: {
     defaultLocale: 'fr',
     strategy: 'no_prefix',
-    detectBrowserLanguage: { useCookie: true, cookieKey: 'afw-locale', fallbackLocale: 'fr' },
+    // French by default whatever the browser says; the choice is remembered (plugins/locale.client.ts).
+    detectBrowserLanguage: false,
     locales: [
       { code: 'fr', language: 'fr-FR', file: 'fr.json', name: 'Français' },
       { code: 'en', language: 'en-US', file: 'en.json', name: 'English' },
@@ -58,6 +59,8 @@ export default defineNuxtConfig({
       apiMode: 'mock',
       // Control-plane origin, without /api/v1 — NUXT_PUBLIC_API_BASE
       apiBase: '',
+      // Simulated latency of the mock API (ms) — NUXT_PUBLIC_MOCK_LATENCY_MS
+      mockLatencyMs: 120,
     },
   },
 

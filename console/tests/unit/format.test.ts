@@ -11,7 +11,7 @@ import {
 } from '../../app/utils/format'
 
 // Intl uses narrow no-break spaces as group separators in French: normalise for assertions.
-const n = (s: string) => s.replace(/[  ]/g, ' ')
+const n = (s: string) => s.replace(/[\u202F\u00A0]/g, ' ')
 
 describe('formatBytes', () => {
   it('formats French units like the mockup', () => {

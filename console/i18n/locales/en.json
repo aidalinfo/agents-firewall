@@ -1,1 +1,715 @@
-{}
+{
+  "action": {
+    "accept": "Accept",
+    "deny": "Deny",
+    "observe": "Observe"
+  },
+  "agent": {
+    "active": "active · last flow {when}",
+    "allowEllipsis": "Allow…",
+    "barTip": "{h} · {ok} allowed · {ko} denied",
+    "baseline": "baseline",
+    "changeZone": "Change zone…",
+    "col": {
+      "destination": "Destination",
+      "flows": "Flows",
+      "last": "Last seen",
+      "rule": "Rule",
+      "sent": "Sent"
+    },
+    "correlationOff": "missing",
+    "correlationOn": "correlation on",
+    "destinations": "Usual destinations",
+    "destinationsSub": "7 days · by flow count",
+    "egressRemoved": "removed on {d}",
+    "enrollment": "Enrollment",
+    "gateway": "Gateway",
+    "identity": "Identity",
+    "kpi": {
+      "denied": "Denied · 24 h",
+      "deniedDest": "{n} distinct destinations | {n} distinct destination | {n} distinct destinations",
+      "destinations": "Destinations · 7 d",
+      "flows": "Flows · 24 h",
+      "flowsLlm": "including {n} to an LLM provider",
+      "newDest": "no new one this week | 1 new this week | {n} new this week",
+      "received": "received: {v}",
+      "sent": "Sent · 24 h"
+    },
+    "kpis": "Key figures",
+    "noDenials": "No recent denial.",
+    "notFound": "Agent not found",
+    "pcap": "pcap capture 15 min",
+    "plugin": "Hermes plugin",
+    "reason": {
+      "baseline": "baseline",
+      "global_denylist": "global deny list",
+      "no_rule": "no rule"
+    },
+    "recentDenials": "Recent denials",
+    "ruleN": "rule {n}",
+    "seeJournal": "See its log",
+    "tag": {
+      "denied": "denied",
+      "internal": "internal",
+      "new": "new"
+    },
+    "toolDenied": "{n} denied | {n} denied | {n} denied",
+    "toolStats": "{n} flows · {v}",
+    "topTools": "Tools sending the most",
+    "volume": "Sent volume per hour",
+    "volumeAria": "Histogram of the hourly sent volume, allowed and denied.",
+    "volumeSub": "last 24 hours · excluding LLM providers",
+    "zone": "Zone"
+  },
+  "agents": {
+    "col": {
+      "agent": "Agent",
+      "denied": "Denied · 24 h",
+      "enrollment": "Enrollment",
+      "flows": "Flows · 24 h",
+      "gateway": "Gateway",
+      "last": "Last flow",
+      "zone": "Zone"
+    },
+    "mcpAgent": "approved agent",
+    "subtitle": "One agent = one enrolled container, placed in a zone",
+    "tabs": "Agent"
+  },
+  "alerts": {
+    "ack": "Acknowledge",
+    "ackBy": "Acknowledged by {who}",
+    "channelKind": {
+      "pulse_chat": "Pulse Chat",
+      "teams": "Microsoft Teams",
+      "webhook": "generic webhook"
+    },
+    "channels": "Channels: {list}",
+    "channelsTitle": "Delivery channels",
+    "filter": {
+      "all": "All",
+      "open": "Open",
+      "resolved": "Resolved"
+    },
+    "high": "{n} high | {n} high | {n} high",
+    "kind": {
+      "cloud_metadata": "Cloud metadata attempt",
+      "deny_burst": "Deny burst",
+      "internal_burst": "Internal flow burst",
+      "new_destination": "New destination",
+      "new_internal_host": "New internal host contacted",
+      "port_scan": "Port scan · new host",
+      "secret_detected": "Secret detected",
+      "sensitive_port": "Sensitive port never seen",
+      "unusual_admin_action": "Unusual admin action",
+      "volume_spike": "Outbound volume spike"
+    },
+    "kindsNote": "New destination, volume spike, deny burst, cloud metadata, secret detected, lateral movement (scan, sensitive port, new host), unusual admin action.",
+    "none": "No alert.",
+    "pcap": "pcap capture",
+    "seeFlows": "See flows",
+    "severity": {
+      "critical": "high",
+      "info": "info",
+      "resolved": "resolved",
+      "warning": "medium"
+    },
+    "subtitle": "Network and content detections · sent to the configured channels"
+  },
+  "allow": {
+    "addToSession": "Add to my session",
+    "added": "Rule #{n} added to your session",
+    "appliesToZone": "Applies to the whole zone {zone}:",
+    "back": "Back to the flow",
+    "broadening": "Broadening: covers every subdomain.",
+    "cliLabel": "cli equivalent · same through the api or the mcp",
+    "days": "{n} d",
+    "destination": "Destination",
+    "expiresIn": "expires in {n} d",
+    "expiry": "Expiry",
+    "failed": "Could not add the rule",
+    "newObject": "new object",
+    "noExpiry": "none",
+    "noExpiryLong": "no expiry",
+    "notApplied": "nothing applies before install",
+    "option": {
+      "exact": "exact domain",
+      "group": "existing group · {n} domains",
+      "wildcard": "wildcard"
+    },
+    "review": "Review, publish and install",
+    "sessionName": "Opening {dest}",
+    "source": "Source",
+    "sourceNote": "the agent’s zone, no per-agent exception",
+    "title": "New rule, pre-filled",
+    "track": "Track",
+    "wouldAllow": "Would have allowed {n} over the last hour.",
+    "wouldAllowN": "{n} denied flow(s) ({agents})"
+  },
+  "audit": {
+    "action": {
+      "alert_ack": "Alert acknowledged",
+      "approval": "Human approval",
+      "content_view": "Content viewed",
+      "enroll": "Enrollment",
+      "gateway_command": "Gateway command",
+      "install": "Install",
+      "object_create": "Object created",
+      "publish": "Publish",
+      "request_denied": "Request denied",
+      "rule_create": "Rule created",
+      "session_discard": "Session discarded",
+      "session_open": "Session opened"
+    },
+    "allAuthors": "All authors",
+    "allInterfaces": "All interfaces",
+    "chainChecked": "Chain intact · {n} entries checked · anchor {at}",
+    "chainKo": "Chain broken: check the export",
+    "chainOk": "Chain intact · anchor exported at {at}",
+    "col": {
+      "action": "Action",
+      "author": "Author",
+      "hash": "Hash",
+      "interface": "Interface",
+      "session": "Session",
+      "target": "Target",
+      "time": "Time"
+    },
+    "export": "Export",
+    "full": "Full log",
+    "iface": {
+      "api": "API",
+      "cli": "afw CLI",
+      "mcp": "MCP",
+      "system": "—",
+      "ui": "Console"
+    },
+    "kind": {
+      "agent": "agent",
+      "cli": "human",
+      "human": "human",
+      "system": "system"
+    },
+    "subtitle": "Append-only · hash-chained",
+    "title": "Audit log",
+    "verify": "Verify the chain"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "clone": "Clone",
+    "copied": "Copied",
+    "copy": "copy",
+    "copyFailed": "Copy failed",
+    "edit": "Edit",
+    "loadMore": "Load more",
+    "loading": "Loading…",
+    "seeAll": "See all"
+  },
+  "flow": {
+    "agentMessage": "403 · blocked by agents-firewall: {dest} not allowed for {agent} (rule {rule})",
+    "allow": "Allow this flow",
+    "aria": "Flow detail",
+    "attrib": {
+      "certain": "certain attribution",
+      "uncertain": "uncertain attribution"
+    },
+    "attribHow": {
+      "certain": "call id propagated by the Hermes plugin",
+      "uncertain": "± 2 s window: several tool calls in progress"
+    },
+    "backToJournal": "back to the log",
+    "baselineLocked": "Baseline · cannot be overridden",
+    "captureStarted": "Capture requested for {agent}",
+    "closed": "connection closed",
+    "connRefused": "connection refused · rule {rule}",
+    "copyId": "Copy the flow id",
+    "decrypted": "decrypted",
+    "effectAllowed": "1 request to {dest} · {size} · allowed by rule {rule}",
+    "effectDenied": "1 connection to {dest} · {size} · denied by rule {rule}",
+    "flowKey": "flow",
+    "fullConversation": "Full conversation",
+    "inspectionImpossible": "not possible ({proto})",
+    "inspectionKey": "inspection",
+    "internal": "internal",
+    "llmProvider": "LLM provider",
+    "maskedNote": "Secrets masked before storage (type + fingerprint). Your access is recorded in the audit log.",
+    "meta": {
+      "addresses": "Addresses",
+      "conversation": "Conversation",
+      "dataClass": "Data class",
+      "gateway": "Gateway",
+      "protocol": "Protocol",
+      "rule": "Rule",
+      "volumes": "Volumes"
+    },
+    "metadataOnly": "({proto} flow: metadata only — host, duration, volumes)",
+    "network": "network · gateway {gw}",
+    "noCorrelation": "No tool call attached to this flow.",
+    "none": "Select a flow.",
+    "notDecrypted": "not decrypted",
+    "notFound": "Flow not found",
+    "openFull": "Open full screen",
+    "pageTitle": "Flow {id}",
+    "pcap": "pcap 5 min",
+    "reasoning": "{agent} · reasoning",
+    "receivedByAgent": "received by the agent:",
+    "request": "request",
+    "response": "response",
+    "rst": "connection refused (RST)",
+    "ruleLink": "Rule #{n}",
+    "tab": {
+      "agent": "Agent and conversation",
+      "flow": "Flow",
+      "http": "HTTP",
+      "meta": "Metadata"
+    },
+    "toolCall": "tool call",
+    "topDown": "top-down evaluation",
+    "uncertain": "Uncertain attribution",
+    "untrusted": "untrusted input · {source}",
+    "why": "Why this verdict"
+  },
+  "gateways": {
+    "add": "Add",
+    "addAgent": "An agent (network, proxy, certificate, Hermes plugin)",
+    "addGateway": "A gateway (single-use token, 15 min)",
+    "addNote": "Docker compose, Coolify (through its API) or Kubernetes (NetworkPolicy). A new agent starts in observation mode if its zone is.",
+    "agents": "Agents",
+    "available": "{v} available",
+    "cmdSent": {
+      "reinstall": "Reinstall requested on {gw}",
+      "self_test": "Bypass test started on {gw}",
+      "start_capture": "Capture started on {gw}"
+    },
+    "col": {
+      "by": "By",
+      "date": "Date",
+      "gateway": "Gateway",
+      "result": "Result",
+      "rev": "Rev."
+    },
+    "detail": {
+      "console_unreachable": "console unreachable"
+    },
+    "isolation": "Network isolation",
+    "lastInstalls": "Latest installs",
+    "latency": "Added latency",
+    "link": "Console link",
+    "linkLost": "lost since {at} · retrying in 10 s",
+    "linkOk": "mTLS · last contact {when}",
+    "logs": "Logs",
+    "policy": "Installed policy",
+    "rate": "Throughput",
+    "rateValue": "{n} flows/min · ↑ {v}/min",
+    "register": "Register a gateway",
+    "reinstall": "Reinstall",
+    "revAt": "Revision {n} · {at}",
+    "selfTest": "Test bypass",
+    "status": {
+      "degraded": "degraded",
+      "offline": "offline",
+      "online": "online"
+    },
+    "subtitle": "One per agent host · fails closed when unavailable",
+    "success": "success",
+    "tls": "TLS inspection",
+    "tokenText": "Single use, valid until {at}. Run this command on the gateway host.",
+    "tokenTitle": "Registration token",
+    "version": "Version",
+    "warn": {
+      "console_unreachable": "Console unreachable ({since}): the gateway keeps enforcing revision {n}."
+    }
+  },
+  "internal": {
+    "admin": "Admin API calls",
+    "adminSub": "Action and target resource · SSH sessions at flow level",
+    "agentToAgent": "agent → agent",
+    "agents": "Agents",
+    "alert": "alert",
+    "col": {
+      "action": "Action",
+      "agent": "Agent",
+      "api": "API",
+      "resource": "Resource",
+      "signal": "Signal",
+      "time": "Time"
+    },
+    "map": "Internal flow map",
+    "mapSub": "Who talks to which internal system · width = volume",
+    "new": "new",
+    "p": {
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 d"
+    },
+    "period": "Period",
+    "signal": {
+      "unusual": "unusual"
+    },
+    "subtitle": "Monitoring: allowed by default, logged with the same detail as outbound flows",
+    "systems": "Internal systems",
+    "usual": "usual"
+  },
+  "journal": {
+    "col": {
+      "agent": "agent",
+      "destination": "destination",
+      "out": "↑ sent",
+      "rule": "rule",
+      "time": "time",
+      "tool": "tool call",
+      "verdict": "verdict"
+    },
+    "dragHint": "drag to zoom on a period",
+    "empty": "No flow matches these filters.",
+    "flows": "Flows",
+    "histAria": "Flows per minute over the period: allowed and denied.",
+    "histTip": "{time} · {ok} allowed · {ko} denied",
+    "kbd": {
+      "allow": "allow",
+      "curl": "copy as curl",
+      "navigate": "navigate"
+    },
+    "live": "live · {n} flows/min",
+    "now": "now",
+    "pause": "Pause",
+    "paused": "paused",
+    "period": {
+      "15m": "15 min",
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 d"
+    },
+    "prefix": "prod /",
+    "queryLabel": "Log query",
+    "queryPlaceholder": "agent:daniel-bot dest:*.example.com rule:12 or free text",
+    "removeFilter": "Remove filter",
+    "resume": "Resume",
+    "segment": {
+      "alert": "Alerts",
+      "all": "All",
+      "allow": "Allowed",
+      "deny": "Denied"
+    },
+    "segmentToken": {
+      "alert": "alert",
+      "all": "all",
+      "allow": "allowed",
+      "deny": "denied"
+    },
+    "shown": "{n} flows · newest first"
+  },
+  "kind": {
+    "container": "Container",
+    "coolify": "Coolify",
+    "docker_compose": "Docker compose",
+    "kubernetes": "Kubernetes"
+  },
+  "login": {
+    "demo": "Demo mode: sample data, no call to the control plane. Any token is accepted.",
+    "failed": "Sign-in refused",
+    "intro": "Sign in with your identity provider, or use an API token.",
+    "oidc": "Sign in",
+    "or": "or",
+    "subtitle": "administration console",
+    "title": "Sign in",
+    "token": "API token",
+    "tokenHelp": "Created with `afw token create`; kept for this tab only.",
+    "tokenPlaceholder": "afw_pat_…",
+    "useToken": "Use this token"
+  },
+  "nav": {
+    "agents": "Agents",
+    "alerts": "Alerts",
+    "alsoBy": "everything is also driven by",
+    "aria": "Main navigation",
+    "audit": "Audit log",
+    "gateways": "Gateways",
+    "gatewaysState": "{online} online, {degraded} degraded",
+    "group": {
+      "infra": "infrastructure",
+      "policy": "policy",
+      "watch": "monitor"
+    },
+    "internal": "Internal flows",
+    "journal": "Log",
+    "logout": "Sign out",
+    "objects": "Objects and zones",
+    "open": "Open navigation",
+    "revisions": "Revisions and audit",
+    "rules": "Rulebase"
+  },
+  "objects": {
+    "agentNote": "Rules never name an agent: they apply to its zone.",
+    "builtin": "Built in · cannot be deleted.",
+    "changedIn": "Changed in revision {n} by {by}",
+    "col": {
+      "name": "Name",
+      "type": "Type",
+      "used": "Used in",
+      "value": "Value"
+    },
+    "deleg": {
+      "no": "Not delegated",
+      "self": "Not delegable: the approved agent’s own zone",
+      "yes": "Delegated to the approved agent"
+    },
+    "delegation": "Delegation",
+    "deleteUnused": "Delete (unused)",
+    "detailAria": "Object detail",
+    "expired": "{n} expired | {n} expired | {n} expired",
+    "gateway": "Gateway",
+    "inSession": "{n} in session | {n} in session | {n} in session",
+    "kind": {
+      "agent": "Agent",
+      "any": "Any",
+      "data_class": "Data class",
+      "domain": "Domain",
+      "group": "Group",
+      "host": "Host",
+      "network": "Network",
+      "range": "Range",
+      "service": "Service"
+    },
+    "lockedBySession": "Locked by your session · hidden from other admins until published.",
+    "members": "Members",
+    "newObject": "New object",
+    "newZone": "New zone",
+    "noLongerUsed": "No longer referenced since revision {n}.",
+    "nowhere": "Nowhere. Reported by the pre-install check.",
+    "objects": "Objects",
+    "patterns": "Detected patterns",
+    "places": "{n} places | {n} place | {n} places",
+    "rules": "{n} rules | {n} rule | {n} rules",
+    "rulesLabel": "Rules",
+    "search": "Name or value…",
+    "since": "since {d}",
+    "subtitle": "Named, reusable building blocks of the policy",
+    "type": {
+      "agent": "Agents",
+      "all": "All",
+      "data_class": "Data classes",
+      "domain": "Domains",
+      "group": "Groups",
+      "host": "Hosts",
+      "network": "Networks",
+      "service": "Services"
+    },
+    "typeLabel": "Object type",
+    "unused": "unused",
+    "unusedTag": "unused",
+    "useKind": {
+      "alert": "Alert",
+      "gateway": "Gateway",
+      "inspection": "Inspection",
+      "map": "Map",
+      "masking": "Masking",
+      "rule": "Rule {n}",
+      "zone": "Zone"
+    },
+    "uses": "{n} hits | {n} hit | {n} hits",
+    "whereUsed": "Where is it used?",
+    "zones": "Zones",
+    "zonesNote": "An agent belongs to one zone · a zone = identical permissions"
+  },
+  "palette": {
+    "goto": "Go to an agent, a rule, a flow…",
+    "more": "More",
+    "pages": "Pages",
+    "placeholder": "Agent, page…",
+    "title": "Go to…"
+  },
+  "query": {
+    "key": {
+      "agent": "agent",
+      "destination": "dest",
+      "q": "text",
+      "rule": "rule",
+      "since": "since",
+      "verdict": "verdict",
+      "zone": "zone"
+    }
+  },
+  "revisions": {
+    "changes": "{n} changes | {n} change | {n} changes",
+    "col": {
+      "after": "After",
+      "before": "Before",
+      "item": "Item"
+    },
+    "compare": "Compare with…",
+    "confirmText": "Revision {n} will be installed on {gws}. The operation is audited.",
+    "confirmTitle": "Roll back to revision {n}",
+    "installation": "Install",
+    "installed": "installed",
+    "installedAt": "installed {at}",
+    "notInstalled": "not installed yet",
+    "older": "… older revisions · revision 1: egress-guard policy import",
+    "pending": "Session in progress · not published",
+    "replacedAt": "replaced, installed {at}",
+    "revTitle": "Revision {n} · {title}",
+    "rollback": "Install this revision (rollback)",
+    "rollbackConfirm": "Install",
+    "rolledBack": "Revision {n} reinstalled",
+    "session": "session {id}",
+    "subtitle": "Each publish creates a revision · every change is audited",
+    "title": "Revisions",
+    "total": "{n} in total",
+    "viaMcp": "MCP · approved agent"
+  },
+  "role": {
+    "admin": "admin",
+    "auditor": "auditor",
+    "mcp_agent": "MCP agent",
+    "viewer": "viewer"
+  },
+  "rules": {
+    "activeRev": "active: rev. {n}",
+    "all": "All",
+    "any": "Any",
+    "anyDest": "Any destination",
+    "bar": {
+      "draft": "Session “{name}” · {n}",
+      "draftSub": "{who} · opened {when} · {locks} object(s) locked for other sessions",
+      "idle": "No open session",
+      "idleSub": "Revision {n} installed · any change opens a personal session, nothing applies before install",
+      "install": "Revision {n} published · choose gateways",
+      "installSub": "Install is atomic per gateway; on failure revision {prev} stays active",
+      "installed": "Revision {n} installed on {ok}/{total} gateways",
+      "installedSub": "Covered flows now go through · rollback available from Revisions",
+      "publish": "Session “{name}” · verification",
+      "publishSub": "Review the differences, then publish",
+      "published": "Revision {n} published · not installed yet",
+      "publishedSub": "Published by {who} at {at} · gateways still enforce revision {prev}"
+    },
+    "baseline": "Baseline",
+    "baselineShort": "baseline",
+    "baselineSub": "· evaluated first for every agent · cannot be overridden",
+    "blocking": "Errors block publishing.",
+    "bypass": "Bypassed",
+    "checks": "Pre-install checks",
+    "classService": "Class: {name}",
+    "cleanup": "Cleanup",
+    "cleanupObserveSub": "· observation: logs without denying",
+    "cleanupSub": "· mandatory, always last",
+    "col": {
+      "action": "Action",
+      "destination": "Destination",
+      "expiry": "Expiry",
+      "hits": "Hits",
+      "https": "HTTPS",
+      "n": "No.",
+      "name": "Name",
+      "service": "Service",
+      "source": "Source",
+      "track": "Track"
+    },
+    "decrypted": "Decrypted",
+    "defaultSessionName": "Changes",
+    "diffWith": "Differences with revision {n}",
+    "discard": "Discard",
+    "installAria": "Install the policy",
+    "installEllipsis": "Install…",
+    "installOn": "Install on {n} gateways | Install on {n} gateway | Install on {n} gateways",
+    "installRev": "Install revision {n}",
+    "noShadow": "No rule shadowed by a higher one",
+    "nonBlocking": "Non-blocking warnings.",
+    "notInstalled": "not installed yet",
+    "observeText": "Since {since} · everything is logged, nothing is denied (except the baseline). {n} distinct destinations seen, {u} not covered by a rule.",
+    "openSession": "Open a session",
+    "preselected": "Gateways carrying the changed zone are preselected",
+    "proposeFromTraffic": "Suggest rules from traffic",
+    "publishAria": "Publish the session",
+    "publishFailed": "Publish failed",
+    "publishRev": "Publish revision {n}",
+    "resultPerGw": "Result per gateway",
+    "revActive": "rev. {n} active · {d}",
+    "revComment": "Revision comment",
+    "revCommentPh": "Why this change?",
+    "rule": "Rule",
+    "search": "Name, object, domain, no.…",
+    "searchLabel": "Search a rule",
+    "section": "Section",
+    "seeJournal": "See in the log",
+    "sessionAria": "Editing session",
+    "steps": "Steps",
+    "subtitle": "Evaluated top-down · first matching rule applies",
+    "tag": {
+      "expired": "expired",
+      "session": "session",
+      "unused": "unused"
+    },
+    "toEnforce": "Switch to default deny",
+    "useCli": "Creation coming to the console: use the CLI or the MCP",
+    "verifyPublish": "Verify and publish…",
+    "wasRule": "Was rule {n}",
+    "zone": "Zone",
+    "zoneSub": "· zone {zone}"
+  },
+  "session": {
+    "changes": "{n} change | {n} change | {n} changes",
+    "empty": "empty",
+    "pill": "session · {label}"
+  },
+  "shortcuts": {
+    "allow": "Allow the selected flow",
+    "close": "Close the panel",
+    "curl": "Copy the request as curl",
+    "goto": "Go to the log, agents, rules…",
+    "navigate": "Next / previous flow",
+    "palette": "Go to an agent, a rule, a page",
+    "search": "Search the log",
+    "title": "shortcuts"
+  },
+  "status": {
+    "ingestion": "ingestion {n}/min",
+    "latency": "added latency p95 {ms} ms",
+    "revision": "policy rev. {n}"
+  },
+  "steps": {
+    "install": "Install",
+    "modify": "Modify",
+    "publish": "Publish",
+    "revision": "revision {n}"
+  },
+  "theme": {
+    "toggle": "Toggle light / dark"
+  },
+  "trace": {
+    "baseline": "Baseline",
+    "result": {
+      "accept": "accept",
+      "deny": "deny",
+      "no_match": "no match",
+      "observe": "observe"
+    },
+    "zoneRules": "{n} rules of {zone}"
+  },
+  "track": {
+    "capture": "Capture",
+    "captureLong": "Capture",
+    "detailed": "Detailed",
+    "detailedLong": "Detailed log with content (default)",
+    "log": "Log",
+    "logLong": "Log",
+    "none": "None",
+    "noneLong": "None"
+  },
+  "verdict": {
+    "allow": "allowed",
+    "allowUpper": "✓ ALLOWED",
+    "deny": "denied",
+    "denyUpper": "✕ DENIED",
+    "observed": "observed",
+    "observedUpper": "◐ OBSERVED"
+  },
+  "verify": {
+    "expired_rule": "Expired rule still in place: {rule} “{name}” (zone {zone})",
+    "shadowed_rule": "Rule {rule} shadowed by rule {by}",
+    "unused_object": "Unused object: {object}"
+  },
+  "zone": {
+    "enforce": "default deny",
+    "observation": "observation",
+    "observeMode": "Observation mode"
+  }
+}

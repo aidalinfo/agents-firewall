@@ -17,9 +17,13 @@ export default defineConfig({
           include: ['tests/nuxt/**/*.test.ts'],
           environment: 'nuxt',
           environmentOptions: {
-            nuxt: { domEnvironment: 'happy-dom' },
+            nuxt: {
+              domEnvironment: 'happy-dom',
+              overrides: { runtimeConfig: { public: { apiMode: 'mock', mockLatencyMs: 0 } } },
+            },
           },
-          testTimeout: 30000,
+          testTimeout: 60000,
+          hookTimeout: 60000,
         },
       }),
     ],

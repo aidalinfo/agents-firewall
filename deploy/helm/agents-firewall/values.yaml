@@ -13,8 +13,9 @@ imagePullSecrets: []
 secrets:
   # -- Existing secret with keys `data-key`, `database-url` and (optional) `bootstrap-admin-token`.
   existingSecret: ""
-  # -- Content encryption key (AES-256-GCM, 32 bytes base64). Generated once and kept on upgrade when empty.
-  #    Back it up: stored HTTP bodies cannot be read without it.
+  # -- Content encryption key (AES-256-GCM, 32 bytes base64). When empty it is generated once and kept on
+  #    upgrade (`lookup`); without cluster access (helm template, --dry-run, GitOps) the chart fails instead:
+  #    set it or use existingSecret. Back it up: stored HTTP bodies cannot be read without it.
   dataKey: ""
   # -- First administrator token (create real tokens / configure OIDC with it, then remove it).
   bootstrapAdminToken: ""
@@ -116,7 +117,7 @@ postgres:
     pullPolicy: IfNotPresent
   database: afw
   user: afw
-  # -- Generated once and kept on upgrade when empty.
+  # -- Generated once and kept on upgrade when empty (requires cluster access, like secrets.dataKey).
   password: ""
   persistence:
     size: 10Gi
@@ -130,6 +131,8 @@ externalDatabase:
   url: ""
   existingSecret: ""
 
+# The gateway runs as root (network capabilities) with a read-only
+#    root filesystem, all other capabilities dropped, its state on a PVC.
 # -- Gateways, one per namespace of agents (ADR 0003, Kubernetes). Pods labelled `afw.enrolled=true` in that
 #    namespace may only talk to the gateway (NetworkPolicy); afw-enroll patches their DNS, proxy variables and CA.
 gateway:

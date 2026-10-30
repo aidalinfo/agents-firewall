@@ -36,13 +36,13 @@ if [ ! -s "$SECRETS_FILE" ]; then
     "$(head -c 32 /dev/urandom | base64 | tr -d '\n')" >"$SECRETS_FILE")
 fi
 chmod 600 "$SECRETS_FILE"
+# shellcheck source=/dev/null
 set -a; . "$SECRETS_FILE"; set +a
 AFW_TOKEN="$AFW_DEMO_ADMIN_TOKEN"
 
 # --- 1. images ---------------------------------------------------------------------------------------
 # service:image:source that must exist for the image to be buildable
 IMAGES="demo-pki:afw-demo-tools:local:demo/tools/Dockerfile
-afw-net-laurent-bot:afw-netinit:local:deploy/docker/Dockerfile.netinit
 afw-api:afw-api:local:crates/afw-api/src/main.rs
 gateway:afw-gateway:local:deploy/docker/Dockerfile.gateway
 console:afw-console:local:console/Dockerfile
@@ -55,6 +55,10 @@ while IFS=: read -r svc img tag src; do
   fi
   if [ "$build" = 1 ]; then step "build $img:$tag"; dc build "$svc" >&2 || die "build of $img:$tag failed"; fi
 done <<<"$IMAGES"
+if [ "$build" = 1 ]; then
+  step "build afw-netinit:local"
+  docker build -q -t afw-netinit:local -f "$ROOT/deploy/docker/Dockerfile.netinit" "$ROOT/deploy/docker" >/dev/null || die "netinit build failed"
+fi
 if [ "$build" = 1 ] && [ -e "$ROOT/crates/afw-cli/src/main.rs" ]; then
   step "build $AFW_CLI_IMAGE"
   docker build -q -t "$AFW_CLI_IMAGE" -f "$ROOT/deploy/docker/Dockerfile.cli" "$ROOT" >/dev/null || warn "CLI image build failed (scenarios fall back to curl)"
@@ -130,9 +134,9 @@ dc up -d --no-build $agents >&2 ||
   die "agents not started: their afw-net container waits for the gateway CA (docker compose -p $DEMO_PROJECT logs gateway afw-net-laurent-bot)"
 
 if have afw-gateway:local; then
-  for _ in $(seq 1 30); do agent_sh laurent-bot 'test -s /afw-ca/bundle.pem' 2>/dev/null && break; sleep 1; done
-  agent_sh laurent-bot 'test -s /afw-ca/bundle.pem' 2>/dev/null ||
-    warn "no CA bundle in the agents: the gateway did not export its inspection CA (/var/lib/afw/public/inspection-ca.crt)"
+  for _ in $(seq 1 30); do agent_sh laurent-bot "test -s $AGENT_CA_BUNDLE" 2>/dev/null && break; sleep 1; done
+  agent_sh laurent-bot "test -s $AGENT_CA_BUNDLE" 2>/dev/null ||
+    warn "no CA bundle in the agents: the gateway did not export its inspection CA (/var/lib/afw/public/gateway.crt)"
 fi
 
 cat >&2 <<INFO

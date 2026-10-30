@@ -18,7 +18,7 @@ Gateway "{{ .name }}" in namespace "{{ .namespace }}":
   - enrolled pods (label afw.enrolled=true) can only reach the gateway (NetworkPolicy afw-enrolled-egress)
   {{- if not .caCertificate }}
   - once registered, publish its inspection CA for the pods:
-      kubectl -n {{ .namespace }} exec deploy/{{ .name }} -- cat /var/lib/afw/public/inspection-ca.crt > ca.crt
+      kubectl -n {{ .namespace }} exec deploy/{{ .name }} -- cat /var/lib/afw/public/gateway.crt > ca.crt
       kubectl -n {{ .namespace }} create configmap afw-gateway-ca --from-file=ca.crt
     (or set gateway.instances[].caCertificate)
   {{- end }}

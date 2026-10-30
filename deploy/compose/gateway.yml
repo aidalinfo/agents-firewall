@@ -22,7 +22,7 @@ services:
       AFW_REGISTRATION_TOKEN: ${AFW_REGISTRATION_TOKEN:-}
       AFW_GATEWAY_NAME: ${AFW_GATEWAY_NAME:-}
       AFW_STATE_DIR: /var/lib/afw
-      AFW_CA_EXPORT: /var/lib/afw/public/inspection-ca.crt
+      AFW_CA_EXPORT: /var/lib/afw/public/gateway.crt
       AFW_INTERNAL_SUBNETS: ${AFW_INTERNAL_SUBNET:-10.77.0.0/24}
       AFW_UPSTREAM_DNS: ${AFW_UPSTREAM_DNS:-}
       AFW_UPSTREAM_CA_FILE: ${AFW_UPSTREAM_CA_FILE:-}

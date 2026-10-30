@@ -39,7 +39,11 @@ check "unknown names are NXDOMAIN (no Internet forwarding)" \
 section "fake HTTPS upstreams (demo CA)"
 check "demo CA and upstream certificate exist" probe 'test -s /pki/demo-ca.crt && test -s /pki/upstream.crt && test -s /pki/upstream.key'
 check "upstream certificate verifies against the demo CA" probe 'openssl verify -CAfile /pki/demo-ca.crt /pki/upstream.crt'
-check "demo CA private key is not readable by others" probe '[ "$(stat -c %a /pki/demo-ca.key)" = 600 ]'
+check "the demo CA private key is not in the upstream volume" probe '! test -e /pki/demo-ca.key'
+check "the demo CA private key is only in the PKI job volume, mode 600" \
+  docker run --rm -v "${PROJECT}_demo-pki-ca:/pki-ca:ro" afw-demo-tools:local sh -c '[ "$(stat -c %a /pki-ca/demo-ca.key)" = 600 ]'
+check "the public PKI volume (gateway) holds the CA certificate only" \
+  docker run --rm -v "${PROJECT}_demo-pki-public:/p:ro" afw-demo-tools:local sh -c '[ "$(ls /p)" = demo-ca.crt ]'
 check "fake LLM answers /v1/messages over HTTPS" \
   probe 'curl -sf --cacert /pki/demo-ca.crt --resolve api.anthropic.com:443:198.18.0.10 -H "content-type: application/json" -d "{\"model\":\"demo\",\"messages\":[]}" https://api.anthropic.com/v1/messages | grep -q "\"type\": *\"message\""'
 check "TLS fails without the demo CA" \
@@ -48,6 +52,17 @@ check "allowed-api answers for api.github.com too (SAN)" \
   probe 'curl -sf --cacert /pki/demo-ca.crt --resolve api.github.com:443:198.18.0.12 https://api.github.com/zen'
 check "s3 accepts a presigned PUT" \
   probe 'curl -sf --cacert /pki/demo-ca.crt --resolve s3.demo.example:443:198.18.0.13 -X PUT --data-binary hello "https://s3.demo.example/bucket/k?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abcdef"'
+
+section "no Internet from the gateway's networks"
+# Stand-in for the gateway: a container on the same internal networks (wan, lan), resolving only through
+# the demo DNS. (Scenario 17 runs the same probes in the real gateway namespace.)
+gwprobe() {
+  docker run --rm --network "${PROJECT}_wan" afw-demo-tools:local sh -c "$1"
+}
+check "system resolver cannot resolve example.com" bash -c '! docker run --rm --network "$1_wan" afw-demo-tools:local getent hosts example.com >/dev/null 2>&1' _ "$PROJECT"
+check "no route to a public IP (93.184.215.14)" bash -c '! docker run --rm --network "$1_wan" afw-demo-tools:local curl -s -o /dev/null --max-time 5 -k https://93.184.215.14 2>/dev/null' _ "$PROJECT"
+check "no public resolver reachable (1.1.1.1)" bash -c '! docker run --rm --network "$1_wan" afw-demo-tools:local dig +time=2 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1' _ "$PROJECT"
+check "the demo DNS (AFW_UPSTREAM_DNS) answers NXDOMAIN for example.com" gwprobe 'dig +noall +comments @198.18.0.53 example.com | grep -q NXDOMAIN'
 
 section "exfiltration receipt log (evidence for scenarios)"
 marker="world-test-$$-$RANDOM"

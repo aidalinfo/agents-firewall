@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export ROOT
 HELM_IMAGE="${HELM_IMAGE:-alpine/helm:3.16.2}"
-SHELLCHECK_IMAGE="${SHELLCHECK_IMAGE:-koalaman/shellcheck:stable}"
+SHELLCHECK_IMAGE="${SHELLCHECK_IMAGE:-koalaman/shellcheck:v0.10.0}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
 KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.6.7}"
 YQ_IMAGE="${YQ_IMAGE:-mikefarah/yq:4.44.3}"

@@ -5,7 +5,8 @@
 #  3. an agent sharing the namespace WITHOUT NET_ADMIN cannot change or delete the route;
 #  4. no direct path to the other hosts of the internal subnet (other agents): only a /32 route to the gateway;
 #  5. any interface other than lo and the gateway's is brought down (a later `docker network connect` too);
-#  6. it builds /afw-ca/bundle.pem (system roots + gateway CA) and /afw-ca/gateway-ca.crt for the agent.
+#  6. it builds /afw-ca/bundle.pem (system roots + gateway CA) and /afw-ca/gateway.crt for the agent.
+# The image runs afw_enroll::netinit_script (deploy/tests/enroll-sync.sh); its loop runs every 10 s.
 # shellcheck source=deploy/tests/common.sh
 . "$(dirname "$0")/common.sh"
 cd "$ROOT"
@@ -40,12 +41,12 @@ docker network create --internal "$NET2" >/dev/null
 docker volume create "$SRCVOL" >/dev/null
 docker run --rm -v "$SRCVOL":/src alpine:3.20 sh -c 'apk add -q --no-cache openssl >/dev/null &&
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout /dev/null \
-  -subj "/CN=afw test gateway CA" -days 2 -out /src/inspection-ca.crt 2>/dev/null' >/dev/null
+  -subj "/CN=afw test gateway CA" -days 2 -out /src/gateway.crt 2>/dev/null' >/dev/null
 # A peer on the same internal subnet (another agent), listening on TCP 7777.
 docker run -d --name "$PEER" --network "$NET" --ip "$PREFIX.20" alpine:3.20 sh -c 'while :; do nc -l -p 7777 -e echo hi; done' >/dev/null
 docker run -d --name "$NETNS" --network "$NET" --ip "$PREFIX.10" --cap-drop ALL --cap-add NET_ADMIN \
-  -e AFW_GATEWAY_IP="$GW_IP" -e AFW_ROUTE_INTERVAL=2 \
-  -v "$SRCVOL":/afw-gateway-ca:ro -v "$CAVOL":/afw-ca "$IMAGE" >/dev/null || true
+  -e AFW_GATEWAY_IP="$GW_IP" -e AFW_AGENT_IP="$PREFIX.10" \
+  -v "$SRCVOL":/afw-ca-src:ro -v "$CAVOL":/afw-ca "$IMAGE" >/dev/null || true
 # The agent shares the namespace, without any capability on the network (no NET_ADMIN, no NET_RAW).
 docker run -d --name "$AGENT" --network "container:$NETNS" --cap-drop NET_RAW -v "$CAVOL":/afw-ca:ro \
   alpine:3.20 sleep 600 >/dev/null || true
@@ -59,7 +60,7 @@ denied() {
 route_is_gw() { docker exec "$AGENT" ip route 2>/dev/null | grep -q "^default via $GW_IP "; }
 wait_route() { for _ in $(seq 1 "$1"); do route_is_gw && return 0; sleep 1; done; return 1; }
 
-check "default route points to the gateway ($GW_IP)" wait_route 10
+check "default route points to the gateway ($GW_IP)" wait_route 15
 check "agent container is running in the shared namespace" \
   bash -c '[ "$(docker inspect -f "{{.State.Running}}" "$1")" = true ]' _ "$AGENT"
 check "agent cannot delete the default route (no NET_ADMIN)" denied ip route del default
@@ -80,27 +81,29 @@ check "no IPv6 address on the gateway interface (no link-local path between agen
 check "the path to another agent goes through the gateway" \
   bash -c 'docker exec "$1" ip route get "$2" | grep -q "via $3"' _ "$AGENT" "$PREFIX.20" "$GW_IP"
 check "CA bundle built (system roots + gateway CA) and gateway CA alone" \
-  bash -c 'for _ in $(seq 1 10); do docker exec "$1" sh -c "test -s /afw-ca/bundle.pem && test -s /afw-ca/gateway-ca.crt" && break; sleep 1; done
+  bash -c 'for _ in $(seq 1 15); do docker exec "$1" sh -c "test -s /afw-ca/bundle.pem && test -s /afw-ca/gateway.crt" && break; sleep 1; done
     n=$(docker exec "$1" grep -c "BEGIN CERTIFICATE" /afw-ca/bundle.pem); [ "$n" -gt 50 ] &&
-    docker exec "$1" sh -c "grep -qF \"\$(sed -n 2p /afw-ca/gateway-ca.crt)\" /afw-ca/bundle.pem"' _ "$AGENT"
+    docker exec "$1" sh -c "grep -qF \"\$(sed -n 2p /afw-ca/gateway.crt)\" /afw-ca/bundle.pem"' _ "$AGENT"
 check "agent cannot write the CA bundle" \
   bash -c '! docker exec "$1" sh -c "echo x >> /afw-ca/bundle.pem" 2>/dev/null' _ "$AGENT"
 check "netinit is healthy once the bundle exists" \
-  bash -c 'for _ in $(seq 1 20); do [ "$(docker inspect -f "{{.State.Health.Status}}" "$1")" = healthy ] && exit 0; sleep 1; done; exit 1' _ "$NETNS"
+  bash -c 'for _ in $(seq 1 40); do [ "$(docker inspect -f "{{.State.Health.Status}}" "$1")" = healthy ] && exit 0; sleep 1; done; exit 1' _ "$NETNS"
 # A second network attached later: its interface must be brought down (no way around the gateway).
 docker network connect "$NET2" "$NETNS" >/dev/null 2>&1 || true
 check "an extra interface is brought down by netinit" \
-  bash -c 'for _ in $(seq 1 8); do n=$(docker exec "$1" sh -c "ip -o link show up | grep -v -E \": (lo|eth0)[:@]\" | wc -l"); [ "$n" = 0 ] && exit 0; sleep 1; done; docker exec "$1" ip -o link; exit 1' _ "$AGENT"
+  bash -c 'for _ in $(seq 1 15); do n=$(docker exec "$1" sh -c "ip -o link show up | grep -v -E \": (lo|eth0)[:@]\" | wc -l"); [ "$n" = 0 ] && exit 0; sleep 1; done; docker exec "$1" ip -o link; exit 1' _ "$AGENT"
 check "still a single default route via the gateway after the extra network" \
   bash -c '[ "$(docker exec "$1" ip route | grep -c "^default")" = 1 ] && docker exec "$1" ip route | grep -q "^default via $2 "' _ "$AGENT" "$GW_IP"
 # Simulate tampering from a privileged process: remove the route from the afw-net container itself.
 docker exec "$NETNS" ip route del default >/dev/null 2>&1 || true
-check "route is restored by netinit after removal" wait_route 8
+check "route is restored by netinit after removal (10 s loop)" wait_route 15
 check "netinit stops quickly on SIGTERM (< 5 s)" \
   bash -c '[ "$(docker inspect -f "{{.State.Running}}" "$1")" = true ] || exit 1; s=$(date +%s); docker stop -t 10 "$1" >/dev/null; [ $(( $(date +%s) - s )) -lt 5 ]' _ "$NETNS"
 check "netinit refuses to start without AFW_GATEWAY_IP" \
   bash -c 'out=$(docker run --rm --cap-add NET_ADMIN --network none "$1" 2>&1) && exit 1; grep -q AFW_GATEWAY_IP <<<"$out"' _ "$IMAGE"
+check "netinit refuses to start without AFW_AGENT_IP" \
+  bash -c 'out=$(docker run --rm --cap-add NET_ADMIN --network none -e AFW_GATEWAY_IP=1.2.3.4 "$1" 2>&1) && exit 1; grep -q AFW_AGENT_IP <<<"$out"' _ "$IMAGE"
 check "netinit refuses an invalid AFW_GATEWAY_IP" \
-  bash -c 'out=$(docker run --rm --cap-add NET_ADMIN --network none -e "AFW_GATEWAY_IP=1.2.3.4;id" "$1" 2>&1) && exit 1; grep -q "invalid" <<<"$out"' _ "$IMAGE"
+  bash -c 'out=$(docker run --rm --cap-add NET_ADMIN --network none -e "AFW_GATEWAY_IP=1.2.3.4;id" -e AFW_AGENT_IP=1.2.3.5 "$1" 2>&1) && exit 1; grep -q "invalid" <<<"$out"' _ "$IMAGE"
 
 finish

@@ -15,19 +15,20 @@ prêt avant eux et ne fixer qu'en un seul endroit ce qu'il suppose de leur confi
 - `deploy/docker/Dockerfile.api` et `Dockerfile.cli` : multi-étapes `rust:1.91-bookworm` → `debian:bookworm-slim`,
   utilisateur `10001`, caches BuildKit, `SQLX_OFFLINE=true` ; les migrations sont embarquées par `sqlx::migrate!`.
   L'image CLI contient `afw` et `afw-mcp` (utilisée par la démo). Rien n'est poussé dans un registre.
+- Dockerfiles de la passerelle et de la console : **réattribués**. `deploy/docker/Dockerfile.gateway` est écrit
+  par le lot L6, `console/Dockerfile` par le lot L3 ; ce lot les référence (compose, `deploy/tests/images.sh`)
+  sans les écrire.
 - `deploy/docker/Dockerfile.netinit` : conteneur « pause » `afw-net-<agent>` (ADR 0003), alpine + iproute2 +
-  ca-certificates. Toutes les `AFW_ROUTE_INTERVAL` secondes (10 par défaut), il :
-  1. pose une route `/32` vers la passerelle et **supprime la route du sous-réseau interne** : un agent ne joint
-     jamais un autre agent sans passer par la passerelle ;
-  2. met **hors service toute interface** autre que `lo` et celle de la passerelle (y compris un réseau ajouté
-     plus tard) et vide l'IPv6 de l'interface (pas de chemin lien-local entre agents) ;
-  3. maintient une seule route par défaut via la passerelle ;
-  4. construit `/afw-ca/bundle.pem` (racines système + CA d'inspection de la passerelle) et `/afw-ca/gateway-ca.crt`
-     dans un volume `afw-ca-<agent>` monté en lecture seule dans l'agent ; il n'est sain qu'une fois le paquet
-     présent, et l'agent attend cet état.
-  Le conteneur n'a que `NET_ADMIN` (`cap_drop: [ALL]`) ; l'agent perd `NET_RAW` et n'a jamais `NET_ADMIN`.
-  `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` pointent sur le paquet, `NODE_EXTRA_CA_CERTS` sur la CA
-  seule. La logique de référence est `netinit_script(spec)` d'afw-enroll (lot L11) ; ce script doit rester aligné.
+  ca-certificates (`ip`, `awk`, `/etc/ssl/certs/ca-certificates.crt`). Sa logique est **exactement**
+  `afw_enroll::netinit_script` (ADR 0023, source de vérité), recopiée dans `deploy/docker/netinit.sh` entre deux
+  marqueurs ; `deploy/tests/enroll-sync.sh` la régénère avec la crate et échoue au moindre écart. Seules les
+  adresses viennent de l'environnement (`AFW_GATEWAY_IP`, `AFW_AGENT_IP`, validées). Toutes les 10 s : interfaces
+  étrangères coupées, route `/32` puis route par défaut vers la passerelle, **toutes les autres routes
+  supprimées** (aucun chemin direct entre agents), autre famille d'adresses vidée, paquet de CA
+  (`bundle.pem` = racines système + CA de la passerelle, `gateway.crt`) reconstruit dans `afw-ca-<agent>`,
+  monté en lecture seule dans l'agent ; sain seulement quand tout est correct. afw-enroll pose en plus
+  `accept_redirects=0`. La revue demandait un intervalle de 2 s : l'intervalle appartient à
+  `netinit_script` (10 s, lot L11) et n'est pas redéfini ici, pour ne pas diverger de la source de vérité.
 
 ### Compose
 - `deploy/compose/docker-compose.yml` : console, API, PostgreSQL 17 ; ClickHouse 24.8 seulement avec le profil
@@ -41,8 +42,11 @@ prêt avant eux et ne fixer qu'en un seul endroit ce qu'il suppose de leur confi
 Chart `deploy/helm/agents-firewall` : API (une seule réplique en V1 : la PKI console vit sur son volume ; la
 contrainte est vérifiée par le chart), console, PostgreSQL intégré (simple StatefulSet, désactivable au profit
 d'une base externe), Ingress (console + `/api`), secrets dont la clé de contenu générée une fois et conservée
-aux mises à jour (`lookup`), service distinct pour l'entrée passerelle (jamais terminée par l'Ingress).
-Passerelles par namespace optionnelles (`gateway.instances`) : Deployment + Service (proxy, DNS, ports
+aux mises à jour (`lookup`) — et **refus explicite** (`fail`) quand `lookup` est indisponible (`helm template`,
+`--dry-run`, GitOps) sans `secrets.dataKey`/`existingSecret`, plutôt qu'une clé régénérée à chaque rendu —, service distinct pour l'entrée passerelle (jamais terminée par l'Ingress).
+Passerelles par namespace optionnelles (`gateway.instances`) : Deployment (root, car la passerelle a besoin de
+capacités réseau ; donc pas de `runAsNonRoot`, mais `readOnlyRootFilesystem`, toutes les autres capacités
+retirées, état sur PVC, `/tmp` en `emptyDir`) + Service (proxy, DNS, ports
 transparents), PVC conservé, ConfigMap `afw-gateway-ca`, et NetworkPolicy `afw-enrolled-egress` : les pods
 `afw.enrolled=true` ne sortent que vers leur passerelle (proxy, écoute transparente, DNS). Vérifié par
 `helm lint --strict`, `helm template` et kubeconform.
@@ -56,28 +60,45 @@ transparents), PVC conservé, ConfigMap `afw-gateway-ca`, et NetworkPolicy `afw-
   vers l'extérieur. CA de démo générée par openssl (image `afw-demo-tools`), à laquelle seule la passerelle
   fait confiance en amont. Faux services Python (bibliothèque standard) qui journalisent ce qu'ils reçoivent :
   preuve que rien n'est arrivé chez la cible.
-- Agents enrôlés à la main au format afw-enroll (ADR 0003) ; `daniel-bot` est l'agent Hermes factice du lot L4.
+- Agents : `demo/agents.base.yml` (avant enrôlement) → `demo/docker-compose.agents.yml`, **généré par
+  `afw_enroll::enroll_compose`** (outil `deploy/tools/demo-enroll`, vérifié par `enroll-sync.sh`) ; seules
+  adaptations : le réseau interne est défini par le compose principal et la CA de la passerelle vient de son
+  volume public (`gateway.crt`). `daniel-bot` est l'agent Hermes factice du lot L4 ; son jeton de plugin
+  (rôle `agent_plugin`) vient de `POST /enrollments` (`EnrollmentRequest`).
+- Réseaux : `control` est interne ; seuls l'API et la console sont sur `publish` (ports sur 127.0.0.1) ;
+  la passerelle n'est que sur des réseaux internes : elle ne joint rien hors de la démo et ne résout que par
+  `AFW_UPSTREAM_DNS`.
+- Secrets : le jeton d'administration et `AFW_DATA_KEY` sont générés par `up.sh` dans `demo/.state/secrets.env`
+  (0600, jamais commités) ; aucune valeur par défaut dans le compose.
+- Politique : le socle n'ouvre la console qu'à la zone de `daniel-bot` et aux seuls chemins
+  `/api/v1/ingest/tool-calls` et `/api/v1/intent-policy`, puis refuse tout le plan de contrôle (10.76.0.0/24) :
+  sans cela l'acceptation implicite « interne surveillé » laisserait un agent administrer la politique.
+- PKI : la clé de la CA de démo n'existe que dans un volume monté par le seul job PKI ; les faux services ont
+  leur certificat, la passerelle le seul certificat de la CA.
 - `demo/lib.sh` est le **seul** endroit qui connaît les chemins de l'API, les charges utiles et la syntaxe de
   la CLI (CLI d'abord, repli `curl`) ; les scénarios n'appellent que ses fonctions. La politique de démo est un
   `PolicyDocument` à identifiants fixes, chargé ressource par ressource avec réécriture des références vers les
   identifiants rendus par l'API.
-- Chaque scénario rend PASS, FAIL ou SKIP (dépendance absente) avec ses preuves ; un résultat « bloqué » n'est
-  accepté qu'après un témoin positif (destination autorisée joignable) et l'absence de réception côté cible.
+- Chaque scénario rend PASS, FAIL ou SKIP (dépendance absente) avec ses preuves. Un résultat « bloqué » n'est
+  accepté qu'après un témoin positif (un marqueur envoyé à la destination autorisée et **reçu**) et la lecture
+  effective du journal de réception de la cible : un journal illisible fait échouer le scénario.
+- Toutes les routes appelées par `demo/lib.sh` et les scénarios sont vérifiées contre `docs/api/openapi.yaml`.
 - Mémoire : pas de ClickHouse, limites mémoire par service ; une seule image outillage pour tous les faux services.
 
 ## Hypothèses sur la configuration des autres lots (à confirmer à leur fusion)
+- Passerelle : exporte le certificat public de sa CA d'inspection dans `/var/lib/afw/public/gateway.crt`.
 - API (L7) : `AFW_LISTEN` (existe), `DATABASE_URL` (existe), `AFW_GW_LISTEN` (entrée mTLS `:8443`),
   `AFW_PUBLIC_URL`, `AFW_PUBLIC_HOSTNAMES` (SAN du certificat de l'entrée passerelle), `AFW_STATE_DIR`,
   `AFW_CONSOLE_CA_EXPORT` (certificat public de la CA console), `AFW_DATA_KEY`, `AFW_BOOTSTRAP_ADMIN_TOKEN`,
   `AFW_CORS_ORIGINS`, `AFW_LOG_STORE`, `AFW_CLICKHOUSE_*`, `AFW_OIDC_*`, `AFW_AUDIT_EXPORT_DIR` ; `/healthz`.
 - Passerelle (L6) : `AFW_CONSOLE_URL`, `AFW_CONSOLE_CA_FILE`, `AFW_REGISTRATION_TOKEN`, `AFW_GATEWAY_NAME`,
-  `AFW_STATE_DIR=/var/lib/afw`, `AFW_CA_EXPORT` (certificat public de la CA d'inspection),
+  `AFW_STATE_DIR=/var/lib/afw`, `AFW_CA_EXPORT` (certificat public de la CA d'inspection, `gateway.crt`),
   `AFW_INTERNAL_SUBNETS`, `AFW_UPSTREAM_DNS`, `AFW_UPSTREAM_CA_FILE`, `AFW_INTERCEPT=proxy-dns` (Kubernetes) ;
   écoutes 3128, 15001, 53, santé 9090 `/healthz`.
 - Console (L3) : `NUXT_PUBLIC_API_MODE`, `NUXT_PUBLIC_API_BASE`, port 3000.
 - CLI/MCP (L8/L9) : `AFW_URL`, `AFW_TOKEN` ; syntaxe des commandes et noms des outils MCP surchargeables
   (`AFW_CLI_*`, `MCP_TOOL_*`, `AFW_ENROLL_ARGS`).
-- Plugin Hermes (L4) : `integrations/hermes/demo/Dockerfile.demo`, serveur de commande sur `127.0.0.1:8000/run`.
+- Plugin Hermes (L4, fusionné) : `integrations/hermes/demo/Dockerfile.demo`, serveur de commande `127.0.0.1:8080/run`.
 Si un lot retient d'autres noms, on corrige les fichiers de `deploy/` et `demo/lib.sh`, pas les scénarios.
 
 ## Alternatives écartées

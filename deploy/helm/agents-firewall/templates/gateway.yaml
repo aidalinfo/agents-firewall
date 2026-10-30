@@ -78,8 +78,12 @@ spec:
         - name: gateway
           image: {{ include "afw.image" $root.Values.gateway.image }}
           imagePullPolicy: {{ $root.Values.gateway.image.pullPolicy }}
+          # Runs as root (no runAsNonRoot): the gateway image needs root for its network capabilities
+          # (NET_ADMIN in Docker mode, port 53 here). Mitigations: every other capability dropped, no
+          # privilege escalation, read-only root filesystem; state on its PVC, scratch on /tmp.
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
               add: [NET_BIND_SERVICE]
@@ -87,7 +91,7 @@ spec:
             - { name: AFW_CONSOLE_URL, value: {{ include "afw.gatewayEndpoint" $root | quote }} }
             - { name: AFW_GATEWAY_NAME, value: {{ $name | quote }} }
             - { name: AFW_STATE_DIR, value: /var/lib/afw }
-            - { name: AFW_CA_EXPORT, value: /var/lib/afw/public/inspection-ca.crt }
+            - { name: AFW_CA_EXPORT, value: /var/lib/afw/public/gateway.crt }
             # Kubernetes mode: no nftables interception, isolation comes from the NetworkPolicy.
             - { name: AFW_INTERCEPT, value: "proxy-dns" }
             - name: AFW_REGISTRATION_TOKEN
@@ -112,10 +116,13 @@ spec:
             {{- toYaml $root.Values.gateway.resources | nindent 12 }}
           volumeMounts:
             - { name: state, mountPath: /var/lib/afw }
+            - { name: tmp, mountPath: /tmp }
       volumes:
         - name: state
           persistentVolumeClaim:
             claimName: {{ $name }}-state
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

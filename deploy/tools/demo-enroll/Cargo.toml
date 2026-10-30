@@ -1,0 +1,14 @@
+# Generates demo/docker-compose.agents.yml and checks deploy/docker/netinit.sh with afw-enroll, the
+# source of truth of the enrolled format (ADR 0023, ADR 0024). Standalone: not a workspace member.
+[package]
+name = "afw-demo-enroll"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+afw-enroll = { path = "../../../crates/afw-enroll" }
+serde_yaml = "0.9"

@@ -1,112 +1,67 @@
 #!/bin/sh
-# afw-netinit: network "pause" container of an enrolled agent (docs/adr/0003-isolement-reseau.md).
-# The agent shares this container's network namespace (network_mode: service:afw-net-<agent>) and has
-# no NET_ADMIN; only this container may change the network. Every AFW_ROUTE_INTERVAL seconds (default 2:
-# a tampered route or an attached network is corrected within 2 s)
-# it enforces:
-#   - a single default route via the gateway, and a /32 route to the gateway as the only on-link route:
-#     the route of the internal subnet is removed, so the agent cannot reach the other agents directly;
-#   - every interface other than lo and the gateway's one is down (a network attached later included);
-#   - no IPv6 on the gateway interface (no link-local path between agents);
-#   - /afw-ca/bundle.pem (system roots + gateway inspection CA) and /afw-ca/gateway-ca.crt, rebuilt when
-#     the CA exported by the gateway changes. The agent mounts /afw-ca read-only.
-# If the gateway is down, the route points to a silent address: the agent has no network (fail closed).
-# Kept in sync with afw-enroll's `netinit_script(spec)` (lot L11), the source of truth of this logic.
+# shellcheck disable=SC3013,SC2045,SC2086 # generated body (afw-enroll), run by busybox sh
+# afw-netinit: network-namespace holder of an enrolled agent (ADR 0003, ADR 0023).
+# The agent shares this container's network namespace (network_mode: service:afw-net-<agent>), without
+# NET_ADMIN nor NET_RAW. The logic below is afw_enroll::netinit_script, the single source of truth, copied
+# verbatim (checked by deploy/tests/enroll-sync.sh); only the addresses come from the environment:
+#   AFW_GATEWAY_IP  gateway address on the internal network (IPv4)
+#   AFW_AGENT_IP    fixed address of the agent (the holder's own address on the internal network)
+# Every 10 s: other interfaces down, /32 route to the gateway then default route, every other route
+# removed (no direct path to another agent), other address family flushed, CA bundle (system roots +
+# gateway CA from /afw-ca-src/gateway.crt) rebuilt in /afw-ca; /tmp/afw-ready exists only while correct.
+# afw-enroll writes the same script as the `command` of afw-net-<agent>; this file is the image default.
 set -eu
-
-log() { printf 'afw-netinit: %s\n' "$*" >&2; }
-
-gw="${AFW_GATEWAY_IP:-}"
-if [ -z "$gw" ]; then
-  log "AFW_GATEWAY_IP is required (IP address of the gateway on the internal network)"
-  exit 64
-fi
-# Strict validation: the value ends up in `ip` command lines.
-if ! printf '%s' "$gw" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9A-Fa-f:]+$'; then
-  log "invalid AFW_GATEWAY_IP: $gw"
-  exit 64
-fi
-interval="${AFW_ROUTE_INTERVAL:-2}"
-case "$interval" in '' | *[!0-9]*) log "invalid AFW_ROUTE_INTERVAL: $interval"; exit 64 ;; esac
-[ "$interval" -ge 1 ] || interval=1
-ca_src="${AFW_GATEWAY_CA_FILE:-/afw-gateway-ca/inspection-ca.crt}"
-ca_dir="${AFW_CA_DIR:-/afw-ca}"
-roots="${AFW_SYSTEM_ROOTS:-/etc/ssl/certs/ca-certificates.crt}"
-
-family=-4; host_len=32
-case "$gw" in *:*) family=-6; host_len=128 ;; esac
-
-# Interface of the gateway, found once while the subnet route still exists.
-dev="$(ip "$family" -o route get "$gw" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
-if [ -z "$dev" ]; then
-  log "no interface reaches the gateway $gw (is this container on the gateway's internal network?)"
-  exit 65
-fi
-
-# Optional: point the shared resolv.conf to the gateway DNS (default: the gateway itself).
-dns="${AFW_DNS_IP:-$gw}"
-if [ "${AFW_WRITE_RESOLV:-1}" = 1 ]; then
-  if printf 'nameserver %s\noptions ndots:0\n' "$dns" > /etc/resolv.conf 2>/dev/null; then
-    log "resolv.conf -> $dns"
-  else
-    log "resolv.conf is read-only, left unchanged"
-  fi
-fi
-
-enforce_links() {
-  ip -o link show | sed -n 's/^[0-9]*: \([^:@]*\)[:@].*/\1/p' | while read -r l; do
-    [ "$l" = lo ] || [ "$l" = "$dev" ] && continue
-    if ip -o link show dev "$l" | grep -q '[<,]UP[,>]'; then
-      ip link set dev "$l" down && log "interface $l down (only $dev may be used)"
-    fi
-  done
-  if [ "$family" = -4 ]; then
-    # Best effort: IPv6 link-local would be a direct path between agents.
-    ip -6 addr flush dev "$dev" 2>/dev/null || true
-    ip -6 route flush dev "$dev" 2>/dev/null || true
-  fi
-}
-
-enforce_routes() {
-  # On-link route to the gateway only (added before the subnet route is removed).
-  if ! ip "$family" route show dev "$dev" | grep -q "^$gw "; then
-    ip "$family" route replace "$gw/$host_len" dev "$dev" scope link && log "route $gw/$host_len dev $dev"
-  fi
-  ip "$family" route show dev "$dev" scope link | while read -r prefix _; do
-    [ "$prefix" = "$gw" ] && continue
-    ip "$family" route del "$prefix" dev "$dev" scope link 2>/dev/null && log "route $prefix removed (no direct path to the subnet)"
-  done
-  defaults="$(ip "$family" route show default 2>/dev/null || true)"
-  if [ "$(printf '%s\n' "$defaults" | grep -c '^default')" = 1 ] &&
-    printf '%s\n' "$defaults" | grep -q "^default via $gw "; then
-    return 0
-  fi
-  while ip "$family" route del default 2>/dev/null; do :; done
-  if ip "$family" route replace default via "$gw" dev "$dev"; then
-    log "default route -> $gw"
-  else
-    log "cannot set the default route via $gw (is NET_ADMIN granted?)"
-  fi
-}
-
-enforce_ca() {
-  [ -d "$ca_dir" ] && [ -s "$ca_src" ] || return 0
-  grep -q 'BEGIN CERTIFICATE' "$ca_src" || { log "$ca_src is not a PEM certificate"; return 0; }
-  if [ -s "$ca_dir/bundle.pem" ] && cmp -s "$ca_src" "$ca_dir/gateway-ca.crt"; then return 0; fi
-  { cat "$roots" 2>/dev/null || true; printf '\n'; cat "$ca_src"; } > "$ca_dir/bundle.pem.tmp"
-  cp "$ca_src" "$ca_dir/gateway-ca.crt.tmp"
-  chmod 0644 "$ca_dir/bundle.pem.tmp" "$ca_dir/gateway-ca.crt.tmp"
-  mv "$ca_dir/gateway-ca.crt.tmp" "$ca_dir/gateway-ca.crt"
-  mv "$ca_dir/bundle.pem.tmp" "$ca_dir/bundle.pem"
-  log "CA bundle updated in $ca_dir (system roots + gateway CA)"
-}
-
-trap 'log "stopping"; exit 0' TERM INT
-log "gateway $gw on $dev, re-check every ${interval}s"
-while :; do
-  enforce_links
-  enforce_routes
-  enforce_ca
-  sleep "$interval" &
-  wait $! || true
+valid_ipv4() { printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
+for v in AFW_GATEWAY_IP AFW_AGENT_IP; do
+  eval "val=\${$v:-}"
+  if [ -z "$val" ]; then echo "afw-net: $v is required" >&2; exit 64; fi
+  if ! valid_ipv4 "$val"; then echo "afw-net: invalid $v: $val" >&2; exit 64; fi
 done
+set +e
+# --- BEGIN afw_enroll::netinit_script (generated, do not edit) ---
+set -u
+GW="$AFW_GATEWAY_IP"
+ME="$AFW_AGENT_IP"
+CA_SRC='/afw-ca-src/gateway.crt'
+CA_DIR='/afw-ca'
+READY='/tmp/afw-ready'
+umask 022
+log() { echo "afw-net: $*" >&2; }
+build_ca() {
+  [ -d "$CA_DIR" ] || return 0
+  if [ ! -s "$CA_SRC" ]; then log "gateway CA missing at $CA_SRC"; return 1; fi
+  if [ -s "$CA_DIR/bundle.pem" ] && [ ! "$CA_SRC" -nt "$CA_DIR/bundle.pem" ]; then return 0; fi
+  cp "$CA_SRC" "$CA_DIR/gateway.crt.tmp" && mv "$CA_DIR/gateway.crt.tmp" "$CA_DIR/gateway.crt" || return 1
+  { cat /etc/ssl/certs/ca-certificates.crt 2>/dev/null || log "no system CA bundle"; echo; cat "$CA_SRC"; } > "$CA_DIR/bundle.pem.tmp" \
+    && mv "$CA_DIR/bundle.pem.tmp" "$CA_DIR/bundle.pem"
+}
+apply() {
+  IFACE=$(ip -o addr show | awk -v me="$ME/" 'index($4, me) == 1 { sub(/@.*/, "", $2); print $2; exit }')
+  if [ -z "$IFACE" ]; then log "no interface holds $ME"; return 1; fi
+  for dev in $(ls /sys/class/net); do
+    [ "$dev" = lo ] || [ "$dev" = "$IFACE" ] || ip link set dev "$dev" down 2>/dev/null || log "cannot set $dev down"
+  done
+  ip -4 route replace "$GW/32" dev "$IFACE" scope link || return 1
+  ip -4 route replace default via "$GW" dev "$IFACE" || return 1
+  ip -4 route show | while read -r dst rest; do
+    case "$dst" in
+      default) case "$rest" in "via $GW dev $IFACE"*) ;; *) ip -4 route del default $rest ;; esac ;;
+      "$GW"|"$GW/32") ;;
+      *) ip -4 route del "$dst" $rest 2>/dev/null || ip -4 route del "$dst" ;;
+    esac
+  done
+  ip -6 route flush dev "$IFACE" 2>/dev/null
+  [ "$(ip -4 route show | grep -vc -e '^default via '"$GW"' dev ' -e '^'"$GW"' ')" = 0 ] || return 1
+  return 0
+}
+trap 'exit 0' TERM INT
+while :; do
+  build_ca || rm -f "$READY"
+  if apply && { [ ! -d "$CA_DIR" ] || [ -s "$CA_DIR/bundle.pem" ]; }; then
+    [ -f "$READY" ] || touch "$READY"
+  else
+    rm -f "$READY"
+  fi
+  sleep 10 & wait $!
+done
+# --- END afw_enroll::netinit_script ---

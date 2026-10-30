@@ -4,6 +4,7 @@ postgres:
 externalDatabase:
   url: postgres://afw:secret@db.example.internal:5432/afw
 secrets:
+  dataKey: Y2ktb25seS1rZXktMzItYnl0ZXMtLS0tLS0tLS0tLS0=
   bootstrapAdminToken: ci-only-token
 api:
   logStore: clickhouse

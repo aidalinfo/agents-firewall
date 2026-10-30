@@ -5,7 +5,7 @@ name: deploy
 on:
   pull_request:
     branches: [main]
-    paths: [deploy/**, demo/**, .github/workflows/deploy.yml]
+    paths: [deploy/**, demo/**, crates/afw-enroll/**, docs/api/openapi.yaml, .github/workflows/deploy.yml]
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
@@ -22,6 +22,15 @@ jobs:
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh static
+
+  enroll-sync:
+    name: netinit and demo agents match afw-enroll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - run: deploy/tests/run.sh enroll
 
   isolation:
     name: netinit bypass tests and demo world

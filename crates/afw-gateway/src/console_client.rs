@@ -292,6 +292,7 @@ async fn events_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>) {
 async fn heartbeat_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>, force: Arc<AtomicBool>) {
     loop {
         let m = &state.metrics;
+        let (p50_ms, p95_ms) = m.added_percentiles_ms();
         let hb = Heartbeat {
             version: env!("CARGO_PKG_VERSION").to_string(),
             revision: state.store.revision(),
@@ -304,6 +305,8 @@ async fn heartbeat_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>, force:
                 bytes_out: m.bytes_out.load(Ordering::Relaxed),
                 events_queued: state.events.queued(),
                 events_dropped: state.events.dropped.load(Ordering::Relaxed),
+                p50_ms,
+                p95_ms,
             },
             ca_fingerprint: state.ca.fingerprint_sha256(),
         };

@@ -10,6 +10,7 @@ use crate::io::Tap;
 
 pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     let state = flow.state.clone();
+    let started = std::time::Instant::now();
     let app = *flow.app.lock().unwrap_or_else(|e| e.into_inner());
     // CONNECT target name: resolved by the gateway. Transparent: the original destination is
     // the real destination (any name only comes from the DNS cache, for attribution).
@@ -48,6 +49,7 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
         }
     };
     flow.mark_allowed(&d);
+    state.metrics.added_latency(started.elapsed().as_micros() as u64);
     let capture = state
         .captures
         .for_agent(d.agent_id)

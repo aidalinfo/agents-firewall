@@ -269,65 +269,239 @@ async fn anchor_is_appended_to_file_and_checked_by_verify() {
     assert_eq!(verify["broken_at"], 3);
 }
 
-#[tokio::test]
-async fn anchor_is_put_to_s3_with_object_lock() {
-    let pool = pool_or_skip!();
-    seed(&pool, 2).await;
-    // Fake S3 endpoint recording the request.
-    let seen: Arc<Mutex<Vec<Seen>>> = Default::default();
-    let s = seen.clone();
-    let s3 = axum::Router::new().fallback(move |req: axum::extract::Request| {
-        let s = s.clone();
-        async move {
-            let (parts, body) = req.into_parts();
-            let body = axum::body::to_bytes(body, 1 << 20).await.unwrap();
-            s.lock().unwrap().push((
-                format!("{} {}", parts.method, parts.uri),
-                parts.headers,
-                body.to_vec(),
-            ));
-            StatusCode::OK
-        }
-    });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, s3).await.unwrap() });
+/// Fake S3 (path-style, mounted under `/s3base`) that checks every SigV4 signature, stores
+/// PUT objects, and serves ListObjectsV2 and GET.
+struct FakeS3 {
+    endpoint: String,
+    objects: Arc<Mutex<std::collections::BTreeMap<String, Vec<u8>>>>,
+    requests: Arc<Mutex<Vec<(String, axum::http::HeaderMap)>>>,
+}
 
-    let mut state = state(&pool);
-    state.audit_export = Arc::new(AuditExportConfig {
-        dir: None,
-        s3: Some(S3Config {
+fn check_signature(
+    method: &str,
+    uri: &axum::http::Uri,
+    headers: &axum::http::HeaderMap,
+) -> bool {
+    use afw_api::audit::sigv4;
+    let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let field = |name: &str| {
+        auth.split([',', ' '])
+            .find_map(|p| p.trim().strip_prefix(name))
+            .unwrap_or("")
+            .to_owned()
+    };
+    let credential = field("Credential=");
+    let parts: Vec<&str> = credential.split('/').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let signed: Vec<String> = field("SignedHeaders=").split(';').map(str::to_owned).collect();
+    let hv: Vec<(String, String)> = signed
+        .iter()
+        .map(|h| {
+            (
+                h.clone(),
+                headers
+                    .get(h.as_str())
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let date = headers["x-amz-date"].to_str().unwrap();
+    let at = chrono::NaiveDateTime::parse_from_str(date, "%Y%m%dT%H%M%SZ")
+        .unwrap()
+        .and_utc();
+    let mut query: Vec<&str> = uri.query().unwrap_or("").split('&').filter(|q| !q.is_empty()).collect();
+    query.sort();
+    let expected = sigv4::authorization(
+        &sigv4::SigningParams {
+            access_key_id: parts[0],
+            secret_access_key: "secret",
+            region: parts[2],
+            service: "s3",
+            at,
+        },
+        method,
+        uri.path(),
+        &query.join("&"),
+        &hv,
+        headers["x-amz-content-sha256"].to_str().unwrap(),
+    );
+    expected == auth
+}
+
+impl FakeS3 {
+    async fn start() -> Self {
+        let objects: Arc<Mutex<std::collections::BTreeMap<String, Vec<u8>>>> = Default::default();
+        let requests: Arc<Mutex<Vec<(String, axum::http::HeaderMap)>>> = Default::default();
+        let (o, r) = (objects.clone(), requests.clone());
+        let app = axum::Router::new().fallback(move |req: axum::extract::Request| {
+            let (o, r) = (o.clone(), r.clone());
+            async move {
+                use axum::response::IntoResponse;
+                let (parts, body) = req.into_parts();
+                let body = axum::body::to_bytes(body, 1 << 20).await.unwrap();
+                r.lock()
+                    .unwrap()
+                    .push((format!("{} {}", parts.method, parts.uri), parts.headers.clone()));
+                if !check_signature(parts.method.as_str(), &parts.uri, &parts.headers) {
+                    return (StatusCode::FORBIDDEN, "SignatureDoesNotMatch").into_response();
+                }
+                let Some(rest) = parts.uri.path().strip_prefix("/s3base/afw-audit") else {
+                    return StatusCode::NOT_FOUND.into_response();
+                };
+                let key = rest.trim_start_matches('/').to_owned();
+                match parts.method.as_str() {
+                    "PUT" => {
+                        o.lock().unwrap().insert(key, body.to_vec());
+                        StatusCode::OK.into_response()
+                    }
+                    "GET" if key.is_empty() => {
+                        let q = parts.uri.query().unwrap_or("");
+                        assert!(q.contains("list-type=2"), "{q}");
+                        let prefix = q
+                            .split('&')
+                            .find_map(|p| p.strip_prefix("prefix="))
+                            .unwrap_or("")
+                            .replace("%2F", "/");
+                        let keys: String = o
+                            .lock()
+                            .unwrap()
+                            .keys()
+                            .filter(|k| k.starts_with(&prefix))
+                            .map(|k| format!("<Contents><Key>{k}</Key></Contents>"))
+                            .collect();
+                        format!(
+                            "<?xml version=\"1.0\"?><ListBucketResult>{keys}\
+                             <IsTruncated>false</IsTruncated></ListBucketResult>"
+                        )
+                        .into_response()
+                    }
+                    "GET" => match o.lock().unwrap().get(&key) {
+                        Some(b) => b.clone().into_response(),
+                        None => StatusCode::NOT_FOUND.into_response(),
+                    },
+                    _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/s3base", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Self {
             endpoint,
+            objects,
+            requests,
+        }
+    }
+
+    fn config(&self) -> S3Config {
+        S3Config {
+            endpoint: self.endpoint.clone(),
             bucket: "afw-audit".into(),
             region: "eu-west-3".into(),
             access_key_id: "AKIDEXAMPLE".into(),
             secret_access_key: "secret".into(),
             prefix: "anchors/".into(),
             retention_days: 30,
-        }),
+        }
+    }
+}
+
+async fn forge_complete_rewrite(pool: &sqlx::PgPool) {
+    let mut forged = afw_api::audit::load(pool, 1, 100).await.unwrap();
+    forged[0].target = "x:forged".into();
+    let mut prev = afw_core::audit::GENESIS_HASH.to_owned();
+    for e in forged.iter_mut() {
+        e.prev_hash = prev.clone();
+        e.hash = afw_core::audit::audit_hash(&prev, e);
+        prev = e.hash.clone();
+    }
+    for e in &forged {
+        tamper(
+            pool,
+            &format!(
+                "UPDATE audit_log SET target = '{}', prev_hash = '{}', hash = '{}' WHERE seq = {}",
+                e.target, e.prev_hash, e.hash, e.seq
+            ),
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn anchor_is_put_to_s3_with_object_lock() {
+    let pool = pool_or_skip!();
+    seed(&pool, 2).await;
+    let s3 = FakeS3::start().await;
+    let mut state = state(&pool);
+    state.audit_export = Arc::new(AuditExportConfig {
+        dir: None,
+        s3: Some(s3.config()),
         ..Default::default()
     });
+    // The endpoint has a path (`/s3base`): the signature covers it.
     let anchor = afw_api::audit::export::anchor_now(&state).await.unwrap();
     assert_eq!(anchor.seq, 2);
-    let seen = seen.lock().unwrap();
-    assert_eq!(seen.len(), 1);
-    let (line, headers, body) = &seen[0];
-    assert!(line.starts_with("PUT /afw-audit/anchors/"), "{line}");
-    assert_eq!(headers["x-amz-object-lock-mode"], "COMPLIANCE");
-    let until = headers["x-amz-object-lock-retain-until-date"]
-        .to_str()
-        .unwrap();
-    let until: chrono::DateTime<chrono::Utc> = until.parse().unwrap();
-    assert!(until > chrono::Utc::now() + chrono::Duration::days(29));
-    assert!(headers.contains_key("x-amz-checksum-sha256"));
-    let auth = headers["authorization"].to_str().unwrap();
-    assert!(
-        auth.starts_with("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/"),
-        "{auth}"
-    );
-    assert!(auth.contains("/eu-west-3/s3/aws4_request"));
-    assert!(auth.contains("x-amz-object-lock-mode"));
-    let doc: serde_json::Value = serde_json::from_slice(body).unwrap();
+    {
+        let reqs = s3.requests.lock().unwrap();
+        assert_eq!(reqs.len(), 1);
+        let (line, headers) = &reqs[0];
+        assert!(line.starts_with("PUT /s3base/afw-audit/anchors/"), "{line}");
+        assert_eq!(headers["x-amz-object-lock-mode"], "COMPLIANCE");
+        let until: chrono::DateTime<chrono::Utc> = headers["x-amz-object-lock-retain-until-date"]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(until > chrono::Utc::now() + chrono::Duration::days(29));
+        assert!(headers.contains_key("x-amz-checksum-sha256"));
+    }
+    let objects = s3.objects.lock().unwrap().clone();
+    assert_eq!(objects.len(), 1, "signature refused by the fake S3");
+    let doc: serde_json::Value = serde_json::from_slice(objects.values().next().unwrap()).unwrap();
     assert_eq!(doc["seq"], 2);
     assert_eq!(doc["hash"], anchor.hash.as_str());
+
+    let app = afw_api::router(state);
+    let viewer = token(&pool, "viewer", None).await;
+    let verify = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
+        .await
+        .json();
+    assert_eq!(verify["ok"], true, "{verify}");
+    assert_eq!(verify["anchor_sources"], json!(["db", "s3"]));
+
+    // Complete rewrite AND removal of the database anchors: the S3 anchor still catches it.
+    forge_complete_rewrite(&pool).await;
+    sqlx::query("DELETE FROM audit_anchors").execute(&pool).await.unwrap();
+    let verify = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None)
+        .await
+        .json();
+    assert_eq!(verify["ok"], false, "{verify}");
+    assert_eq!(verify["broken_at"], 2);
+    let reqs = s3.requests.lock().unwrap();
+    assert!(reqs.iter().any(|(l, _)| l.starts_with("GET /s3base/afw-audit?")));
+}
+
+#[tokio::test]
+async fn verify_reports_its_anchor_sources() {
+    let pool = pool_or_skip!();
+    seed(&pool, 1).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut st = state(&pool);
+    let app = afw_api::router(st.clone());
+    let viewer = token(&pool, "viewer", None).await;
+    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None).await.json();
+    assert_eq!(v["anchor_sources"], json!(["db"]));
+    st.audit_export = Arc::new(AuditExportConfig {
+        dir: Some(dir.path().to_path_buf()),
+        ..Default::default()
+    });
+    let app = afw_api::router(st);
+    let v = call(&app, "GET", "/api/v1/audit/verify", Some(&viewer), None).await.json();
+    assert_eq!(v["anchor_sources"], json!(["db", "file"]));
 }

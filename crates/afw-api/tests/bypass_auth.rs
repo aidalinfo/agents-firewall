@@ -159,7 +159,8 @@ async fn non_admins_cannot_manage_tokens_or_escalate() {
 #[tokio::test]
 async fn token_creation_is_validated() {
     let pool = pool_or_skip!();
-    let app = afw_api::router(state(&pool));
+    let agent = Uuid::new_v4();
+    let app = afw_api::router(state_with_agents(&pool, &[agent]));
     let admin = token(&pool, "admin", None).await;
     let past = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
     for (body, why) in [
@@ -188,14 +189,21 @@ async fn token_creation_is_validated() {
             "unknown field",
         ),
         (json!({"name": "v", "role": "root"}), "unknown role"),
+        (
+            json!({"name": "p", "role": "agent_plugin", "agent_id": Uuid::new_v4(), "expires_at": null}),
+            "agent absent from the published policy",
+        ),
+        (
+            json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null}),
+            "mcp agent absent from the published policy",
+        ),
     ] {
         let res = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(body)).await;
         assert_eq!(res.status, StatusCode::BAD_REQUEST, "{why}: {}", res.text());
         assert_eq!(res.headers["content-type"], "application/problem+json");
     }
     // A single active mcp_agent token.
-    let mcp =
-        json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
+    let mcp = json!({"name": "m", "role": "mcp_agent", "agent_id": agent, "expires_at": null});
     let first = call(
         &app,
         "POST",
@@ -222,6 +230,73 @@ async fn token_creation_is_validated() {
     assert_eq!(me.json()["role"], "mcp_agent");
     // No policy known: the MCP agent may write nowhere (fail closed).
     assert_eq!(me.json()["writable_zones"], json!([]));
+}
+
+#[tokio::test]
+async fn agent_token_requires_a_known_agent_even_without_policy() {
+    let pool = pool_or_skip!();
+    // No published policy (unwired policy module): agent tokens cannot be bound (fail closed).
+    let app = afw_api::router(state(&pool));
+    let admin = token(&pool, "admin", None).await;
+    let body = json!({"name": "m", "role": "mcp_agent", "agent_id": Uuid::new_v4(), "expires_at": null});
+    let res = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(body)).await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST, "{}", res.text());
+}
+
+#[tokio::test]
+async fn expired_mcp_agent_token_is_revoked_when_a_new_one_is_created() {
+    let pool = pool_or_skip!();
+    let agent = Uuid::new_v4();
+    let app = afw_api::router(state_with_agents(&pool, &[agent]));
+    let admin = token(&pool, "admin", None).await;
+    let old = token(&pool, "mcp_agent", Some(agent)).await;
+    sqlx::query("UPDATE api_tokens SET expires_at = now() - interval '1 second' WHERE token_sha256 = $1")
+        .bind(afw_core::sha256_hex(old.as_bytes()))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body = json!({"name": "m2", "role": "mcp_agent", "agent_id": agent, "expires_at": null});
+    let res = call(&app, "POST", "/api/v1/tokens", Some(&admin), Some(body)).await;
+    assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
+    let revoked: bool =
+        sqlx::query_scalar("SELECT revoked_at IS NOT NULL FROM api_tokens WHERE token_sha256 = $1")
+            .bind(afw_core::sha256_hex(old.as_bytes()))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(revoked, "the expired mcp_agent token must be revoked");
+    let audit = afw_api::audit::load(&pool, 1, 100).await.unwrap();
+    assert!(audit.iter().any(|e| e.action == "token.revoke"), "revocation audited");
+}
+
+#[tokio::test]
+async fn oidc_discovery_failure_is_negatively_cached() {
+    let pool = pool_or_skip!();
+    let hits = Arc::new(std::sync::Mutex::new(0u32));
+    let h = hits.clone();
+    let broken = axum::Router::new().fallback(move || {
+        let h = h.clone();
+        async move {
+            *h.lock().unwrap() += 1;
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let issuer = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, broken).await.unwrap() });
+    let idp = FakeOidc::start().await;
+    let mut settings = idp.settings();
+    settings.issuer = issuer;
+    let mut st = state(&pool);
+    st.oidc = Some(Arc::new(OidcVerifier::new(settings)));
+    let app = afw_api::router(st);
+    let jwt = idp.sign(&idp.claims(&["afw-admins"]), 1, KID_1);
+    for _ in 0..4 {
+        let res = call(&app, "GET", "/api/v1/me", Some(&jwt), None).await;
+        assert_eq!(res.status, StatusCode::UNAUTHORIZED);
+        call(&app, "GET", "/api/v1/auth/oidc/config", None, None).await;
+    }
+    assert_eq!(*hits.lock().unwrap(), 1, "discovery retried before the 30 s cool-down");
 }
 
 #[tokio::test]

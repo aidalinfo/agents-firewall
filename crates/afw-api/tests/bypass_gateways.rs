@@ -64,6 +64,10 @@ struct FakeLogs {
     events: Mutex<Vec<(Uuid, Vec<GatewayEvent>)>>,
     captures: Mutex<Vec<(Uuid, Uuid, Vec<u8>)>>,
     pending: Mutex<Vec<GatewayCommand>>,
+    /// Number of next ingestion calls that fail.
+    fail: Mutex<u32>,
+    /// Delay of each ingestion.
+    slow: Mutex<Option<Duration>>,
 }
 
 impl LogsPort for FakeLogs {
@@ -74,6 +78,17 @@ impl LogsPort for FakeLogs {
         events: Vec<GatewayEvent>,
     ) -> PortFuture<'a, ()> {
         Box::pin(async move {
+            let delay = *self.slow.lock().unwrap();
+            if let Some(d) = delay {
+                tokio::time::sleep(d).await;
+            }
+            {
+                let mut fail = self.fail.lock().unwrap();
+                if *fail > 0 {
+                    *fail -= 1;
+                    return Err(afw_api::ApiError::Internal("store down".into()));
+                }
+            }
             self.events.lock().unwrap().push((gateway_id, events));
             Ok(())
         })
@@ -114,6 +129,10 @@ struct Env {
 }
 
 async fn env(pool: sqlx::PgPool) -> Env {
+    env_with(pool, |_| {}).await
+}
+
+async fn env_with(pool: sqlx::PgPool, tune: impl FnOnce(&mut AppState)) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let pki = Arc::new(ConsolePki::load_or_create(&dir.path().join("pki")).unwrap());
     let policy = Arc::new(FakePolicy::default());
@@ -122,6 +141,7 @@ async fn env(pool: sqlx::PgPool) -> Env {
     state.gateways.pki = Some(pki.clone());
     state.gateways.long_poll = Duration::from_millis(600);
     state.gateways.poll_interval = Duration::from_millis(100);
+    tune(&mut state);
     state.ports = Ports {
         policy: policy.clone(),
         logs: logs.clone(),
@@ -178,12 +198,16 @@ fn gateway_client(dir: &std::path::Path) -> reqwest::Client {
 }
 
 async fn registration_token(e: &Env) -> String {
+    registration_token_named(e, "gw-a").await
+}
+
+async fn registration_token_named(e: &Env, name: &str) -> String {
     let res = call(
         &e.app,
         "POST",
         "/api/v1/gateways/registration-tokens",
         Some(&e.admin),
-        Some(json!({"name": "gw-a"})),
+        Some(json!({"name": name})),
     )
     .await;
     assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
@@ -208,7 +232,7 @@ async fn register(e: &Env, token: &str, csr: &str, name: &str) -> reqwest::Respo
 async fn registered(e: &Env, name: &str) -> (Uuid, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let csr = GatewayIdentity::generate(dir.path()).unwrap();
-    let token = registration_token(e).await;
+    let token = registration_token_named(e, name).await;
     let res = register(e, &token, &csr, name).await;
     assert_eq!(res.status().as_u16(), 201);
     let body: serde_json::Value = res.json().await.unwrap();
@@ -544,4 +568,110 @@ async fn policy_long_poll_ack_events_and_captures() {
         captures[0],
         (gw, capture, vec![0xd4, 0xc3, 0xb2, 0xa1, 1, 2, 3])
     );
+}
+
+#[tokio::test]
+async fn gateway_name_is_imposed_by_the_registration_token() {
+    let pool = pool_or_skip!();
+    let e = env(pool).await;
+    let dir = tempfile::tempdir().unwrap();
+    let csr = GatewayIdentity::generate(dir.path()).unwrap();
+    let token = registration_token_named(&e, "gw-expected").await;
+    let res = register(&e, &token, &csr, "gw-chosen-by-the-gateway").await;
+    assert_eq!(res.status().as_u16(), 201);
+    let body: serde_json::Value = res.json().await.unwrap();
+    let id = body["gateway_id"].as_str().unwrap();
+    let g = call(&e.app, "GET", &format!("/api/v1/gateways/{id}"), Some(&e.admin), None).await;
+    assert_eq!(g.json()["name"], "gw-expected");
+}
+
+#[tokio::test]
+async fn event_batches_are_reserved_atomically() {
+    let pool = pool_or_skip!();
+    let e = env(pool).await;
+    let (gw_a, dir_a) = registered(&e, "gw-a").await;
+    let (gw_b, dir_b) = registered(&e, "gw-b").await;
+    let (a, b) = (gateway_client(dir_a.path()), gateway_client(dir_b.path()));
+    let url = format!("{}/gw/v1/events", e.base);
+    let batch = json!({"batch_id": Uuid::new_v4(), "events": [{"type": "rule_hits", "hits": []}]});
+
+    // A failed ingestion releases the reservation: the retry is ingested.
+    *e.logs.fail.lock().unwrap() = 1;
+    let res = a.post(&url).json(&batch).send().await.unwrap();
+    assert_eq!(res.status().as_u16(), 500);
+    assert_eq!(e.logs.events.lock().unwrap().len(), 0);
+    let res = a.post(&url).json(&batch).send().await.unwrap();
+    assert_eq!(res.status().as_u16(), 202);
+    assert_eq!(e.logs.events.lock().unwrap().len(), 1);
+
+    // Concurrent duplicates: ingested once.
+    *e.logs.slow.lock().unwrap() = Some(Duration::from_millis(300));
+    let dup = json!({"batch_id": Uuid::new_v4(), "events": []});
+    let (r1, r2) = tokio::join!(
+        a.post(&url).json(&dup).send(),
+        a.post(&url).json(&dup).send()
+    );
+    assert_eq!(r1.unwrap().status().as_u16(), 202);
+    assert_eq!(r2.unwrap().status().as_u16(), 202);
+    assert_eq!(e.logs.events.lock().unwrap().len(), 2);
+
+    // The key is (gateway, batch): another gateway's batch with the same id is ingested.
+    let res = b.post(&url).json(&dup).send().await.unwrap();
+    assert_eq!(res.status().as_u16(), 202);
+    let events = e.logs.events.lock().unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[2].0, gw_b);
+    assert_ne!(gw_a, gw_b);
+}
+
+#[tokio::test]
+async fn listener_limits_connections() {
+    let pool = pool_or_skip!();
+    let e = env_with(pool, |s| s.gateways.max_connections = 1).await;
+    let (_, dir) = registered(&e, "gw-a").await;
+    // registered() used the only slot, then released it. Hold it with a silent TCP connection.
+    let addr = e.base.trim_start_matches("https://").to_owned();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let hold = tokio::net::TcpStream::connect(&addr).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let res = gateway_client(dir.path())
+        .post(format!("{}/gw/v1/heartbeat", e.base))
+        .json(&heartbeat())
+        .send()
+        .await;
+    assert!(res.is_err(), "a connection beyond the limit must be refused");
+    drop(hold);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let res = gateway_client(dir.path())
+        .post(format!("{}/gw/v1/heartbeat", e.base))
+        .json(&heartbeat())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+}
+
+#[tokio::test]
+async fn listener_closes_connections_that_send_no_headers() {
+    use tokio::io::AsyncReadExt;
+    let pool = pool_or_skip!();
+    let e = env_with(pool, |s| {
+        s.gateways.header_read_timeout = Duration::from_millis(300)
+    })
+    .await;
+    let (_, dir) = registered(&e, "gw-a").await;
+    let mut cfg = (*GatewayIdentity::client_config(dir.path()).unwrap()).clone();
+    cfg.alpn_protocols.clear();
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(cfg));
+    let addr = e.base.trim_start_matches("https://").to_owned();
+    let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
+    let mut tls = connector
+        .connect("127.0.0.1".try_into().unwrap(), tcp)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let mut buf = [0u8; 64];
+    let read = tokio::time::timeout(Duration::from_secs(5), tls.read(&mut buf)).await;
+    assert!(read.is_ok(), "the server kept a silent connection open");
+    assert!(started.elapsed() < Duration::from_secs(3));
 }

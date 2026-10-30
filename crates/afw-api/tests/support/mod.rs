@@ -242,3 +242,77 @@ impl FakeOidc {
         jsonwebtoken::encode(&header, claims, &key).unwrap()
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Policy port returning a fixed published policy
+
+pub struct StaticPolicy(pub afw_core::policy::PolicyDocument);
+
+impl afw_api::gateways::ports::PolicyPort for StaticPolicy {
+    fn installed_policy_for<'a>(
+        &'a self,
+        _: &'a AppState,
+        _: Uuid,
+    ) -> afw_api::gateways::ports::PortFuture<'a, Option<afw_core::InstalledPolicy>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn record_install_ack<'a>(
+        &'a self,
+        _: &'a AppState,
+        _: Uuid,
+        _: afw_core::protocol::PolicyAck,
+    ) -> afw_api::gateways::ports::PortFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
+    fn current_policy<'a>(
+        &'a self,
+        _: &'a AppState,
+    ) -> afw_api::gateways::ports::PortFuture<'a, Option<afw_core::policy::PolicyDocument>> {
+        Box::pin(async move { Ok(Some(self.0.clone())) })
+    }
+    fn create_agent<'a>(
+        &'a self,
+        _: &'a AppState,
+        _: &'a afw_api::auth::Principal,
+        _: Option<Uuid>,
+        _: &'a afw_core::api::EnrollmentRequest,
+    ) -> afw_api::gateways::ports::PortFuture<'a, (afw_core::policy::Agent, Uuid)> {
+        Box::pin(async { Err(afw_api::ApiError::NotFound) })
+    }
+}
+
+/// A published policy with one zone and the given agents (all in that zone).
+pub fn policy_with_agents(agents: &[Uuid]) -> afw_core::policy::PolicyDocument {
+    let zone = Uuid::from_u128(500);
+    afw_core::policy::PolicyDocument {
+        zones: vec![afw_core::policy::Zone {
+            id: zone,
+            name: "z".into(),
+            comment: String::new(),
+            mode: afw_core::policy::ZoneMode::Enforce,
+            delegated_to_mcp: false,
+        }],
+        agents: agents
+            .iter()
+            .map(|id| afw_core::policy::Agent {
+                id: *id,
+                name: id.to_string(),
+                zone_id: zone,
+                kind: afw_core::policy::AgentKind::Container,
+                gateway_id: None,
+                addresses: vec![],
+                labels: Default::default(),
+                hermes: true,
+                mcp_admin: true,
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// State whose policy port publishes `agents`.
+pub fn state_with_agents(pool: &PgPool, agents: &[Uuid]) -> AppState {
+    let mut s = state(pool);
+    s.ports.policy = Arc::new(StaticPolicy(policy_with_agents(agents)));
+    s
+}

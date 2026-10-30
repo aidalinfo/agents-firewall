@@ -9,8 +9,15 @@ description = "agents-firewall import of egress-guard policies"
 
 [dependencies]
 afw-core = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
+afw-dlp = { workspace = true }
+ipnet = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
+thiserror = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+afw-engine = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }

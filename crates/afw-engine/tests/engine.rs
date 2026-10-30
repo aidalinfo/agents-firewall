@@ -31,7 +31,13 @@ fn first_match_wins_in_position_order() {
     let d = b.domain("api.example.com");
     // Inserted out of order: position decides, not insertion order.
     b.rule("second", Layer::Zone { zone_id: z }, 20, &[d], Action::Deny);
-    b.rule("first", Layer::Zone { zone_id: z }, 10, &[d], Action::Accept);
+    b.rule(
+        "first",
+        Layer::Zone { zone_id: z },
+        10,
+        &[d],
+        Action::Accept,
+    );
     let p = b.compile();
     let dec = p.evaluate(&ctx(A, Some("api.example.com"), Some("203.0.113.1"), 443));
     assert_eq!(dec.verdict, Verdict::Allow);
@@ -82,12 +88,30 @@ fn cleanup_denies_and_message_is_exact() {
 fn expired_and_disabled_rules_are_ignored() {
     let (mut b, z) = base();
     let d = b.domain("api.example.com");
-    b.rule("expired", Layer::Zone { zone_id: z }, 1, &[d], Action::Accept)
-        .expires_at = Some(now() - Duration::hours(1));
-    b.rule("disabled", Layer::Zone { zone_id: z }, 2, &[d], Action::Accept)
-        .enabled = false;
-    b.rule("future", Layer::Zone { zone_id: z }, 3, &[d], Action::Accept)
-        .expires_at = Some(now() + Duration::hours(1));
+    b.rule(
+        "expired",
+        Layer::Zone { zone_id: z },
+        1,
+        &[d],
+        Action::Accept,
+    )
+    .expires_at = Some(now() - Duration::hours(1));
+    b.rule(
+        "disabled",
+        Layer::Zone { zone_id: z },
+        2,
+        &[d],
+        Action::Accept,
+    )
+    .enabled = false;
+    b.rule(
+        "future",
+        Layer::Zone { zone_id: z },
+        3,
+        &[d],
+        Action::Accept,
+    )
+    .expires_at = Some(now() + Duration::hours(1));
     let p = b.compile();
     let mut c = ctx(A, Some("api.example.com"), Some("203.0.113.1"), 443);
     let dec = p.evaluate(&c);
@@ -96,7 +120,11 @@ fn expired_and_disabled_rules_are_ignored() {
     let outcomes: Vec<_> = dec.trace.iter().map(|s| s.outcome).collect();
     assert_eq!(
         outcomes,
-        vec![TraceOutcome::Expired, TraceOutcome::Disabled, TraceOutcome::Matched]
+        vec![
+            TraceOutcome::Expired,
+            TraceOutcome::Disabled,
+            TraceOutcome::Matched
+        ]
     );
     // The rule expires while the policy is active.
     c.now = now() + Duration::hours(2);
@@ -106,22 +134,76 @@ fn expired_and_disabled_rules_are_ignored() {
 #[test]
 fn cidr_and_range_ipv4_ipv6() {
     let (mut b, z) = base();
-    let net4 = b.obj("n4", NetObjectSpec::Network { cidr: "198.51.100.0/24".parse().unwrap() });
-    let net6 = b.obj("n6", NetObjectSpec::Network { cidr: "2001:db8::/32".parse().unwrap() });
-    let r4 = b.obj("r4", NetObjectSpec::Range { start: ip("203.0.113.10"), end: ip("203.0.113.20") });
-    let r6 = b.obj("r6", NetObjectSpec::Range { start: ip("2001:db9::1"), end: ip("2001:db9::ff") });
-    let h = b.obj("h", NetObjectSpec::Host { ip: ip("192.0.2.1") });
-    b.rule("ok", Layer::Zone { zone_id: z }, 1, &[net4, net6, r4, r6, h], Action::Accept);
+    let net4 = b.obj(
+        "n4",
+        NetObjectSpec::Network {
+            cidr: "198.51.100.0/24".parse().unwrap(),
+        },
+    );
+    let net6 = b.obj(
+        "n6",
+        NetObjectSpec::Network {
+            cidr: "2001:db8::/32".parse().unwrap(),
+        },
+    );
+    let r4 = b.obj(
+        "r4",
+        NetObjectSpec::Range {
+            start: ip("203.0.113.10"),
+            end: ip("203.0.113.20"),
+        },
+    );
+    let r6 = b.obj(
+        "r6",
+        NetObjectSpec::Range {
+            start: ip("2001:db9::1"),
+            end: ip("2001:db9::ff"),
+        },
+    );
+    let h = b.obj(
+        "h",
+        NetObjectSpec::Host {
+            ip: ip("192.0.2.1"),
+        },
+    );
+    b.rule(
+        "ok",
+        Layer::Zone { zone_id: z },
+        1,
+        &[net4, net6, r4, r6, h],
+        Action::Accept,
+    );
     let p = b.compile();
     let v = |dst: &str| p.evaluate(&ctx(A, None, Some(dst), 443)).verdict;
-    for ok in ["198.51.100.0", "198.51.100.255", "2001:db8::1", "2001:db8:ffff::1", "203.0.113.10", "203.0.113.20", "2001:db9::1", "2001:db9::ff", "192.0.2.1"] {
+    for ok in [
+        "198.51.100.0",
+        "198.51.100.255",
+        "2001:db8::1",
+        "2001:db8:ffff::1",
+        "203.0.113.10",
+        "203.0.113.20",
+        "2001:db9::1",
+        "2001:db9::ff",
+        "192.0.2.1",
+    ] {
         assert_eq!(v(ok), Verdict::Allow, "{ok}");
     }
-    for ko in ["198.51.101.0", "2001:db7::1", "203.0.113.9", "203.0.113.21", "2001:db9::100", "192.0.2.2", "::"] {
+    for ko in [
+        "198.51.101.0",
+        "2001:db7::1",
+        "203.0.113.9",
+        "203.0.113.21",
+        "2001:db9::100",
+        "192.0.2.2",
+        "::",
+    ] {
         assert_eq!(v(ko), Verdict::Deny, "{ko}");
     }
     // A host name alone does not match address objects.
-    assert_eq!(p.evaluate(&ctx(A, Some("example.com"), None, 443)).verdict, Verdict::Deny);
+    assert_eq!(
+        p.evaluate(&ctx(A, Some("example.com"), None, 443)).verdict,
+        Verdict::Deny
+    );
 }
 
 #[test]
@@ -129,7 +211,8 @@ fn services_match_protocol_and_ports() {
     let (mut b, z) = base();
     let ssh = b.svc(L4Proto::Tcp, &[(22, 22), (2200, 2299)], None);
     let dns = b.svc(L4Proto::Udp, &[(53, 53)], None);
-    b.rule("ok", Layer::Zone { zone_id: z }, 1, &[], Action::Accept).services = vec![ssh, dns];
+    b.rule("ok", Layer::Zone { zone_id: z }, 1, &[], Action::Accept)
+        .services = vec![ssh, dns];
     let p = b.compile();
     let mut c = ctx(A, None, Some("203.0.113.1"), 22);
     assert_eq!(p.evaluate(&c).verdict, Verdict::Allow);
@@ -168,9 +251,12 @@ fn llm_provider_skips_data_class_rules_and_sets_flag() {
     );
     let anthropic = b.domain("api.anthropic.com");
     let openai = b.domain("*.openai.com");
-    b.doc.objects[0].spec = NetObjectSpec::Group { members: vec![anthropic, openai] };
+    b.doc.objects[0].spec = NetObjectSpec::Group {
+        members: vec![anthropic, openai],
+    };
     let secret = b.class("secret");
-    b.rule("no-secret", Layer::Baseline, 1, &[], Action::Deny).data_classes = vec![secret];
+    b.rule("no-secret", Layer::Baseline, 1, &[], Action::Deny)
+        .data_classes = vec![secret];
     b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
     let p = b.compile();
     assert!(p.is_llm_provider(Some("API.openai.com."), None));
@@ -182,7 +268,11 @@ fn llm_provider_skips_data_class_rules_and_sets_flag() {
     let dec = p.evaluate(&c);
     assert_eq!(dec.verdict, Verdict::Allow);
     assert!(dec.llm_provider);
-    assert!(dec.trace.iter().any(|s| s.outcome == TraceOutcome::LlmExempt));
+    assert!(
+        dec.trace
+            .iter()
+            .any(|s| s.outcome == TraceOutcome::LlmExempt)
+    );
 
     let mut c = ctx(A, Some("paste.example.net"), Some("203.0.113.8"), 443);
     c.data_classes = vec![secret];
@@ -222,9 +312,15 @@ fn internal_flows_are_monitored_and_allowed_by_default() {
 #[test]
 fn zone_rule_can_deny_internal_flow() {
     let (mut b, z) = base();
-    let db = b.obj("db", NetObjectSpec::Host { ip: ip("192.168.1.10") });
+    let db = b.obj(
+        "db",
+        NetObjectSpec::Host {
+            ip: ip("192.168.1.10"),
+        },
+    );
     let pg = b.svc(L4Proto::Tcp, &[(5432, 5432)], None);
-    b.rule("no-db", Layer::Zone { zone_id: z }, 1, &[db], Action::Deny).services = vec![pg];
+    b.rule("no-db", Layer::Zone { zone_id: z }, 1, &[db], Action::Deny)
+        .services = vec![pg];
     let p = b.compile();
     let dec = p.evaluate(&ctx(A, None, Some("192.168.1.10"), 5432));
     assert_eq!(dec.verdict, Verdict::Deny);
@@ -237,13 +333,38 @@ fn nested_groups_resolve() {
     let (mut b, z) = base();
     let a = b.domain("a.com");
     let inner = b.obj("inner", NetObjectSpec::Group { members: vec![a] });
-    let net = b.obj("net", NetObjectSpec::Network { cidr: "198.51.100.0/24".parse().unwrap() });
-    let outer = b.obj("outer", NetObjectSpec::Group { members: vec![inner, net, inner] });
-    b.rule("ok", Layer::Zone { zone_id: z }, 1, &[outer], Action::Accept);
+    let net = b.obj(
+        "net",
+        NetObjectSpec::Network {
+            cidr: "198.51.100.0/24".parse().unwrap(),
+        },
+    );
+    let outer = b.obj(
+        "outer",
+        NetObjectSpec::Group {
+            members: vec![inner, net, inner],
+        },
+    );
+    b.rule(
+        "ok",
+        Layer::Zone { zone_id: z },
+        1,
+        &[outer],
+        Action::Accept,
+    );
     let p = b.compile();
-    assert_eq!(p.evaluate(&ctx(A, Some("a.com"), None, 443)).verdict, Verdict::Allow);
-    assert_eq!(p.evaluate(&ctx(A, None, Some("198.51.100.4"), 443)).verdict, Verdict::Allow);
-    assert_eq!(p.evaluate(&ctx(A, Some("b.com"), None, 443)).verdict, Verdict::Deny);
+    assert_eq!(
+        p.evaluate(&ctx(A, Some("a.com"), None, 443)).verdict,
+        Verdict::Allow
+    );
+    assert_eq!(
+        p.evaluate(&ctx(A, None, Some("198.51.100.4"), 443)).verdict,
+        Verdict::Allow
+    );
+    assert_eq!(
+        p.evaluate(&ctx(A, Some("b.com"), None, 443)).verdict,
+        Verdict::Deny
+    );
 }
 
 #[test]
@@ -273,8 +394,14 @@ fn inspection_rules_first_match_default_inspect() {
     b.doc.inspection_rules[1].destinations = vec![pinned];
     b.doc.inspection_rules[1].position = 3;
     let p = b.compile();
-    assert!(!p.evaluate(&ctx(A, Some("pinned.example.com"), None, 443)).inspect_tls);
-    assert!(p.evaluate(&ctx(A, Some("other.example.com"), None, 443)).inspect_tls);
+    assert!(
+        !p.evaluate(&ctx(A, Some("pinned.example.com"), None, 443))
+            .inspect_tls
+    );
+    assert!(
+        p.evaluate(&ctx(A, Some("other.example.com"), None, 443))
+            .inspect_tls
+    );
 }
 
 #[test]
@@ -283,8 +410,10 @@ fn trace_lists_examined_rules() {
     let d = b.domain("a.com");
     let s = b.svc(L4Proto::Udp, &[], None);
     let c = b.class("secret");
-    b.rule("base", Layer::Baseline, 1, &[d], Action::Deny).services = vec![s];
-    b.rule("cls", Layer::Zone { zone_id: z }, 1, &[], Action::Deny).data_classes = vec![c];
+    b.rule("base", Layer::Baseline, 1, &[d], Action::Deny)
+        .services = vec![s];
+    b.rule("cls", Layer::Zone { zone_id: z }, 1, &[], Action::Deny)
+        .data_classes = vec![c];
     b.rule("dst", Layer::Zone { zone_id: z }, 2, &[d], Action::Accept);
     let p = b.compile();
     let dec = p.evaluate(&ctx(A, Some("b.com"), None, 443));
@@ -307,7 +436,8 @@ fn trace_lists_examined_rules() {
 fn baseline_sources_restrict_zones() {
     let (mut b, z) = base();
     let other = b.zone("other", ZoneMode::Enforce);
-    b.rule("only-other", Layer::Baseline, 1, &[], Action::Deny).sources = vec![other];
+    b.rule("only-other", Layer::Baseline, 1, &[], Action::Deny)
+        .sources = vec![other];
     b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
     let p = b.compile();
     let dec = p.evaluate(&ctx(A, Some("x.com"), None, 443));
@@ -323,14 +453,31 @@ fn verify_finds_shadowed_rule() {
     let wide = b.domain("*.example.com");
     let narrow = b.domain("api.example.com");
     let https = b.svc(L4Proto::Tcp, &[(443, 443)], None);
-    let r1 = b.rule("wide", Layer::Zone { zone_id: z }, 1, &[wide], Action::Accept).id;
+    let r1 = b
+        .rule(
+            "wide",
+            Layer::Zone { zone_id: z },
+            1,
+            &[wide],
+            Action::Accept,
+        )
+        .id;
     let r2 = {
-        let r = b.rule("narrow", Layer::Zone { zone_id: z }, 2, &[narrow], Action::Deny);
+        let r = b.rule(
+            "narrow",
+            Layer::Zone { zone_id: z },
+            2,
+            &[narrow],
+            Action::Deny,
+        );
         r.services = vec![https];
         r.id
     };
     let f = verify(&b.doc, now());
-    assert!(f.contains(&VerifyFinding::Shadowed { rule: r2, by: r1 }), "{f:?}");
+    assert!(
+        f.contains(&VerifyFinding::Shadowed { rule: r2, by: r1 }),
+        "{f:?}"
+    );
 }
 
 #[test]
@@ -340,15 +487,30 @@ fn verify_no_false_shadow_with_content_condition_or_narrower_service() {
     let narrow = b.domain("api.example.com");
     let secret = b.class("secret");
     let https = b.svc(L4Proto::Tcp, &[(443, 443)], None);
-    b.rule("content", Layer::Zone { zone_id: z }, 1, &[wide], Action::Deny)
-        .data_classes = vec![secret];
-    b.rule("svc", Layer::Zone { zone_id: z }, 2, &[wide], Action::Deny).services = vec![https];
-    b.rule("narrow", Layer::Zone { zone_id: z }, 3, &[narrow], Action::Accept);
+    b.rule(
+        "content",
+        Layer::Zone { zone_id: z },
+        1,
+        &[wide],
+        Action::Deny,
+    )
+    .data_classes = vec![secret];
+    b.rule("svc", Layer::Zone { zone_id: z }, 2, &[wide], Action::Deny)
+        .services = vec![https];
+    b.rule(
+        "narrow",
+        Layer::Zone { zone_id: z },
+        3,
+        &[narrow],
+        Action::Accept,
+    );
     // Different layer never shadows.
-    b.rule("base-exact", Layer::Baseline, 1, &[], Action::Deny).data_classes = vec![secret];
+    b.rule("base-exact", Layer::Baseline, 1, &[], Action::Deny)
+        .data_classes = vec![secret];
     let f = verify(&b.doc, now());
     assert!(
-        !f.iter().any(|x| matches!(x, VerifyFinding::Shadowed { .. })),
+        !f.iter()
+            .any(|x| matches!(x, VerifyFinding::Shadowed { .. })),
         "{f:?}"
     );
 }
@@ -359,12 +521,23 @@ fn verify_reports_unused_and_expired_and_warnings() {
     let used = b.domain("used.com");
     let unused = b.domain("unused.com");
     let member = b.domain("member.com");
-    let group = b.obj("g", NetObjectSpec::Group { members: vec![member] });
+    let group = b.obj(
+        "g",
+        NetObjectSpec::Group {
+            members: vec![member],
+        },
+    );
     let unused_svc = b.svc(L4Proto::Tcp, &[], None);
     let unused_cls = b.class("c");
     let empty = b.zone("empty", ZoneMode::Enforce);
     let _ = empty;
-    let exp = b.rule("old", Layer::Zone { zone_id: z }, 1, &[used, group], Action::Accept);
+    let exp = b.rule(
+        "old",
+        Layer::Zone { zone_id: z },
+        1,
+        &[used, group],
+        Action::Accept,
+    );
     exp.expires_at = Some(now() - Duration::days(1));
     let exp = exp.id;
     let f = verify(&b.doc, now());
@@ -381,7 +554,9 @@ fn verify_reports_unused_and_expired_and_warnings() {
 
     let meta = b.obj_cat(
         "meta",
-        NetObjectSpec::Host { ip: ip("169.254.169.254") },
+        NetObjectSpec::Host {
+            ip: ip("169.254.169.254"),
+        },
         Some(DestCategory::CloudMetadata),
     );
     b.rule("no-meta", Layer::Baseline, 1, &[meta], Action::Deny);
@@ -392,10 +567,31 @@ fn verify_reports_unused_and_expired_and_warnings() {
 fn where_used_reports_direct_and_group_usage() {
     let (mut b, z) = base();
     let leaf = b.domain("leaf.com");
-    let g = b.obj("g", NetObjectSpec::Group { members: vec![leaf] });
+    let g = b.obj(
+        "g",
+        NetObjectSpec::Group {
+            members: vec![leaf],
+        },
+    );
     let outer = b.obj("outer", NetObjectSpec::Group { members: vec![g] });
-    let direct = b.rule("direct", Layer::Zone { zone_id: z }, 1, &[leaf], Action::Accept).id;
-    let via = b.rule("via", Layer::Zone { zone_id: z }, 2, &[outer], Action::Accept).id;
+    let direct = b
+        .rule(
+            "direct",
+            Layer::Zone { zone_id: z },
+            1,
+            &[leaf],
+            Action::Accept,
+        )
+        .id;
+    let via = b
+        .rule(
+            "via",
+            Layer::Zone { zone_id: z },
+            2,
+            &[outer],
+            Action::Accept,
+        )
+        .id;
     let insp = Uuid::new_v4();
     b.doc.inspection_rules.push(InspectionRule {
         id: insp,
@@ -461,13 +657,21 @@ fn bench_2000_rules_10000_objects() {
         let layer = if i < 200 {
             Layer::Baseline
         } else {
-            Layer::Zone { zone_id: zones[i % 10] }
+            Layer::Zone {
+                zone_id: zones[i % 10],
+            }
         };
         let dsts = objs[(i * 5) % 10_000..(i * 5) % 10_000 + 5].to_vec();
-        b.rule(&format!("r{i}"), layer, i as u32, &dsts, Action::Accept).services = vec![https];
+        b.rule(&format!("r{i}"), layer, i as u32, &dsts, Action::Accept)
+            .services = vec![https];
     }
     let p = b.compile();
-    let c = ctx("10.2.0.1", Some("nomatch.example.org"), Some("203.0.113.1"), 443);
+    let c = ctx(
+        "10.2.0.1",
+        Some("nomatch.example.org"),
+        Some("203.0.113.1"),
+        443,
+    );
     let mut samples = Vec::with_capacity(20_000);
     for _ in 0..20_000 {
         let t = Instant::now();
@@ -478,5 +682,7 @@ fn bench_2000_rules_10000_objects() {
     samples.sort_unstable();
     let p50 = samples[samples.len() / 2] as f64 / 1000.0;
     let p99 = samples[samples.len() * 99 / 100] as f64 / 1000.0;
-    println!("evaluate (worst case, no match, 2000 rules / 10000 objects): p50 = {p50:.1} µs, p99 = {p99:.1} µs");
+    println!(
+        "evaluate (worst case, no match, 2000 rules / 10000 objects): p50 = {p50:.1} µs, p99 = {p99:.1} µs"
+    );
 }

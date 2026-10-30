@@ -166,12 +166,7 @@ pub fn ctx(agent: &str, host: Option<&str>, dst: Option<&str>, port: u16) -> Flo
     }
 }
 
-pub fn http(
-    agent: &str,
-    host: &str,
-    method: &str,
-    path: &str,
-) -> FlowContext {
+pub fn http(agent: &str, host: &str, method: &str, path: &str) -> FlowContext {
     FlowContext {
         app: Some(AppProto::Https),
         method: Some(method.into()),

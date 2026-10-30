@@ -19,7 +19,8 @@ fn allow_only(pattern: &str) -> afw_engine::CompiledPolicy {
 }
 
 fn verdict(p: &afw_engine::CompiledPolicy, host: &str) -> Verdict {
-    p.evaluate(&ctx(A, Some(host), Some("203.0.113.10"), 443)).verdict
+    p.evaluate(&ctx(A, Some(host), Some("203.0.113.10"), 443))
+        .verdict
 }
 
 #[test]
@@ -109,9 +110,18 @@ fn http_path_normalization_cannot_escape_prefix() {
         .services = vec![s];
     let p = b.compile();
     let h = "api.example.com";
-    assert_eq!(p.evaluate(&http(A, h, "GET", "/v1/public/x")).verdict, Verdict::Allow);
-    assert_eq!(p.evaluate(&http(A, h, "get", "/v1/public")).verdict, Verdict::Allow);
-    assert_eq!(p.evaluate(&http(A, h, "GET", "/v1/public?q=1")).verdict, Verdict::Allow);
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET", "/v1/public/x")).verdict,
+        Verdict::Allow
+    );
+    assert_eq!(
+        p.evaluate(&http(A, h, "get", "/v1/public")).verdict,
+        Verdict::Allow
+    );
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET", "/v1/public?q=1")).verdict,
+        Verdict::Allow
+    );
     for bad in [
         "/v1/public/../admin",
         "/v1/public/%2e%2e/admin",
@@ -133,10 +143,19 @@ fn http_path_normalization_cannot_escape_prefix() {
             "path {bad:?} must not match the prefix"
         );
     }
-    assert_eq!(p.evaluate(&http(A, h, "POST", "/v1/public/x")).verdict, Verdict::Deny);
-    assert_eq!(p.evaluate(&http(A, h, "GET ", "/v1/public/x")).verdict, Verdict::Deny);
+    assert_eq!(
+        p.evaluate(&http(A, h, "POST", "/v1/public/x")).verdict,
+        Verdict::Deny
+    );
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET ", "/v1/public/x")).verdict,
+        Verdict::Deny
+    );
     // `//` and `/./` collapse: still inside the prefix.
-    assert_eq!(p.evaluate(&http(A, h, "GET", "/v1//public/./x")).verdict, Verdict::Allow);
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET", "/v1//public/./x")).verdict,
+        Verdict::Allow
+    );
 }
 
 #[test]
@@ -154,8 +173,14 @@ fn deny_on_path_cannot_be_dodged_by_encoding() {
             path_prefixes: vec!["/admin".into()],
         }),
     );
-    b.rule("no-admin", Layer::Zone { zone_id: z }, 1, &[d], Action::Deny)
-        .services = vec![admin];
+    b.rule(
+        "no-admin",
+        Layer::Zone { zone_id: z },
+        1,
+        &[d],
+        Action::Deny,
+    )
+    .services = vec![admin];
     b.rule("rest", Layer::Zone { zone_id: z }, 2, &[d], Action::Accept);
     let p = b.compile();
     let h = "api.example.com";
@@ -176,9 +201,15 @@ fn deny_on_path_cannot_be_dodged_by_encoding() {
             "path {bad:?} must hit the deny rule"
         );
     }
-    assert_eq!(p.evaluate(&http(A, h, "GET", "/administrator")).verdict, Verdict::Allow);
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET", "/administrator")).verdict,
+        Verdict::Allow
+    );
     // A malformed path cannot satisfy an accept rule's prefix but does satisfy a deny rule's.
-    assert_eq!(p.evaluate(&http(A, h, "GET", "/%zz")).verdict, Verdict::Deny);
+    assert_eq!(
+        p.evaluate(&http(A, h, "GET", "/%zz")).verdict,
+        Verdict::Deny
+    );
 }
 
 #[test]
@@ -188,7 +219,12 @@ fn unknown_agent_is_denied_even_with_accept_all() {
     b.agent("bot", z, A);
     b.rule("all", Layer::Baseline, 1, &[], Action::Accept);
     let p = b.compile();
-    let d = p.evaluate(&ctx("10.9.9.9", Some("example.com"), Some("203.0.113.1"), 443));
+    let d = p.evaluate(&ctx(
+        "10.9.9.9",
+        Some("example.com"),
+        Some("203.0.113.1"),
+        443,
+    ));
     assert_eq!(d.verdict, Verdict::Deny);
     assert_eq!(d.implicit, Some(Implicit::UnknownAgent));
     assert!(!d.observed);
@@ -203,7 +239,10 @@ fn deny_all_policy_denies_everything() {
     assert_eq!(d.implicit, Some(Implicit::NoPolicy));
     assert_eq!(p.revision(), None);
     assert!(p.resolve_agent(ip(A)).is_none());
-    assert_eq!(d.deny_message("example.com"), "blocked by agents-firewall: example.com not allowed for unknown (rule no-policy)");
+    assert_eq!(
+        d.deny_message("example.com"),
+        "blocked by agents-firewall: example.com not allowed for unknown (rule no-policy)"
+    );
 }
 
 #[test]
@@ -260,7 +299,8 @@ fn zone_rule_must_have_its_zone_as_source() {
     let mut b = B::new();
     let z = b.zone("a", ZoneMode::Enforce);
     let z2 = b.zone("b", ZoneMode::Enforce);
-    b.rule("r", Layer::Zone { zone_id: z }, 1, &[], Action::Accept).sources = vec![];
+    b.rule("r", Layer::Zone { zone_id: z }, 1, &[], Action::Accept)
+        .sources = vec![];
     assert!(matches!(
         CompiledPolicy::compile(&b.installed(), now()),
         Err(CompileError::ZoneRuleSource { .. })
@@ -286,7 +326,13 @@ fn group_cycle_and_dangling_references_are_rejected() {
     ));
 
     let mut b = B::new();
-    b.rule("r", Layer::Baseline, 1, &[uuid::Uuid::new_v4()], Action::Deny);
+    b.rule(
+        "r",
+        Layer::Baseline,
+        1,
+        &[uuid::Uuid::new_v4()],
+        Action::Deny,
+    );
     assert!(matches!(
         CompiledPolicy::compile(&b.installed(), now()),
         Err(CompileError::UnknownReference { .. })
@@ -314,7 +360,15 @@ fn ambiguous_agent_address_is_rejected() {
 
 #[test]
 fn invalid_domain_pattern_is_rejected() {
-    for bad in ["*", "a.*.com", "*example.com", "ex ample.com", "", "bücher.de", "a..b"] {
+    for bad in [
+        "*",
+        "a.*.com",
+        "*example.com",
+        "ex ample.com",
+        "",
+        "bücher.de",
+        "a..b",
+    ] {
         let mut b = B::new();
         b.domain(bad);
         assert!(
@@ -340,8 +394,15 @@ fn llm_exemption_does_not_exempt_destination_rules() {
         Some(DestCategory::LlmProvider),
     );
     let secret = b.class("secret");
-    b.rule("no-secret", Layer::Baseline, 1, &[], Action::Deny).data_classes = vec![secret];
-    b.rule("no-llm-here", Layer::Zone { zone_id: z }, 1, &[llm], Action::Deny);
+    b.rule("no-secret", Layer::Baseline, 1, &[], Action::Deny)
+        .data_classes = vec![secret];
+    b.rule(
+        "no-llm-here",
+        Layer::Zone { zone_id: z },
+        1,
+        &[llm],
+        Action::Deny,
+    );
     let p = b.compile();
     let mut c = ctx(A, Some("api.anthropic.com"), Some("203.0.113.7"), 443);
     c.data_classes = vec![secret];
@@ -349,4 +410,21 @@ fn llm_exemption_does_not_exempt_destination_rules() {
     assert_eq!(d.verdict, Verdict::Deny);
     assert_eq!(d.rule_name, "no-llm-here");
     assert!(d.llm_provider);
+}
+
+#[test]
+fn metadata_inside_internal_networks_is_not_implicitly_allowed() {
+    let mut b = B::new();
+    let z = b.zone("prod", ZoneMode::Enforce);
+    b.agent("bot", z, A);
+    b.doc
+        .settings
+        .internal_networks
+        .push("169.254.0.0/16".parse().unwrap());
+    let p = b.compile();
+    let d = p.evaluate(&ctx(A, None, Some("169.254.169.254"), 80));
+    assert_eq!(d.verdict, Verdict::Deny);
+    assert_eq!(d.implicit, Some(Implicit::Cleanup));
+    let d = p.evaluate(&ctx(A, None, Some("169.254.1.1"), 80));
+    assert_eq!(d.implicit, Some(Implicit::InternalMonitor));
 }

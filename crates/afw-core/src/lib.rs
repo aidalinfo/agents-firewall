@@ -13,4 +13,4 @@ pub mod policy;
 pub mod protocol;
 
 pub use canon::{canonical_json, sha256_hex};
-pub use installed::{InstalledPolicy, PolicyIntegrityError, INSTALLED_POLICY_FORMAT};
+pub use installed::{INSTALLED_POLICY_FORMAT, InstalledPolicy, PolicyIntegrityError};

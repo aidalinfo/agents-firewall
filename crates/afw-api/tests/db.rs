@@ -64,7 +64,12 @@ async fn audit_record_builds_a_verifiable_chain() {
             .await
             .is_err()
     );
-    assert!(sqlx::query("DELETE FROM audit_log").execute(&pool).await.is_err());
+    assert!(
+        sqlx::query("DELETE FROM audit_log")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
 }
 
 async fn whoami(p: Principal) -> String {
@@ -94,16 +99,24 @@ async fn bearer_token_authenticates_principal() {
     };
     let ok = call(Some("Bearer boot-secret"), Some("cli")).await.unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
-    let body = http_body_util::BodyExt::collect(ok.into_body()).await.unwrap().to_bytes();
-    assert_eq!(&body[..], format!("{:?}/{:?}", Role::Admin, Interface::Cli).as_bytes());
+    let body = http_body_util::BodyExt::collect(ok.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    assert_eq!(
+        &body[..],
+        format!("{:?}/{:?}", Role::Admin, Interface::Cli).as_bytes()
+    );
 
-    for auth in [None, Some("Bearer wrong"), Some("Bearer first-secret"), Some("Basic boot-secret")] {
+    for auth in [
+        None,
+        Some("Bearer wrong"),
+        Some("Bearer first-secret"),
+        Some("Basic boot-secret"),
+    ] {
         let res = call(auth, None).await.unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{auth:?}");
-        assert_eq!(
-            res.headers()["content-type"],
-            "application/problem+json"
-        );
+        assert_eq!(res.headers()["content-type"], "application/problem+json");
     }
 }
 

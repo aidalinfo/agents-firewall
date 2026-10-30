@@ -97,11 +97,15 @@ pub struct HttpEvent {
     pub method: String,
     pub url: String,
     pub host: String,
+    /// `[name, value]` pairs, in order (secrets masked).
     #[serde(default)]
+    #[schemars(with = "Vec<[String; 2]>")]
     pub request_headers: Vec<(String, String)>,
     pub request_body: Option<Body>,
     pub status: Option<u16>,
+    /// `[name, value]` pairs, in order (secrets masked).
     #[serde(default)]
+    #[schemars(with = "Vec<[String; 2]>")]
     pub response_headers: Vec<(String, String)>,
     pub response_body: Option<Body>,
     #[serde(default)]

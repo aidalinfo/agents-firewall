@@ -188,9 +188,16 @@ pub struct RevisionDiff {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum VerifyFinding {
     /// `rule` can never match because `by` (earlier) matches everything it matches.
-    Shadowed { rule: Uuid, by: Uuid },
-    UnusedObject { id: Uuid },
-    Expired { rule: Uuid },
+    Shadowed {
+        rule: Uuid,
+        by: Uuid,
+    },
+    UnusedObject {
+        id: Uuid,
+    },
+    Expired {
+        rule: Uuid,
+    },
 }
 
 /// `GET /verify?revision=n`.

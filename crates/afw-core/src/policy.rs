@@ -28,15 +28,24 @@ pub struct NetObject {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NetObjectSpec {
     /// Exact domain or wildcard (`*.example.com` matches sub-domains only).
-    Domain { pattern: String },
-    Host { ip: IpAddr },
+    Domain {
+        pattern: String,
+    },
+    Host {
+        ip: IpAddr,
+    },
     Network {
         #[schemars(with = "String")]
         cidr: IpNet,
     },
     /// Inclusive address range.
-    Range { start: IpAddr, end: IpAddr },
-    Group { members: Vec<Uuid> },
+    Range {
+        start: IpAddr,
+        end: IpAddr,
+    },
+    Group {
+        members: Vec<Uuid>,
+    },
     Any,
 }
 
@@ -127,8 +136,13 @@ pub enum DataCategory {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Detector {
     /// Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
-    Builtin { id: String },
-    Regex { name: String, pattern: String },
+    Builtin {
+        id: String,
+    },
+    Regex {
+        name: String,
+        pattern: String,
+    },
 }
 
 /// A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.
@@ -272,15 +286,10 @@ pub struct PolicySettings {
 
 impl Default for PolicySettings {
     fn default() -> Self {
-        let internal_networks = [
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "192.168.0.0/16",
-            "fc00::/7",
-        ]
-        .iter()
-        .map(|n| n.parse().expect("valid built-in CIDR"))
-        .collect();
+        let internal_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+            .iter()
+            .map(|n| n.parse().expect("valid built-in CIDR"))
+            .collect();
         Self {
             internal_networks,
             max_buffered_body: 1024 * 1024,
@@ -331,6 +340,9 @@ pub struct PolicyDocument {
     pub settings: PolicySettings,
 }
 
+/// Sort key of a rule for numbering: (layer order, zone name, zone id, position, rule id).
+type RankKey = (u8, String, Uuid, u32, Uuid);
+
 impl PolicyDocument {
     /// Displayed rule numbers (global rank, starting at 1): baseline rules by position, then
     /// each zone layer ordered by zone name (then zone id), its rules by position. Ties on
@@ -345,7 +357,7 @@ impl PolicyDocument {
                 .unwrap_or_default()
         };
         // Sort key: (0 for baseline / 1 for zone, zone name, zone id, position, rule id).
-        let mut keyed: Vec<((u8, String, Uuid, u32, Uuid), Uuid)> = self
+        let mut keyed: Vec<(RankKey, Uuid)> = self
             .rules
             .iter()
             .map(|r| {

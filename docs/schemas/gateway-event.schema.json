@@ -260,18 +260,14 @@
           ]
         },
         "request_headers": {
+          "description": "`[name, value]` pairs, in order (secrets masked).",
           "default": [],
           "type": "array",
           "items": {
             "type": "array",
-            "items": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "string"
-              }
-            ],
+            "items": {
+              "type": "string"
+            },
             "maxItems": 2,
             "minItems": 2
           }
@@ -287,18 +283,14 @@
           ]
         },
         "response_headers": {
+          "description": "`[name, value]` pairs, in order (secrets masked).",
           "default": [],
           "type": "array",
           "items": {
             "type": "array",
-            "items": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "string"
-              }
-            ],
+            "items": {
+              "type": "string"
+            },
             "maxItems": 2,
             "minItems": 2
           }

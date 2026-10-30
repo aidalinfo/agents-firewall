@@ -389,7 +389,10 @@ fn wire_format_is_snake_case_and_tagged() {
         serde_json::to_value(Layer::Baseline).unwrap(),
         json!({"type": "baseline"})
     );
-    assert_eq!(serde_json::to_value(Role::McpAgent).unwrap(), json!("mcp_agent"));
+    assert_eq!(
+        serde_json::to_value(Role::McpAgent).unwrap(),
+        json!("mcp_agent")
+    );
     assert_eq!(
         serde_json::to_value(GatewayCommand::SelfTest).unwrap(),
         json!({"type": "self_test"})
@@ -532,8 +535,5 @@ fn installed_policy_rejects_wrong_fingerprint_and_unknown_format() {
 
     let mut future = p;
     future.format = 2;
-    assert_eq!(
-        future.verify(),
-        Err(PolicyIntegrityError::UnknownFormat(2))
-    );
+    assert_eq!(future.verify(), Err(PolicyIntegrityError::UnknownFormat(2)));
 }

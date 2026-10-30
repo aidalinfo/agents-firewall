@@ -10,7 +10,9 @@ use schemars::schema::RootSchema;
 use schemars::schema_for;
 
 fn check(file: &str, schema: RootSchema) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/schemas").join(file);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/schemas")
+        .join(file);
     let generated = serde_json::to_string_pretty(&schema).unwrap() + "\n";
     if std::env::var_os("AFW_UPDATE_SCHEMAS").is_some() {
         std::fs::write(&path, &generated).unwrap();

@@ -1,0 +1,5298 @@
+openapi: 3.1.0
+info:
+  title: agents-firewall API
+  version: 1.0.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: Control-plane REST API (contract-first, ADR 0008). Schemas under components.schemas are generated from the afw-core crate by `AFW_UPDATE_SCHEMAS=1 scripts/cargo.sh test -p afw-api --test openapi`; do not edit them by hand. Policy mutations happen in a session given by the `X-Afw-Session` header. Errors are `application/problem+json` (RFC 7807). Lists are paginated with an opaque cursor (`next_cursor`).
+servers:
+- url: /api/v1
+security:
+- bearer: []
+tags:
+- name: policy
+- name: sessions
+- name: revisions
+- name: installs
+- name: gateways
+- name: logs
+- name: captures
+- name: alerts
+- name: audit
+- name: approvals
+- name: auth
+- name: hermes
+- name: agents
+paths:
+  /objects:
+    get:
+      operationId: listObjects
+      tags:
+      - policy
+      summary: List objects
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NetObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createObject
+      tags:
+      - policy
+      summary: Create a Object in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetObject'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /objects/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getObject
+      tags:
+      - policy
+      summary: Get a Object
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateObject
+      tags:
+      - policy
+      summary: Replace a Object in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetObject'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteObject
+      tags:
+      - policy
+      summary: Delete a Object in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /services:
+    get:
+      operationId: listServices
+      tags:
+      - policy
+      summary: List services
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createService
+      tags:
+      - policy
+      summary: Create a Service in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Service'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /services/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getService
+      tags:
+      - policy
+      summary: Get a Service
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateService
+      tags:
+      - policy
+      summary: Replace a Service in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Service'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteService
+      tags:
+      - policy
+      summary: Delete a Service in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /data-classes:
+    get:
+      operationId: listDataClasses
+      tags:
+      - policy
+      summary: List data-classes
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DataClass'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createDataClass
+      tags:
+      - policy
+      summary: Create a DataClass in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataClass'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataClass'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /data-classes/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getDataClass
+      tags:
+      - policy
+      summary: Get a DataClass
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataClass'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateDataClass
+      tags:
+      - policy
+      summary: Replace a DataClass in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataClass'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataClass'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteDataClass
+      tags:
+      - policy
+      summary: Delete a DataClass in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /zones:
+    get:
+      operationId: listZones
+      tags:
+      - policy
+      summary: List zones
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createZone
+      tags:
+      - policy
+      summary: Create a Zone in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Zone'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /zones/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getZone
+      tags:
+      - policy
+      summary: Get a Zone
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateZone
+      tags:
+      - policy
+      summary: Replace a Zone in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Zone'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteZone
+      tags:
+      - policy
+      summary: Delete a Zone in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /agents:
+    get:
+      operationId: listAgents
+      tags:
+      - policy
+      summary: List agents
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createAgent
+      tags:
+      - policy
+      summary: Create a Agent in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Agent'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /agents/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getAgent
+      tags:
+      - policy
+      summary: Get a Agent
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateAgent
+      tags:
+      - policy
+      summary: Replace a Agent in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Agent'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteAgent
+      tags:
+      - policy
+      summary: Delete a Agent in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /rules:
+    get:
+      operationId: listRules
+      tags:
+      - policy
+      summary: List rules
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createRule
+      tags:
+      - policy
+      summary: Create a Rule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Rule'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /rules/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getRule
+      tags:
+      - policy
+      summary: Get a Rule
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateRule
+      tags:
+      - policy
+      summary: Replace a Rule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Rule'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteRule
+      tags:
+      - policy
+      summary: Delete a Rule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /inspection-rules:
+    get:
+      operationId: listInspectionRules
+      tags:
+      - policy
+      summary: List inspection-rules
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InspectionRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createInspectionRule
+      tags:
+      - policy
+      summary: Create a InspectionRule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionRule'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /inspection-rules/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getInspectionRule
+      tags:
+      - policy
+      summary: Get a InspectionRule
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateInspectionRule
+      tags:
+      - policy
+      summary: Replace a InspectionRule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionRule'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteInspectionRule
+      tags:
+      - policy
+      summary: Delete a InspectionRule in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /alert-channels:
+    get:
+      operationId: listAlertChannels
+      tags:
+      - alerts
+      summary: List alert-channels
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertChannel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createAlertChannel
+      tags:
+      - alerts
+      summary: Create a AlertChannel in the session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertChannel'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertChannel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /alert-channels/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getAlertChannel
+      tags:
+      - alerts
+      summary: Get a AlertChannel
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertChannel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateAlertChannel
+      tags:
+      - alerts
+      summary: Replace a AlertChannel in the session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertChannel'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertChannel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteAlertChannel
+      tags:
+      - alerts
+      summary: Delete a AlertChannel in the session
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /objects/{id}/where-used:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: objectWhereUsed
+      tags:
+      - policy
+      summary: Rules, groups and inspection rules referencing an object
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhereUsed'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /rules/{id}/move:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: moveRule
+      tags:
+      - policy
+      summary: Move a rule (position, layer, section)
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRuleRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /settings:
+    get:
+      operationId: getSettings
+      tags:
+      - policy
+      summary: Policy settings
+      parameters:
+      - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicySettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateSettings
+      tags:
+      - policy
+      summary: Replace policy settings in the session
+      parameters:
+      - $ref: '#/components/parameters/SessionRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicySettings'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicySettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions:
+    get:
+      operationId: listSessions
+      tags:
+      - sessions
+      summary: List open sessions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: openSession
+      tags:
+      - sessions
+      summary: Open an editing session
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/current:
+    get:
+      operationId: currentSession
+      tags:
+      - sessions
+      summary: Caller's open session
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getSession
+      tags:
+      - sessions
+      summary: Get a session
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/discard:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: discardSession
+      tags:
+      - sessions
+      summary: Discard a session and release its locks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/publish:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: publishSession
+      tags:
+      - sessions
+      summary: Publish a session as a new revision (409 when an approval is pending, EF-52)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Revision'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/allow-from-log:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: allowFromLog
+      tags:
+      - sessions
+      summary: Create a prefilled accept rule from a denied flow (EF-42)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllowFromLogRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowFromLogResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+  /revisions:
+    get:
+      operationId: listRevisions
+      tags:
+      - revisions
+      summary: List published revisions (newest first)
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_Revision'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /revisions/{n}:
+    parameters:
+    - $ref: '#/components/parameters/RevisionNumber'
+    get:
+      operationId: getRevision
+      tags:
+      - revisions
+      summary: Revision with its full document
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevisionDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /revisions/{n}/diff:
+    parameters:
+    - $ref: '#/components/parameters/RevisionNumber'
+    get:
+      operationId: diffRevision
+      tags:
+      - revisions
+      summary: Differences between revision n and `against` (default n-1)
+      parameters:
+      - name: against
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: uint64
+          minimum: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevisionDiff'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /revisions/{n}/revert:
+    parameters:
+    - $ref: '#/components/parameters/RevisionNumber'
+    post:
+      operationId: revertToRevision
+      tags:
+      - revisions
+      summary: Open a session whose content is revision n (rollback)
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /verify:
+    get:
+      operationId: verifyPolicy
+      tags:
+      - revisions
+      summary: 'Pre-install verification (EF-11): shadowed rules, unused objects, expired rules'
+      parameters:
+      - name: revision
+        in: query
+        required: false
+        description: Revision to verify; absent = caller's session draft
+        schema:
+          type: integer
+          format: uint64
+          minimum: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /installs:
+    get:
+      operationId: listInstalls
+      tags:
+      - installs
+      summary: Installations per gateway
+      parameters:
+      - name: gateway
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: revision
+        in: query
+        schema:
+          type: integer
+          format: uint64
+          minimum: 0
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_Install'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: installRevision
+      tags:
+      - installs
+      summary: Install a revision on gateways (empty list = all)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /gateways:
+    get:
+      operationId: listGateways
+      tags:
+      - gateways
+      summary: List gateways
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Gateway'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /gateways/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getGateway
+      tags:
+      - gateways
+      summary: Get a gateway
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gateway'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteGateway
+      tags:
+      - gateways
+      summary: Remove a gateway (revokes its certificate)
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /gateways/registration-tokens:
+    post:
+      operationId: createRegistrationToken
+      tags:
+      - gateways
+      summary: One-time gateway registration token (15 min)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRegistrationToken'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /gateways/{id}/commands:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: sendGatewayCommand
+      tags:
+      - gateways
+      summary: Queue a command, delivered with the next heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayCommand'
+      responses:
+        '202':
+          description: Queued
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /logs/flows:
+    get:
+      operationId: listFlows
+      tags:
+      - logs
+      summary: Search flows (newest first)
+      parameters:
+      - name: agent
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: zone
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: destination
+        in: query
+        description: Domain, IP or CIDR
+        schema:
+          type: string
+      - name: verdict
+        in: query
+        schema:
+          $ref: '#/components/schemas/Verdict'
+      - name: rule
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: q
+        in: query
+        description: Free text search
+        schema:
+          type: string
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_FlowEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /logs/flows/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getFlow
+      tags:
+      - logs
+      summary: Flow detail with HTTP exchanges, correlated tool call and confidence; contents only for admin/auditor, access audited (EF-54)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /logs/dns:
+    get:
+      operationId: listDns
+      tags:
+      - logs
+      summary: Search DNS queries
+      parameters:
+      - name: agent
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: zone
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: destination
+        in: query
+        description: Domain, IP or CIDR
+        schema:
+          type: string
+      - name: verdict
+        in: query
+        schema:
+          $ref: '#/components/schemas/Verdict'
+      - name: rule
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: q
+        in: query
+        description: Free text search
+        schema:
+          type: string
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_DnsEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /logs/stream:
+    get:
+      operationId: streamLogs
+      tags:
+      - logs
+      summary: Live events (Server-Sent Events). Each event's `event:` is the GatewayEvent type (`flow`, `dns`, `http`, `alert`) and `data:` its JSON (`GatewayEvent`).
+      parameters:
+      - name: agent
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: zone
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: destination
+        in: query
+        description: Domain, IP or CIDR
+        schema:
+          type: string
+      - name: verdict
+        in: query
+        schema:
+          $ref: '#/components/schemas/Verdict'
+      - name: rule
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-event-schema:
+                $ref: '#/components/schemas/GatewayEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /captures:
+    get:
+      operationId: listCaptures
+      tags:
+      - captures
+      summary: List packet captures
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_Capture'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: startCapture
+      tags:
+      - captures
+      summary: Start a packet capture for an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /captures/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getCapture
+      tags:
+      - captures
+      summary: Get a capture
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /captures/{id}/download:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: downloadCapture
+      tags:
+      - captures
+      summary: Download the pcap file (audited)
+      responses:
+        '200':
+          description: pcap
+          content:
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags:
+      - alerts
+      summary: List alerts (newest first)
+      parameters:
+      - name: agent
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: severity
+        in: query
+        schema:
+          $ref: '#/components/schemas/Severity'
+      - name: acknowledged
+        in: query
+        schema:
+          type: boolean
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /alerts/{id}/ack:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: acknowledgeAlert
+      tags:
+      - alerts
+      summary: Acknowledge an alert
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /internal-map:
+    get:
+      operationId: internalMap
+      tags:
+      - logs
+      summary: Internal flows map (agents and internal hosts)
+      parameters:
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: zone
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalMap'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /agents/{id}/overview:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: agentOverview
+      tags:
+      - logs
+      summary: Agent view (EF-43)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentOverview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /audit:
+    get:
+      operationId: listAudit
+      tags:
+      - audit
+      summary: Audit entries (ascending seq)
+      parameters:
+      - name: from_seq
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: actor
+        in: query
+        schema:
+          type: string
+      - name: action
+        in: query
+        schema:
+          type: string
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_for_AuditEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /audit/verify:
+    get:
+      operationId: verifyAudit
+      tags:
+      - audit
+      summary: Verify the hash chain
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditVerifyResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /audit/export:
+    get:
+      operationId: exportAudit
+      tags:
+      - audit
+      summary: Export the audit log as JSON lines (one AuditEntry per line)
+      parameters:
+      - name: from_seq
+        in: query
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: NDJSON
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+              x-item-schema:
+                $ref: '#/components/schemas/AuditEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /approvals:
+    get:
+      operationId: listApprovals
+      tags:
+      - approvals
+      summary: List approvals (EF-52)
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/ApprovalStatus'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Approval'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /approvals/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getApproval
+      tags:
+      - approvals
+      summary: Get an approval
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /approvals/{id}/decision:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: decideApproval
+      tags:
+      - approvals
+      summary: Approve or reject (admin, never the requester)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /me:
+    get:
+      operationId: me
+      tags:
+      - auth
+      summary: Current caller
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /tokens:
+    get:
+      operationId: listTokens
+      tags:
+      - auth
+      summary: List API tokens
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createToken
+      tags:
+      - auth
+      summary: Create an API token (secret returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiToken'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedApiToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /tokens/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: revokeToken
+      tags:
+      - auth
+      summary: Revoke an API token
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /intent-policy:
+    get:
+      operationId: getIntentPolicy
+      tags:
+      - hermes
+      summary: Intent policy for the calling agent (plugin token)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /ingest/tool-calls:
+    post:
+      operationId: ingestToolCalls
+      tags:
+      - hermes
+      summary: Tool calls reported by the Hermes plugin (plugin token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolCallBatch'
+      responses:
+        '202':
+          description: Accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+  /enrollments:
+    post:
+      operationId: enrollAgent
+      tags:
+      - agents
+      summary: Create an agent in a session (and a plugin token for Hermes agents)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: 'OIDC access token or API token. Roles: admin, auditor, viewer, mcp_agent. Optional `X-Afw-Interface: ui|cli|mcp|api` header.'
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RevisionNumber:
+      name: n
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: uint64
+        minimum: 1
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: '`next_cursor` of the previous page'
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    Session:
+      name: X-Afw-Session
+      in: header
+      required: false
+      description: Read the session's draft instead of the last published revision
+      schema:
+        type: string
+        format: uuid
+    SessionRequired:
+      name: X-Afw-Session
+      in: header
+      required: true
+      description: Session holding the change
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Role or delegation does not allow this action
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflict (state, approval pending, already exists)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Locked:
+      description: Resource locked by another session
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Error:
+      description: Unexpected error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Action:
+      enum:
+      - accept
+      - deny
+      type: string
+    ActionClass:
+      description: Class of tool actions handled by the Hermes plugin ("gate" = block with a message).
+      properties:
+        arg_patterns:
+          default: []
+          description: Argument substrings or regexes that put a call in this class.
+          items:
+            type: string
+          type: array
+        gate:
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/ActionClassKind'
+        message:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        tools:
+          description: Tool name patterns (`*` wildcard).
+          items:
+            type: string
+          type: array
+      required:
+      - gate
+      - kind
+      - name
+      - tools
+      type: object
+    ActionClassKind:
+      enum:
+      - deletion
+      - access
+      - infrastructure
+      - paid_generation
+      - custom
+      type: string
+    Actor:
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ActorKind'
+        name:
+          type: string
+      required:
+      - id
+      - kind
+      - name
+      type: object
+    ActorKind:
+      enum:
+      - human
+      - cli
+      - agent
+      - system
+      type: string
+    AdminAction:
+      description: Recognised infrastructure administration call (internal flows, EF-82).
+      properties:
+        action:
+          type: string
+        resource:
+          type: string
+        system:
+          $ref: '#/components/schemas/AdminSystem'
+      required:
+      - action
+      - resource
+      - system
+      type: object
+    AdminSystem:
+      enum:
+      - kubernetes
+      - coolify
+      - docker
+      - proxmox
+      type: string
+    Agent:
+      properties:
+        addresses:
+          default: []
+          description: Source addresses identifying the agent on the gateway's internal network.
+          items:
+            format: ip
+            type: string
+          type: array
+        gateway_id:
+          default: null
+          format: uuid
+          type:
+          - string
+          - 'null'
+        hermes:
+          default: false
+          type: boolean
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/AgentKind'
+        labels:
+          additionalProperties:
+            type: string
+          default: {}
+          type: object
+        mcp_admin:
+          default: false
+          type: boolean
+        name:
+          type: string
+        zone_id:
+          format: uuid
+          type: string
+      required:
+      - id
+      - kind
+      - name
+      - zone_id
+      type: object
+    AgentKind:
+      enum:
+      - docker_compose
+      - coolify
+      - kubernetes
+      - container
+      type: string
+    AgentOverview:
+      description: '`GET /agents/{id}/overview` (EF-43).'
+      properties:
+        agent:
+          $ref: '#/components/schemas/Agent'
+        alerts:
+          items:
+            $ref: '#/components/schemas/AlertEvent'
+          type: array
+        bytes_in_24h:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_out_24h:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        denied_24h:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        flows_24h:
+          description: Counters over the last 24 hours.
+          format: uint64
+          minimum: 0.0
+          type: integer
+        gateway:
+          anyOf:
+          - $ref: '#/components/schemas/Gateway'
+          - type: 'null'
+        last_seen_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        recent_denied:
+          items:
+            $ref: '#/components/schemas/FlowEvent'
+          type: array
+        recent_tool_calls:
+          items:
+            $ref: '#/components/schemas/ToolCallEvent'
+          type: array
+        top_destinations:
+          items:
+            $ref: '#/components/schemas/DestinationStat'
+          type: array
+        zone:
+          $ref: '#/components/schemas/Zone'
+      required:
+      - agent
+      - alerts
+      - bytes_in_24h
+      - bytes_out_24h
+      - denied_24h
+      - flows_24h
+      - recent_denied
+      - recent_tool_calls
+      - top_destinations
+      - zone
+      type: object
+    Alert:
+      description: 'Alert as listed by the API: the event plus its acknowledgement.'
+      properties:
+        acknowledged:
+          type: boolean
+        acknowledged_by:
+          anyOf:
+          - $ref: '#/components/schemas/Actor'
+          - type: 'null'
+        event:
+          $ref: '#/components/schemas/AlertEvent'
+        gateway_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+      required:
+      - acknowledged
+      - event
+      type: object
+    AlertChannel:
+      properties:
+        enabled:
+          type: boolean
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/AlertChannelKind'
+        min_severity:
+          $ref: '#/components/schemas/Severity'
+        name:
+          type: string
+        url:
+          description: Target URL (secret parts masked on read).
+          type: string
+      required:
+      - enabled
+      - id
+      - kind
+      - min_severity
+      - name
+      - url
+      type: object
+    AlertChannelKind:
+      enum:
+      - webhook
+      - teams
+      - pulse_chat
+      type: string
+    AlertEvent:
+      properties:
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        at:
+          format: date-time
+          type: string
+        details:
+          default: null
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/AlertKind'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        summary:
+          type: string
+      required:
+      - at
+      - id
+      - kind
+      - severity
+      - summary
+      type: object
+    AlertKind:
+      enum:
+      - new_destination
+      - volume_spike
+      - deny_burst
+      - cloud_metadata
+      - secret_detected
+      - port_scan
+      - new_internal_host
+      - sensitive_port
+      - internal_burst
+      - unusual_admin_action
+      type: string
+    AllowFromLogRequest:
+      description: '`POST /sessions/{id}/allow-from-log` (EF-42): creates a prefilled rule in the session.'
+      properties:
+        flow_id:
+          format: uuid
+          type: string
+      required:
+      - flow_id
+      type: object
+    AllowFromLogResponse:
+      properties:
+        created_object:
+          anyOf:
+          - $ref: '#/components/schemas/NetObject'
+          - type: 'null'
+          description: Object created for the destination when no existing object matched.
+        rule:
+          $ref: '#/components/schemas/Rule'
+      required:
+      - rule
+      type: object
+    ApiToken:
+      description: API token (the secret is only returned once, at creation).
+      properties:
+        agent_id:
+          description: Agent bound to the token (`mcp_agent` role or Hermes plugin token).
+          format: uuid
+          type:
+          - string
+          - 'null'
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          $ref: '#/components/schemas/Actor'
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        id:
+          format: uuid
+          type: string
+        last_used_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+      - created_at
+      - created_by
+      - id
+      - name
+      - role
+      type: object
+    AppMatch:
+      description: Application-level match (method and path prefixes apply to HTTP/HTTPS only).
+      properties:
+        methods:
+          default: []
+          items:
+            type: string
+          type: array
+        path_prefixes:
+          default: []
+          items:
+            type: string
+          type: array
+        proto:
+          $ref: '#/components/schemas/AppProto'
+      required:
+      - proto
+      type: object
+    AppProto:
+      enum:
+      - http
+      - https
+      - dns
+      - ssh
+      - tls
+      - other
+      type: string
+    Approval:
+      description: Approval required before publishing a widening change (EF-52).
+      properties:
+        comment:
+          type:
+          - string
+          - 'null'
+        decided_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        decided_by:
+          anyOf:
+          - $ref: '#/components/schemas/Actor'
+          - type: 'null'
+        id:
+          format: uuid
+          type: string
+        reason:
+          type: string
+        requested_at:
+          format: date-time
+          type: string
+        requested_by:
+          $ref: '#/components/schemas/Actor'
+        session_id:
+          format: uuid
+          type: string
+        status:
+          $ref: '#/components/schemas/ApprovalStatus'
+        summary:
+          type: string
+      required:
+      - id
+      - reason
+      - requested_at
+      - requested_by
+      - session_id
+      - status
+      - summary
+      type: object
+    ApprovalDecision:
+      description: '`POST /approvals/{id}/decision`.'
+      properties:
+        approve:
+          type: boolean
+        comment:
+          type:
+          - string
+          - 'null'
+      required:
+      - approve
+      type: object
+    ApprovalStatus:
+      enum:
+      - pending
+      - approved
+      - rejected
+      type: string
+    AuditEntry:
+      description: 'Hash-chained audit entry: `hash = sha256(prev_hash || canonical_json(entry without hash))`.'
+      properties:
+        action:
+          type: string
+        actor:
+          $ref: '#/components/schemas/Actor'
+        at:
+          format: date-time
+          type: string
+        diff:
+          default: null
+        hash:
+          type: string
+        interface:
+          $ref: '#/components/schemas/Interface'
+        prev_hash:
+          type: string
+        seq:
+          format: int64
+          type: integer
+        session_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        target:
+          type: string
+      required:
+      - action
+      - actor
+      - at
+      - hash
+      - interface
+      - prev_hash
+      - seq
+      - target
+      type: object
+    AuditVerifyResult:
+      description: '`GET /audit/verify`.'
+      properties:
+        broken_at:
+          description: '`seq` of the first broken entry.'
+          format: int64
+          type:
+          - integer
+          - 'null'
+        checked:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        head_hash:
+          type:
+          - string
+          - 'null'
+        head_seq:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        ok:
+          type: boolean
+      required:
+      - checked
+      - ok
+      type: object
+    Body:
+      description: Captured body, already masked before leaving the gateway.
+      properties:
+        data:
+          type: string
+        encoding:
+          $ref: '#/components/schemas/BodyEncoding'
+        sha256:
+          description: SHA-256 (hex) of the original, unmasked body.
+          type: string
+        size:
+          description: Original size in bytes.
+          format: uint64
+          minimum: 0.0
+          type: integer
+        truncated:
+          type: boolean
+      required:
+      - data
+      - encoding
+      - sha256
+      - size
+      - truncated
+      type: object
+    BodyEncoding:
+      enum:
+      - utf8
+      - base64
+      type: string
+    Capture:
+      properties:
+        agent_id:
+          format: uuid
+          type: string
+        duration_secs:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        error:
+          type:
+          - string
+          - 'null'
+        gateway_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        requested_at:
+          format: date-time
+          type: string
+        requested_by:
+          $ref: '#/components/schemas/Actor'
+        size:
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        state:
+          $ref: '#/components/schemas/CaptureState'
+      required:
+      - agent_id
+      - duration_secs
+      - gateway_id
+      - id
+      - requested_at
+      - requested_by
+      - state
+      type: object
+    CaptureRequest:
+      description: '`POST /captures`.'
+      properties:
+        agent_id:
+          format: uuid
+          type: string
+        duration_secs:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - agent_id
+      - duration_secs
+      type: object
+    CaptureState:
+      enum:
+      - pending
+      - running
+      - done
+      - failed
+      type: string
+    Change:
+      properties:
+        after: {}
+        before: {}
+        kind:
+          $ref: '#/components/schemas/ChangeKind'
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+      required:
+      - kind
+      - resource
+      type: object
+    ChangeKind:
+      enum:
+      - added
+      - removed
+      - modified
+      type: string
+    Confidence:
+      enum:
+      - certain
+      - probable
+      - uncertain
+      type: string
+    Correlation:
+      description: Flow <-> tool call correlation (ADR 0007).
+      properties:
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        conversation_id:
+          type: string
+        tool_call_id:
+          format: uuid
+          type: string
+      required:
+      - confidence
+      - conversation_id
+      - tool_call_id
+      type: object
+    CreateApiToken:
+      description: '`POST /tokens`.'
+      properties:
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+      - name
+      - role
+      type: object
+    CreateRegistrationToken:
+      description: '`POST /gateways/registration-tokens`.'
+      properties:
+        name:
+          description: Expected gateway name (informative).
+          type:
+          - string
+          - 'null'
+      type: object
+    CreatedApiToken:
+      properties:
+        secret:
+          description: Bearer secret, shown once.
+          type: string
+        token:
+          $ref: '#/components/schemas/ApiToken'
+      required:
+      - secret
+      - token
+      type: object
+    DataCategory:
+      enum:
+      - secret
+      - infra
+      - commercial
+      - personal
+      - custom
+      type: string
+    DataClass:
+      properties:
+        category:
+          $ref: '#/components/schemas/DataCategory'
+        comment:
+          default: ''
+          type: string
+        detectors:
+          items:
+            $ref: '#/components/schemas/Detector'
+          type: array
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+      required:
+      - category
+      - detectors
+      - id
+      - name
+      type: object
+    DecisionRef:
+      description: Which rule (or implicit rule) decided a flow.
+      properties:
+        layer:
+          description: '`baseline`, `zone` or `implicit`.'
+          type: string
+        reason:
+          type: string
+        rule_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        rule_name:
+          type: string
+        rule_number:
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+      required:
+      - layer
+      - reason
+      - rule_name
+      type: object
+    DestCategory:
+      description: Destination category. `LlmProvider` carries the data-class exemption (EF-25).
+      enum:
+      - llm_provider
+      - cloud_metadata
+      - internal
+      type: string
+    DestinationStat:
+      properties:
+        bytes_in:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_out:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        denied:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        destination:
+          type: string
+        flows:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        last_seen_at:
+          format: date-time
+          type: string
+      required:
+      - bytes_in
+      - bytes_out
+      - denied
+      - destination
+      - flows
+      - last_seen_at
+      type: object
+    Detector:
+      oneOf:
+      - description: Built-in detector of `afw-dlp`, by id (e.g. `aws_access_key`).
+        properties:
+          id:
+            type: string
+          type:
+            enum:
+            - builtin
+            type: string
+        required:
+        - id
+        - type
+        type: object
+      - properties:
+          name:
+            type: string
+          pattern:
+            type: string
+          type:
+            enum:
+            - regex
+            type: string
+        required:
+        - name
+        - pattern
+        - type
+        type: object
+    DnsEvent:
+      properties:
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        answers:
+          default: []
+          items:
+            type: string
+          type: array
+        at:
+          format: date-time
+          type: string
+        decision:
+          $ref: '#/components/schemas/DecisionRef'
+        gateway_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        qname:
+          type: string
+        qtype:
+          type: string
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+      required:
+      - at
+      - decision
+      - gateway_id
+      - id
+      - qname
+      - qtype
+      - verdict
+      type: object
+    Enrollment:
+      properties:
+        agent:
+          $ref: '#/components/schemas/Agent'
+        plugin_token:
+          description: Hermes plugin bearer token, shown once.
+          type:
+          - string
+          - 'null'
+        session_id:
+          format: uuid
+          type: string
+      required:
+      - agent
+      - session_id
+      type: object
+    EnrollmentRequest:
+      description: '`POST /enrollments`: creates the agent (in an open session) and, for Hermes agents, a plugin token.'
+      properties:
+        gateway_id:
+          format: uuid
+          type: string
+        hermes:
+          default: false
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/AgentKind'
+        name:
+          type: string
+        zone_id:
+          format: uuid
+          type: string
+      required:
+      - gateway_id
+      - kind
+      - name
+      - zone_id
+      type: object
+    Finding:
+      description: A data-class detection. Never contains the secret itself.
+      properties:
+        category:
+          $ref: '#/components/schemas/DataCategory'
+        class:
+          description: Data class name.
+          type: string
+        fingerprint:
+          description: SHA-256 of the matched value truncated to 12 hex characters.
+          type: string
+        kind:
+          description: Detector kind (e.g. `aws_access_key`).
+          type: string
+        location:
+          description: Where it was found (e.g. `request.body`, `request.header:authorization`, `url`).
+          type: string
+      required:
+      - category
+      - class
+      - fingerprint
+      - kind
+      - location
+      type: object
+    FlowDetail:
+      description: '`GET /logs/flows/{id}`.'
+      properties:
+        correlation:
+          anyOf:
+          - $ref: '#/components/schemas/Correlation'
+          - type: 'null'
+        flow:
+          $ref: '#/components/schemas/FlowEvent'
+        http:
+          items:
+            $ref: '#/components/schemas/HttpEvent'
+          type: array
+        tool_call:
+          anyOf:
+          - $ref: '#/components/schemas/ToolCallEvent'
+          - type: 'null'
+      required:
+      - flow
+      - http
+      type: object
+    FlowEvent:
+      properties:
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AppProto'
+          - type: 'null'
+        bytes_in:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_out:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        data_classes:
+          default: []
+          description: Names of the data classes detected in the flow.
+          items:
+            type: string
+          type: array
+        decision:
+          $ref: '#/components/schemas/DecisionRef'
+        domain:
+          type:
+          - string
+          - 'null'
+        dst:
+          type: string
+        ended_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        gateway_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        internal:
+          type: boolean
+        llm_provider:
+          type: boolean
+        observed:
+          type: boolean
+        protocol:
+          $ref: '#/components/schemas/L4Proto'
+        sni:
+          type:
+          - string
+          - 'null'
+        src:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        tls_inspected:
+          type: boolean
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        zone_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+      required:
+      - bytes_in
+      - bytes_out
+      - decision
+      - dst
+      - gateway_id
+      - id
+      - internal
+      - llm_provider
+      - observed
+      - protocol
+      - src
+      - started_at
+      - tls_inspected
+      - verdict
+      type: object
+    FlowQuery:
+      description: Filters of `GET /logs/flows` and `GET /logs/dns` (query string).
+      properties:
+        agent:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        cursor:
+          type:
+          - string
+          - 'null'
+        destination:
+          description: Destination domain, IP or CIDR.
+          type:
+          - string
+          - 'null'
+        from:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        limit:
+          description: Page size (default 100, max 1000).
+          format: uint32
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        q:
+          description: Free text search.
+          type:
+          - string
+          - 'null'
+        rule:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        to:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        verdict:
+          anyOf:
+          - $ref: '#/components/schemas/Verdict'
+          - type: 'null'
+        zone:
+          format: uuid
+          type:
+          - string
+          - 'null'
+      type: object
+    Gateway:
+      properties:
+        active_revision:
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        ca_fingerprint:
+          type:
+          - string
+          - 'null'
+        desired_revision:
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        hostname:
+          type: string
+        id:
+          format: uuid
+          type: string
+        last_seen_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        registered_at:
+          format: date-time
+          type: string
+        stats:
+          anyOf:
+          - $ref: '#/components/schemas/GatewayStats'
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/GatewayStatus'
+        version:
+          type:
+          - string
+          - 'null'
+      required:
+      - hostname
+      - id
+      - name
+      - registered_at
+      - status
+      type: object
+    GatewayCommand:
+      oneOf:
+      - properties:
+          agent_id:
+            format: uuid
+            type: string
+          capture_id:
+            format: uuid
+            type: string
+          duration_secs:
+            format: uint32
+            minimum: 0.0
+            type: integer
+          type:
+            enum:
+            - start_capture
+            type: string
+        required:
+        - agent_id
+        - capture_id
+        - duration_secs
+        - type
+        type: object
+      - properties:
+          type:
+            enum:
+            - reinstall
+            type: string
+        required:
+        - type
+        type: object
+      - properties:
+          type:
+            enum:
+            - self_test
+            type: string
+        required:
+        - type
+        type: object
+    GatewayEvent:
+      description: Event sent by a gateway in `POST /gw/v1/events`.
+      oneOf:
+      - properties:
+          agent_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
+          app:
+            anyOf:
+            - $ref: '#/components/schemas/AppProto'
+            - type: 'null'
+          bytes_in:
+            format: uint64
+            minimum: 0.0
+            type: integer
+          bytes_out:
+            format: uint64
+            minimum: 0.0
+            type: integer
+          data_classes:
+            default: []
+            description: Names of the data classes detected in the flow.
+            items:
+              type: string
+            type: array
+          decision:
+            $ref: '#/components/schemas/DecisionRef'
+          domain:
+            type:
+            - string
+            - 'null'
+          dst:
+            type: string
+          ended_at:
+            format: date-time
+            type:
+            - string
+            - 'null'
+          gateway_id:
+            format: uuid
+            type: string
+          id:
+            format: uuid
+            type: string
+          internal:
+            type: boolean
+          llm_provider:
+            type: boolean
+          observed:
+            type: boolean
+          protocol:
+            $ref: '#/components/schemas/L4Proto'
+          sni:
+            type:
+            - string
+            - 'null'
+          src:
+            type: string
+          started_at:
+            format: date-time
+            type: string
+          tls_inspected:
+            type: boolean
+          type:
+            enum:
+            - flow
+            type: string
+          verdict:
+            $ref: '#/components/schemas/Verdict'
+          zone_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
+        required:
+        - bytes_in
+        - bytes_out
+        - decision
+        - dst
+        - gateway_id
+        - id
+        - internal
+        - llm_provider
+        - observed
+        - protocol
+        - src
+        - started_at
+        - tls_inspected
+        - type
+        - verdict
+        type: object
+      - properties:
+          agent_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
+          answers:
+            default: []
+            items:
+              type: string
+            type: array
+          at:
+            format: date-time
+            type: string
+          decision:
+            $ref: '#/components/schemas/DecisionRef'
+          gateway_id:
+            format: uuid
+            type: string
+          id:
+            format: uuid
+            type: string
+          qname:
+            type: string
+          qtype:
+            type: string
+          type:
+            enum:
+            - dns
+            type: string
+          verdict:
+            $ref: '#/components/schemas/Verdict'
+        required:
+        - at
+        - decision
+        - gateway_id
+        - id
+        - qname
+        - qtype
+        - type
+        - verdict
+        type: object
+      - properties:
+          admin_action:
+            anyOf:
+            - $ref: '#/components/schemas/AdminAction'
+            - type: 'null'
+          agent_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
+          at:
+            format: date-time
+            type: string
+          findings:
+            default: []
+            items:
+              $ref: '#/components/schemas/Finding'
+            type: array
+          flow_id:
+            format: uuid
+            type: string
+          gateway_id:
+            format: uuid
+            type: string
+          host:
+            type: string
+          id:
+            format: uuid
+            type: string
+          method:
+            type: string
+          request_body:
+            anyOf:
+            - $ref: '#/components/schemas/Body'
+            - type: 'null'
+          request_headers:
+            default: []
+            description: '`[name, value]` pairs, in order (secrets masked).'
+            items:
+              items:
+                type: string
+              maxItems: 2
+              minItems: 2
+              type: array
+            type: array
+          response_body:
+            anyOf:
+            - $ref: '#/components/schemas/Body'
+            - type: 'null'
+          response_headers:
+            default: []
+            description: '`[name, value]` pairs, in order (secrets masked).'
+            items:
+              items:
+                type: string
+              maxItems: 2
+              minItems: 2
+              type: array
+            type: array
+          status:
+            format: uint16
+            minimum: 0.0
+            type:
+            - integer
+            - 'null'
+          type:
+            enum:
+            - http
+            type: string
+          url:
+            type: string
+          websocket:
+            default: false
+            type: boolean
+        required:
+        - at
+        - flow_id
+        - gateway_id
+        - host
+        - id
+        - method
+        - type
+        - url
+        type: object
+      - properties:
+          agent_id:
+            format: uuid
+            type:
+            - string
+            - 'null'
+          at:
+            format: date-time
+            type: string
+          details:
+            default: null
+          id:
+            format: uuid
+            type: string
+          kind:
+            $ref: '#/components/schemas/AlertKind'
+          severity:
+            $ref: '#/components/schemas/Severity'
+          summary:
+            type: string
+          type:
+            enum:
+            - alert
+            type: string
+        required:
+        - at
+        - id
+        - kind
+        - severity
+        - summary
+        - type
+        type: object
+      - description: 'Struct variant (not a newtype over `Vec`): serde cannot internally tag a sequence.'
+        properties:
+          hits:
+            items:
+              $ref: '#/components/schemas/RuleHit'
+            type: array
+          type:
+            enum:
+            - rule_hits
+            type: string
+        required:
+        - hits
+        - type
+        type: object
+    GatewayStats:
+      properties:
+        active_flows:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_in:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        bytes_out:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        denied_total:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        events_dropped:
+          description: Events dropped because the buffer was full.
+          format: uint64
+          minimum: 0.0
+          type: integer
+        events_queued:
+          description: Events waiting in the bounded disk buffer.
+          format: uint64
+          minimum: 0.0
+          type: integer
+        flows_total:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        uptime_secs:
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - active_flows
+      - bytes_in
+      - bytes_out
+      - denied_total
+      - events_dropped
+      - events_queued
+      - flows_total
+      - uptime_secs
+      type: object
+    GatewayStatus:
+      oneOf:
+      - enum:
+        - online
+        - offline
+        type: string
+      - description: Registered but never seen.
+        enum:
+        - pending
+        type: string
+    HttpEvent:
+      properties:
+        admin_action:
+          anyOf:
+          - $ref: '#/components/schemas/AdminAction'
+          - type: 'null'
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        at:
+          format: date-time
+          type: string
+        findings:
+          default: []
+          items:
+            $ref: '#/components/schemas/Finding'
+          type: array
+        flow_id:
+          format: uuid
+          type: string
+        gateway_id:
+          format: uuid
+          type: string
+        host:
+          type: string
+        id:
+          format: uuid
+          type: string
+        method:
+          type: string
+        request_body:
+          anyOf:
+          - $ref: '#/components/schemas/Body'
+          - type: 'null'
+        request_headers:
+          default: []
+          description: '`[name, value]` pairs, in order (secrets masked).'
+          items:
+            items:
+              type: string
+            maxItems: 2
+            minItems: 2
+            type: array
+          type: array
+        response_body:
+          anyOf:
+          - $ref: '#/components/schemas/Body'
+          - type: 'null'
+        response_headers:
+          default: []
+          description: '`[name, value]` pairs, in order (secrets masked).'
+          items:
+            items:
+              type: string
+            maxItems: 2
+            minItems: 2
+            type: array
+          type: array
+        status:
+          format: uint16
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+        url:
+          type: string
+        websocket:
+          default: false
+          type: boolean
+      required:
+      - at
+      - flow_id
+      - gateway_id
+      - host
+      - id
+      - method
+      - url
+      type: object
+    InspectionAction:
+      enum:
+      - inspect
+      - bypass
+      type: string
+    InspectionRule:
+      description: 'TLS inspection rule. Implicit default when nothing matches: `Inspect` (EF-09).'
+      properties:
+        action:
+          $ref: '#/components/schemas/InspectionAction'
+        destinations:
+          default: []
+          description: Empty = any destination.
+          items:
+            format: uuid
+            type: string
+          type: array
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        position:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        zones:
+          default: []
+          description: Empty = all zones.
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+      - action
+      - id
+      - name
+      - position
+      type: object
+    Install:
+      description: Installation of a revision on one gateway (desired vs. acknowledged).
+      properties:
+        acked_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        error:
+          type:
+          - string
+          - 'null'
+        gateway_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        requested_at:
+          format: date-time
+          type: string
+        requested_by:
+          $ref: '#/components/schemas/Actor'
+        revision:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        state:
+          $ref: '#/components/schemas/InstallState'
+      required:
+      - gateway_id
+      - id
+      - requested_at
+      - requested_by
+      - revision
+      - state
+      type: object
+    InstallRequest:
+      description: '`POST /installs`.'
+      properties:
+        gateways:
+          default: []
+          description: Target gateways; empty = all gateways.
+          items:
+            format: uuid
+            type: string
+          type: array
+        revision:
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - revision
+      type: object
+    InstallResult:
+      description: Response of `POST /installs`.
+      properties:
+        installs:
+          items:
+            $ref: '#/components/schemas/Install'
+          type: array
+      required:
+      - installs
+      type: object
+    InstallState:
+      enum:
+      - pending
+      - installed
+      - failed
+      type: string
+    IntentPolicy:
+      description: '`GET /intent-policy` (plugin token): served to the Hermes plugin, cached on its side.'
+      properties:
+        agent:
+          type: string
+        classes:
+          items:
+            $ref: '#/components/schemas/ActionClass'
+          type: array
+        revision:
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - agent
+      - classes
+      - revision
+      type: object
+    Interface:
+      enum:
+      - ui
+      - cli
+      - mcp
+      - api
+      - system
+      type: string
+    InternalMap:
+      description: '`GET /internal-map`.'
+      properties:
+        edges:
+          items:
+            $ref: '#/components/schemas/MapEdge'
+          type: array
+        nodes:
+          items:
+            $ref: '#/components/schemas/MapNode'
+          type: array
+      required:
+      - edges
+      - nodes
+      type: object
+    L4Proto:
+      enum:
+      - tcp
+      - udp
+      - any
+      type: string
+    Layer:
+      oneOf:
+      - properties:
+          type:
+            enum:
+            - baseline
+            type: string
+        required:
+        - type
+        type: object
+      - properties:
+          type:
+            enum:
+            - zone
+            type: string
+          zone_id:
+            format: uuid
+            type: string
+        required:
+        - type
+        - zone_id
+        type: object
+    MapEdge:
+      properties:
+        alerts:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AppProto'
+          - type: 'null'
+        bytes:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        flows:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        last_seen_at:
+          format: date-time
+          type: string
+        port:
+          format: uint16
+          minimum: 0.0
+          type: integer
+        protocol:
+          $ref: '#/components/schemas/L4Proto'
+        source:
+          type: string
+        target:
+          type: string
+      required:
+      - alerts
+      - bytes
+      - flows
+      - last_seen_at
+      - port
+      - protocol
+      - source
+      - target
+      type: object
+    MapNode:
+      properties:
+        address:
+          type:
+          - string
+          - 'null'
+        agent_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        id:
+          description: 'Stable node id: the agent id, or the internal IP address.'
+          type: string
+        kind:
+          $ref: '#/components/schemas/MapNodeKind'
+        label:
+          type: string
+        zone_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - kind
+      - label
+      type: object
+    MapNodeKind:
+      oneOf:
+      - enum:
+        - agent
+        type: string
+      - description: Internal host that is not an agent (database, VM, Kubernetes API…).
+        enum:
+        - internal
+        type: string
+    Me:
+      description: '`GET /me`.'
+      properties:
+        actor:
+          $ref: '#/components/schemas/Actor'
+        agent_id:
+          description: Agent identity for the `mcp_agent` role.
+          format: uuid
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        role:
+          $ref: '#/components/schemas/Role'
+        writable_zones:
+          description: 'Zones the caller may modify (`mcp_agent`: delegated zones except its own).'
+          items:
+            format: uuid
+            type: string
+          type:
+          - array
+          - 'null'
+      required:
+      - actor
+      - role
+      type: object
+    MoveRuleRequest:
+      description: '`POST /rules/{id}/move`.'
+      properties:
+        layer:
+          anyOf:
+          - $ref: '#/components/schemas/Layer'
+          - type: 'null'
+          description: New layer; unchanged when absent.
+        position:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        section:
+          description: New section; unchanged when absent.
+          type:
+          - string
+          - 'null'
+      required:
+      - position
+      type: object
+    NetObject:
+      description: 'Network object: a destination (or group of destinations) referenced by rules.'
+      properties:
+        category:
+          anyOf:
+          - $ref: '#/components/schemas/DestCategory'
+          - type: 'null'
+          default: null
+        comment:
+          default: ''
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        spec:
+          $ref: '#/components/schemas/NetObjectSpec'
+      required:
+      - id
+      - name
+      - spec
+      type: object
+    NetObjectSpec:
+      description: What a network object matches.
+      oneOf:
+      - description: Exact domain or wildcard (`*.example.com` matches sub-domains only).
+        properties:
+          pattern:
+            type: string
+          type:
+            enum:
+            - domain
+            type: string
+        required:
+        - pattern
+        - type
+        type: object
+      - properties:
+          ip:
+            format: ip
+            type: string
+          type:
+            enum:
+            - host
+            type: string
+        required:
+        - ip
+        - type
+        type: object
+      - properties:
+          cidr:
+            type: string
+          type:
+            enum:
+            - network
+            type: string
+        required:
+        - cidr
+        - type
+        type: object
+      - description: Inclusive address range.
+        properties:
+          end:
+            format: ip
+            type: string
+          start:
+            format: ip
+            type: string
+          type:
+            enum:
+            - range
+            type: string
+        required:
+        - end
+        - start
+        - type
+        type: object
+      - properties:
+          members:
+            items:
+              format: uuid
+              type: string
+            type: array
+          type:
+            enum:
+            - group
+            type: string
+        required:
+        - members
+        - type
+        type: object
+      - properties:
+          type:
+            enum:
+            - any
+            type: string
+        required:
+        - type
+        type: object
+    Page_for_Alert:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Alert'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_AuditEntry:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_Capture:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Capture'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_DnsEvent:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DnsEvent'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_FlowEvent:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FlowEvent'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_Install:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Install'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    Page_for_Revision:
+      description: 'Cursor pagination: pass `next_cursor` as `cursor` to get the next page; `null` = last page.'
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/Revision'
+          type: array
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    PolicyDocument:
+      description: The complete publishable policy.
+      properties:
+        agents:
+          default: []
+          items:
+            $ref: '#/components/schemas/Agent'
+          type: array
+        data_classes:
+          default: []
+          items:
+            $ref: '#/components/schemas/DataClass'
+          type: array
+        inspection_rules:
+          default: []
+          items:
+            $ref: '#/components/schemas/InspectionRule'
+          type: array
+        objects:
+          default: []
+          items:
+            $ref: '#/components/schemas/NetObject'
+          type: array
+        rules:
+          default: []
+          items:
+            $ref: '#/components/schemas/Rule'
+          type: array
+        services:
+          default: []
+          items:
+            $ref: '#/components/schemas/Service'
+          type: array
+        settings:
+          $ref: '#/components/schemas/PolicySettings'
+          default:
+            internal_networks:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - fc00::/7
+            max_buffered_body: 1048576
+            max_stored_body: 262144
+            retention_days:
+              captures: 7
+              flows: 30
+              http: 14
+        zones:
+          default: []
+          items:
+            $ref: '#/components/schemas/Zone'
+          type: array
+      type: object
+    PolicySettings:
+      properties:
+        internal_networks:
+          items:
+            type: string
+          type: array
+        max_buffered_body:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        max_stored_body:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        retention_days:
+          $ref: '#/components/schemas/Retention'
+      required:
+      - internal_networks
+      - max_buffered_body
+      - max_stored_body
+      - retention_days
+      type: object
+    PortRange:
+      description: Inclusive port range.
+      properties:
+        end:
+          format: uint16
+          minimum: 0.0
+          type: integer
+        start:
+          format: uint16
+          minimum: 0.0
+          type: integer
+      required:
+      - end
+      - start
+      type: object
+    Problem:
+      description: RFC 7807 error body (`application/problem+json`).
+      properties:
+        detail:
+          type:
+          - string
+          - 'null'
+        instance:
+          type:
+          - string
+          - 'null'
+        status:
+          format: uint16
+          minimum: 0.0
+          type: integer
+        title:
+          type: string
+        type:
+          default: about:blank
+          description: Problem type URI (`about:blank` when unspecified).
+          type: string
+      required:
+      - status
+      - title
+      type: object
+    PublishRequest:
+      description: '`POST /sessions/{id}/publish`.'
+      properties:
+        comment:
+          type: string
+      required:
+      - comment
+      type: object
+    RegistrationToken:
+      description: One-time gateway registration token (valid 15 minutes).
+      properties:
+        expires_at:
+          format: date-time
+          type: string
+        token:
+          type: string
+      required:
+      - expires_at
+      - token
+      type: object
+    ResourceKind:
+      description: Kind of policy resource (locks, diffs, where-used, audit targets).
+      enum:
+      - object
+      - service
+      - data_class
+      - zone
+      - agent
+      - rule
+      - inspection_rule
+      - settings
+      type: string
+    ResourceRef:
+      description: Reference to a policy resource.
+      properties:
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/ResourceKind'
+        name:
+          type: string
+      required:
+      - id
+      - kind
+      - name
+      type: object
+    Retention:
+      description: Retention in days per kind of stored data.
+      properties:
+        captures:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        flows:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        http:
+          format: uint32
+          minimum: 0.0
+          type: integer
+      required:
+      - captures
+      - flows
+      - http
+      type: object
+    Revision:
+      description: Published revision (metadata).
+      properties:
+        comment:
+          type: string
+        interface:
+          $ref: '#/components/schemas/Interface'
+        number:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        published_at:
+          format: date-time
+          type: string
+        published_by:
+          $ref: '#/components/schemas/Actor'
+        session_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        sha256:
+          description: Fingerprint of the document (same as `InstalledPolicy::sha256`).
+          type: string
+      required:
+      - comment
+      - interface
+      - number
+      - published_at
+      - published_by
+      - sha256
+      type: object
+    RevisionDetail:
+      description: '`GET /revisions/{n}`.'
+      properties:
+        document:
+          $ref: '#/components/schemas/PolicyDocument'
+        revision:
+          $ref: '#/components/schemas/Revision'
+      required:
+      - document
+      - revision
+      type: object
+    RevisionDiff:
+      description: '`GET /revisions/{n}/diff?against=m`.'
+      properties:
+        changes:
+          items:
+            $ref: '#/components/schemas/Change'
+          type: array
+        from:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        to:
+          format: uint64
+          minimum: 0.0
+          type: integer
+      required:
+      - changes
+      - from
+      - to
+      type: object
+    Role:
+      enum:
+      - admin
+      - auditor
+      - viewer
+      - mcp_agent
+      type: string
+    Rule:
+      properties:
+        action:
+          $ref: '#/components/schemas/Action'
+        comment:
+          default: ''
+          type: string
+        data_classes:
+          default: []
+          description: Data classes. Empty = no content condition.
+          items:
+            format: uuid
+            type: string
+          type: array
+        destinations:
+          default: []
+          description: Objects. Empty = any.
+          items:
+            format: uuid
+            type: string
+          type: array
+        enabled:
+          type: boolean
+        expires_at:
+          default: null
+          format: date-time
+          type:
+          - string
+          - 'null'
+        id:
+          format: uuid
+          type: string
+        layer:
+          $ref: '#/components/schemas/Layer'
+        name:
+          type: string
+        position:
+          format: uint32
+          minimum: 0.0
+          type: integer
+        section:
+          default: null
+          type:
+          - string
+          - 'null'
+        services:
+          default: []
+          description: Services. Empty = any.
+          items:
+            format: uuid
+            type: string
+          type: array
+        sources:
+          default: []
+          description: Zones. Empty = all zones, allowed only in the baseline layer.
+          items:
+            format: uuid
+            type: string
+          type: array
+        track:
+          $ref: '#/components/schemas/Track'
+          default: detailed
+      required:
+      - action
+      - enabled
+      - id
+      - layer
+      - name
+      - position
+      type: object
+    RuleHit:
+      description: Rule hit counters aggregated by a gateway since its previous report.
+      properties:
+        hits:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        last_hit_at:
+          format: date-time
+          type: string
+        revision:
+          format: uint64
+          minimum: 0.0
+          type: integer
+        rule_id:
+          format: uuid
+          type: string
+      required:
+      - hits
+      - last_hit_at
+      - revision
+      - rule_id
+      type: object
+    Service:
+      properties:
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AppMatch'
+          - type: 'null'
+          default: null
+        comment:
+          default: ''
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        ports:
+          default: []
+          description: Empty = any port.
+          items:
+            $ref: '#/components/schemas/PortRange'
+          type: array
+        protocol:
+          $ref: '#/components/schemas/L4Proto'
+      required:
+      - id
+      - name
+      - protocol
+      type: object
+    Session:
+      description: 'Editing session: changes are visible and applicable only once published; resources modified in a session are locked for other sessions.'
+      properties:
+        approval_id:
+          description: Set when the session needs an approval before publishing (EF-52).
+          format: uuid
+          type:
+          - string
+          - 'null'
+        changes:
+          description: Number of pending changes.
+          format: uint32
+          minimum: 0.0
+          type: integer
+        closed_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        id:
+          format: uuid
+          type: string
+        interface:
+          $ref: '#/components/schemas/Interface'
+        locks:
+          default: []
+          description: Resources locked by this session.
+          items:
+            $ref: '#/components/schemas/ResourceRef'
+          type: array
+        opened_at:
+          format: date-time
+          type: string
+        owner:
+          $ref: '#/components/schemas/Actor'
+        state:
+          $ref: '#/components/schemas/SessionState'
+      required:
+      - changes
+      - id
+      - interface
+      - opened_at
+      - owner
+      - state
+      type: object
+    SessionState:
+      enum:
+      - open
+      - published
+      - discarded
+      type: string
+    Severity:
+      enum:
+      - info
+      - warning
+      - critical
+      type: string
+    ToolCallBatch:
+      description: '`POST /ingest/tool-calls` (agent token).'
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/ToolCallEvent'
+          type: array
+      required:
+      - events
+      type: object
+    ToolCallEvent:
+      description: Tool call reported by the Hermes plugin (`POST /api/v1/ingest/tool-calls`).
+      properties:
+        agent:
+          description: Agent name or id.
+          type: string
+        args_summary:
+          type: string
+        conversation_id:
+          type: string
+        ended_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        id:
+          format: uuid
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        status:
+          type:
+          - string
+          - 'null'
+        tool:
+          type: string
+      required:
+      - agent
+      - args_summary
+      - conversation_id
+      - id
+      - started_at
+      - tool
+      type: object
+    Track:
+      enum:
+      - none
+      - log
+      - detailed
+      - capture
+      type: string
+    Verdict:
+      enum:
+      - allow
+      - deny
+      type: string
+    VerifyFinding:
+      description: Pre-install verification finding (EF-11), produced by `afw-engine`.
+      oneOf:
+      - description: '`rule` can never match because `by` (earlier) matches everything it matches.'
+        properties:
+          by:
+            format: uuid
+            type: string
+          rule:
+            format: uuid
+            type: string
+          type:
+            enum:
+            - shadowed
+            type: string
+        required:
+        - by
+        - rule
+        - type
+        type: object
+      - properties:
+          id:
+            format: uuid
+            type: string
+          type:
+            enum:
+            - unused_object
+            type: string
+        required:
+        - id
+        - type
+        type: object
+      - properties:
+          rule:
+            format: uuid
+            type: string
+          type:
+            enum:
+            - expired
+            type: string
+        required:
+        - rule
+        - type
+        type: object
+    VerifyReport:
+      description: '`GET /verify?revision=n`.'
+      properties:
+        findings:
+          items:
+            $ref: '#/components/schemas/VerifyFinding'
+          type: array
+        revision:
+          description: Verified revision; absent = current session draft.
+          format: uint64
+          minimum: 0.0
+          type:
+          - integer
+          - 'null'
+      required:
+      - findings
+      type: object
+    WhereUsed:
+      description: '`GET /objects/{id}/where-used`.'
+      properties:
+        references:
+          items:
+            $ref: '#/components/schemas/ResourceRef'
+          type: array
+      required:
+      - references
+      type: object
+    Zone:
+      description: A zone groups agents (VLAN-like). A rule's source is always a zone, never an agent.
+      properties:
+        comment:
+          default: ''
+          type: string
+        delegated_to_mcp:
+          default: false
+          type: boolean
+        id:
+          format: uuid
+          type: string
+        mode:
+          $ref: '#/components/schemas/ZoneMode'
+        name:
+          type: string
+      required:
+      - id
+      - mode
+      - name
+      type: object
+    ZoneMode:
+      description: '`Observe`: denials are logged but the flow is allowed (EF-12).'
+      enum:
+      - enforce
+      - observe
+      type: string

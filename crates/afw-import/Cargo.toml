@@ -1,0 +1,16 @@
+[package]
+name = "afw-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "agents-firewall import of egress-guard policies"
+
+[dependencies]
+afw-core = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+uuid = { workspace = true }

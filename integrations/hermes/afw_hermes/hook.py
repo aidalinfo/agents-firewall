@@ -57,7 +57,9 @@ def _write_pending(path: Path, event: ToolCallEvent, blocked: bool) -> None:
     os.replace(tmp, path)
 
 
-def _read_pending(path: Path) -> dict | None:
+def _read_pending(path: Path | None) -> dict | None:
+    if path is None:
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         path.unlink(missing_ok=True)
@@ -107,41 +109,61 @@ def handle(payload: Mapping[str, Any], config: Config) -> tuple[dict, int]:
     args = next((payload[k] for k in ("tool_input", "args", "arguments", "input") if k in payload), None)
     context = {**extra, **{k: v for k, v in payload.items() if k != "extra"}}
     conv = conversation_id(context, {})
-    key = AfwPlugin._key(conv, tool, args, {}, context)
-    pending = _pending_path(config, key)
+    try:
+        pending: Path | None = _pending_path(config, AfwPlugin._key(conv, tool, args, {}, context))
+    except Exception:  # noqa: BLE001 - correlation is best effort, the decision is not
+        pending = None
     spool = Spool(config)
 
     if event_name == "post_tool_call":
-        entry = _read_pending(pending)
-        status = extra.get("status") or payload.get("status")
-        if not isinstance(status, str) or not status:
-            status = "error" if (extra.get("error_type") or extra.get("error_message")) else "ok"
-        if entry is None:
-            if status != "blocked":
-                spool.append([ToolCallEvent.start(config.agent_name, conv, tool, args).finished(status).to_dict()])
-        elif not entry.get("blocked"):
-            ev = ToolCallEvent(**entry["event"])
-            spool.append([ev.finished(status).to_dict()])
+        try:
+            _report_end(payload, extra, config, conv, tool, args, pending, spool)
+        except Exception as exc:  # noqa: BLE001
+            print(f"afw-hermes: tool-call event not recorded: {exc}", file=sys.stderr)
         return {}, 0
 
     if event_name != "pre_tool_call":
         return {}, 0
 
-    verdict = PolicyStore(config).evaluate(tool, args)
-    event = ToolCallEvent.start(config.agent_name, conv, tool, args)
-    if verdict.blocked:
-        event = event.finished("gated" if verdict.decision == "gate" else "denied")
-    _write_pending(pending, event, verdict.blocked)
-    spool.append([event.to_dict()])
+    return _decide(config, conv, tool, args, pending, spool)
+
+
+def _report_end(payload, extra, config, conv, tool, args, pending, spool) -> None:
+    entry = _read_pending(pending)
+    status = extra.get("status") or payload.get("status")
+    if not isinstance(status, str) or not status:
+        status = "error" if (extra.get("error_type") or extra.get("error_message")) else "ok"
+    if entry is None:
+        if status != "blocked":
+            spool.append([ToolCallEvent.start(config.agent_name, conv, tool, args).finished(status).to_dict()])
+    elif not entry.get("blocked"):
+        ev = ToolCallEvent(**entry["event"])
+        spool.append([ev.finished(status).to_dict()])
+
+
+def _decide(config: Config, conv: str, tool: str, args: Any, pending: Path | None, spool: Spool) -> tuple[dict, int]:
+    # Decision first; the hook never touches the network (no background refresh).
+    verdict = PolicyStore(config).evaluate(tool, args, refresh=False)
     out: dict[str, Any] = {
         "afw_decision": verdict.decision,
         "afw_class": verdict.action_class.id if verdict.action_class else None,
     }
+    code = 0
     if verdict.blocked:
         msg = verdict.message
         out.update({"action": "block", "message": msg, "decision": "block", "reason": msg})
-        return out, EXIT_BLOCK
-    return out, 0
+        code = EXIT_BLOCK
+    # Reporting, best effort: a full or read-only disk never changes the answer.
+    try:
+        event = ToolCallEvent.start(config.agent_name, conv, tool, args)
+        if verdict.blocked:
+            event = event.finished("gated" if verdict.decision == "gate" else "denied")
+        if pending is not None:
+            _write_pending(pending, event, verdict.blocked)
+        spool.append([event.to_dict()])
+    except Exception as exc:  # noqa: BLE001
+        print(f"afw-hermes: tool-call event not recorded: {exc}", file=sys.stderr)
+    return out, code
 
 
 def main(argv: list[str] | None = None, stdin: TextIO | None = None, stdout: TextIO | None = None,

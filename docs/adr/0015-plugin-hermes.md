@@ -55,7 +55,13 @@ ce qui laisse l'exploitant choisir via `fail_closed`.
   409/425/429 et 5xx ⇒ réessai ; autres 4xx ⇒ lot abandonné (journalisé). `enqueue` est O(1) : le
   hook ne dépend jamais de la console (mesuré < 50 ms même console endormie).
 - Client HTTP : seulement http/https, **aucune redirection suivie** (urllib recopierait
-  `Authorization` vers le nouvel hôte), CA privée via `AFW_CA_FILE`.
+  `Authorization` vers le nouvel hôte), CA privée via `AFW_CA_FILE`. Le jeton d'agent n'est
+  **jamais envoyé en `http://`** sauf vers une adresse de bouclage (`localhost`, `127.0.0.0/8`, `::1`),
+  une IP privée ou de lien local, ou un nom de service Docker sans point ; sinon la requête est
+  refusée localement (avertissement journalisé une fois par hôte) et traitée comme une panne réseau.
+- Masquage : toute valeur, de n'importe quel type, placée sous une clé sensible devient `***` ;
+  formes de ligne de commande couvertes : `--password X`, `--token=X`, `--secret X`, `-pX`,
+  `-u user:pass`, `export VAR_SECRET valeur`. Profondeur limitée à 8 niveaux (au-delà : `[…]`).
 
 ### Étage intention
 - Format servi par `GET /api/v1/intent-policy` :
@@ -65,6 +71,19 @@ ce qui laisse l'exploitant choisir via `fail_closed`.
   de l'outil en 1re ligne, puis une ligne par argument `clé: valeur`, structures imbriquées aplaties,
   normalisation NFKC contre les homoglyphes pleine chasse). `\A` ancre donc sur le nom d'outil, ce
   qui permet d'exprimer « outil `delete_*` » et « commande `rm -rf` » dans une même classe.
+- `tools` et `patterns` doivent être des listes (sinon document rejeté). Un même `id` peut figurer
+  dans plusieurs entrées, chacune avec sa portée d'outils : c'est ainsi que la politique intégrée
+  limite les motifs « commande » aux outils d'exécution.
+- Portée des motifs (politique intégrée) : les motifs « commande » (`rm -r`, `rmdir`, `shred`,
+  `shutil.rmtree`, `git push --force`/`-f`, `find -delete`, SQL `DROP`/`DELETE FROM`, `-X DELETE` /
+  `--request DELETE`, `kubectl`/`docker`/`helm`/`terraform`, `chmod`/`chown`/`GRANT`) ne s'appliquent
+  qu'aux outils d'exécution (`terminal`, `shell`, `bash`, `execute_code`, `*exec*`, `*command*`…) ;
+  `method: delete` qu'aux outils HTTP (`fetch`, `*request*`, `http*`…) ; les motifs sur le **nom**
+  d'outil (`delete_*`, `*_share_*`, `coolify_*`, `freepik_*`) à tous les outils. Pour les outils
+  d'écriture de fichiers (`write_file`, `*edit*`, `*patch*`, `create_file`…), les clés de contenu
+  (`content`, `patch`, `text`, `body`, `new_string`, `diff`…) ne sont pas inspectées : ce sont des
+  données, pas des commandes (évite de bloquer un README qui cite `rm -rf` ou un modèle Django
+  `on_delete`). Cette exclusion est faite par le plugin, quelle que soit la politique servie.
 - Plusieurs classes ⇒ décision la plus stricte (deny > gate > log > allow), à égalité la première
   dans l'ordre de la politique.
 - Validation stricte : un document invalide (version non entière, décision inconnue, regex invalide,
@@ -80,10 +99,26 @@ ce qui laisse l'exploitant choisir via `fail_closed`.
 - « gate » = blocage + message « action soumise à validation humaine : <classe> (outil « … ») … »
   (§15). « deny » = blocage + message de refus. Le retour `approve` de Hermes (validation intégrée)
   n'est pas utilisé en V1 : la vraie file de validation est une évolution ultérieure (EF-52).
-- Échec interne de l'évaluation ⇒ évaluation avec la politique intégrée ; un hook en processus ne
-  lève jamais d'exception (Hermes bloquerait alors tous les outils).
+- La décision est calculée et renvoyée **avant** toute écriture d'événement, dans un bloc séparé :
+  un échec de l'enregistrement (file pleine, disque en lecture seule, arguments pathologiques) ne
+  rouvre jamais un « gate ». En mode CLI, la réponse et le code 2 sont produits même si la file
+  disque est inaccessible. Échec interne de l'évaluation ⇒ évaluation avec la politique intégrée ;
+  un hook en processus ne lève jamais d'exception (Hermes bloquerait alors tous les outils).
+- Le mode CLI n'effectue aucun appel réseau (pas de rafraîchissement en tâche de fond dans le
+  processus du hook) ; seul le processus détaché `afw_hermes.flush` contacte la console.
+
+### Emplacement de l'état
+Le répertoire d'état (cache de politique, file disque, appels en attente) est par défaut
+`$XDG_STATE_HOME/afw-hermes` (à défaut `~/.local/state/afw-hermes`), **hors** de `$HERMES_HOME` et du
+répertoire de travail de l'agent, pour qu'un outil d'écriture de fichiers de l'agent ne le vise pas
+par accident. `AFW_STATE_DIR` le remplace (ex. `/var/lib/afw-hermes` dans l'image de démo).
 
 ## Conséquences et limites
+- **Le cache de politique est modifiable par l'agent** : il tourne sous le même utilisateur que le
+  plugin, et un agent qui a un terminal peut réécrire `intent-policy.json` (ou la file disque). C'est
+  une limite assumée : l'étage intention est un garde-fou métier contre les erreurs et les
+  injections ordinaires, pas une frontière de sécurité. La barrière reste la passerelle, hors de
+  portée de l'agent ; un cache altéré est d'ailleurs remplacé au rafraîchissement suivant.
 - L'étage intention inspecte du texte : il est contournable (variable, script, MCP qui fait ses
   propres appels). C'est assumé (§2.2) : la barrière est la passerelle ; le plugin apporte le
   « gate » métier et la corrélation.

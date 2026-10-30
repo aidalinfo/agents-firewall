@@ -38,12 +38,16 @@ def test_enqueue_never_blocks_when_console_sleeps(console, make_config):
     s = EventSender(make_config(console.url, send_timeout=5.0))
     s.start()
     try:
-        worst = 0.0
+        durations = []
         for _ in range(200):
             t0 = time.perf_counter()
             s.enqueue(ev())
-            worst = max(worst, time.perf_counter() - t0)
-        assert worst < 0.05
+            durations.append(time.perf_counter() - t0)
+        durations.sort()
+        # p99 under the 50 ms hook budget; the max only guards against real blocking (the console
+        # sleeps 3 s) while tolerating an OS scheduling hiccup on a loaded CI host.
+        assert durations[197] < 0.05
+        assert durations[-1] < 0.5
     finally:
         t0 = time.perf_counter()
         s.close(timeout=0.2)

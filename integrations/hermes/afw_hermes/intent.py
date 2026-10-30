@@ -82,8 +82,10 @@ class IntentPolicy:
                 raise PolicyError(f"action_classes[{i}].id is required")
             if decision not in DECISIONS:
                 raise PolicyError(f"action_classes[{i}].decision must be one of {DECISIONS}")
-            tools = item.get("tools") or []
-            patterns = item.get("patterns") or []
+            tools = item.get("tools", [])
+            patterns = item.get("patterns", [])
+            if not isinstance(tools, list) or not isinstance(patterns, list):
+                raise PolicyError(f"action_classes[{i}]: tools and patterns must be lists")
             if not all(isinstance(t, str) for t in tools) or not all(isinstance(p, str) for p in patterns):
                 raise PolicyError(f"action_classes[{i}]: tools and patterns must be strings")
             try:
@@ -127,21 +129,46 @@ class Verdict:
 
 _SEG = r"[^\n;&|]*"  # rest of the same shell command segment
 
+#: Tools that execute commands or code: shell/SQL/HTTP-verb patterns only apply to them.
+EXEC_TOOLS = ["terminal", "*terminal*", "shell", "*shell*", "bash", "sh", "zsh", "execute_code",
+              "*exec*", "run_command", "*command*", "code_interpreter", "*python*", "process", "*ssh*"]
+#: Tools that perform HTTP requests from structured arguments (``method: DELETE``).
+HTTP_TOOLS = ["fetch", "*fetch*", "http", "http_*", "*_http", "*request*", "curl", "web_*", "api_call", "*api*"]
+#: Name of the tool (first subject line) — applies to every tool.
+_TOOL = r"(?i)\A[^\n]*"
+
 DEFAULT_POLICY_DOC: dict = {
     "version": 0,
     "action_classes": [
         {
             "id": "infra_destructive",
             "name": "Infrastructure destructive",
-            "tools": [],
+            "tools": EXEC_TOOLS,
             "patterns": [
                 rf"(?i)\bkubectl\b{_SEG}\s(?:delete|drain)\b",
                 rf"(?i)\bhelm\b{_SEG}\s(?:uninstall|delete|rollback)\b",
                 rf"(?i)\bdocker\b{_SEG}\s(?:rm|rmi|kill|prune)\b",
                 rf"(?i)\bdocker(?:-compose|\s+compose)\b{_SEG}\s(?:down|rm)\b",
                 rf"(?i)\bterraform\b{_SEG}\s-?destroy\b",
-                r"(?i)\A[^\n]*coolify[^\n]*(?:delete|redeploy|deploy|restart|stop|remove)",
-                r"(?i)\A[^\n]*coolify[\s\S]*\b(?:delete|redeploy|deploy|restart|stop|remove)\b",
+                r"(?i)/api/v1/(?:deploy\b|(?:applications|services|databases)/[^\s/]+/(?:restart|stop|deploy)\b)",
+            ],
+            "decision": "gate",
+        },
+        {
+            "id": "infra_destructive",
+            "name": "Infrastructure destructive",
+            "tools": [],
+            "patterns": [
+                _TOOL + r"coolify[^\n]*(?:delete|redeploy|deploy|restart|stop|remove)",
+                _TOOL + r"coolify[\s\S]*\b(?:delete|redeploy|deploy|restart|stop|remove)\b",
+            ],
+            "decision": "gate",
+        },
+        {
+            "id": "infra_destructive",
+            "name": "Infrastructure destructive",
+            "tools": HTTP_TOOLS,
+            "patterns": [
                 r"(?i)/api/v1/(?:deploy\b|(?:applications|services|databases)/[^\s/]+/(?:restart|stop|deploy)\b)",
             ],
             "decision": "gate",
@@ -151,14 +178,22 @@ DEFAULT_POLICY_DOC: dict = {
             "name": "Partage et droits d'accès",
             "tools": [],
             "patterns": [
-                r"(?i)\A[^\n]*(?:share|sharing|invite|invitation|permission|grant|collaborator|"
+                _TOOL + r"(?:share|sharing|invite|invitation|permission|grant|collaborator|"
                 r"add_member|add_user|set_role|acl)",
+                r"(?i)\banyone\s+with\s+the\s+link\b|\btype\s*:\s*[\"']?anyone\b",
+            ],
+            "decision": "gate",
+        },
+        {
+            "id": "access",
+            "name": "Partage et droits d'accès",
+            "tools": EXEC_TOOLS,
+            "patterns": [
                 rf"(?i)\bchmod\b{_SEG}(?:\b0?[0-7]{{2}}[2367]\b|\b[oa]\+[rx]*w)",
                 r"(?i)\bchown\b",
                 r"(?i)\bgrant\s+[\w\s,]+?\s+on\b",
                 r"(?i)\b(?:create|alter)\s+(?:user|role)\b",
                 rf"(?i)\bkubectl\b{_SEG}\bcreate\s+(?:cluster)?rolebinding\b",
-                r"(?i)\banyone\s+with\s+the\s+link\b|\btype\s*:\s*[\"']?anyone\b",
             ],
             "decision": "gate",
         },
@@ -167,14 +202,32 @@ DEFAULT_POLICY_DOC: dict = {
             "name": "Suppression irréversible",
             "tools": [],
             "patterns": [
-                rf"(?i)(?<![-\w])rm\b{_SEG}?\s(?:-[a-z]*r[a-z]*\b|--recursive\b)",
-                rf"(?i)\bfind\b{_SEG}\s-delete\b",
-                r"\bDELETE\b",
-                r"(?i)\bdelete\s+from\b",
-                r"(?i)\bmethod\s*:\s*[\"']?delete\b",
-                r"(?i)\b(?:drop|truncate)\s+(?:table|database|schema|collection)\b",
-                r"(?i)(?:^|[^a-z0-9])(?:delete|purge|destroy)_[a-z0-9_]*|[a-z0-9]_(?:delete|purge|destroy)(?![a-z0-9])",
+                _TOOL + r"(?:(?<![a-z0-9])(?:delete|purge|destroy)_|[a-z0-9]_(?:delete|purge|destroy)(?![a-z0-9]))",
             ],
+            "decision": "gate",
+        },
+        {
+            "id": "irreversible",
+            "name": "Suppression irréversible",
+            "tools": EXEC_TOOLS,
+            "patterns": [
+                rf"(?i)(?<![-\w])rm\b{_SEG}?\s(?:-[a-z]*r[a-z]*\b|--recursive\b)",
+                r"(?i)(?<![-\w])rmdir\b",
+                r"(?i)\bshred\b",
+                rf"(?i)\bfind\b{_SEG}\s-delete\b",
+                r"(?i)\bshutil\s*\.\s*rmtree\b",
+                rf"(?i)\bgit\b{_SEG}\bpush\b{_SEG}\s(?:--force(?:-with-lease)?\b|-[a-z]*f\b|\+\S)",
+                r"(?i)(?:\s-X\s*|--request[=\s]+)[\"']?DELETE\b",
+                r"(?i)\bdelete\s+from\b",
+                r"(?i)\b(?:drop|truncate)\s+(?:table|database|schema|collection)\b",
+            ],
+            "decision": "gate",
+        },
+        {
+            "id": "irreversible",
+            "name": "Suppression irréversible",
+            "tools": HTTP_TOOLS,
+            "patterns": [r"(?i)\bmethod\s*:\s*[\"']?delete\b"],
             "decision": "gate",
         },
         {
@@ -182,7 +235,7 @@ DEFAULT_POLICY_DOC: dict = {
             "name": "Génération payante",
             "tools": [],
             "patterns": [
-                r"(?i)\A[^\n]*(?:freepik|image_?gen|generate_image|image_generate|text_to_image|video_?gen|"
+                _TOOL + r"(?:freepik|image_?gen|generate_image|image_generate|text_to_image|video_?gen|"
                 r"generate_video|video_generate|text_to_video|dall_?e|midjourney|runway|elevenlabs|suno)",
                 r"(?i)\bfreepik\.com\b",
             ],
@@ -191,17 +244,31 @@ DEFAULT_POLICY_DOC: dict = {
     ],
 }
 
+#: File-writing tools: their content arguments are data, not commands, and are not scanned.
+WRITE_TOOLS = ["write_file", "*write*", "edit_file", "*edit*", "create_file", "*patch*", "str_replace*",
+               "*save*", "append_file", "notebook*"]
+CONTENT_KEYS = frozenset({"content", "contents", "patch", "text", "body", "new_string", "old_string",
+                          "new_str", "old_str", "diff", "data", "file_text", "insert_text"})
+
 DEFAULT_POLICY = IntentPolicy.from_json(DEFAULT_POLICY_DOC)
+
+
+def _is_write_tool(tool: str) -> bool:
+    low = tool.lower()
+    return any(fnmatch.fnmatchcase(low, g) for g in WRITE_TOOLS)
 
 
 def _subject(tool: str, args: Any) -> str:
     lines = [tool]
+    skip_content = _is_write_tool(tool)
 
     def walk(value: Any, depth: int = 0) -> None:
         if depth > 20:
             return
         if isinstance(value, dict):
             for k, v in value.items():
+                if depth == 0 and skip_content and str(k).lower() in CONTENT_KEYS:
+                    continue
                 if isinstance(v, (dict, list, tuple)):
                     lines.append(str(k))
                     walk(v, depth + 1)
@@ -315,8 +382,10 @@ class PolicyStore:
 
         threading.Thread(target=run, name="afw-hermes-policy", daemon=True).start()
 
-    def evaluate(self, tool: str, args: Any) -> Verdict:
-        self.maybe_refresh()
+    def evaluate(self, tool: str, args: Any, refresh: bool = True) -> Verdict:
+        """Evaluate a call. ``refresh=False`` guarantees no network activity (CLI hook)."""
+        if refresh:
+            self.maybe_refresh()
         try:
             return evaluate(self._policy, tool, args)
         except Exception:  # noqa: BLE001 - never let a bad policy disable the default guard

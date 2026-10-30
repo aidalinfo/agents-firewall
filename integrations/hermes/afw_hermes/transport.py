@@ -7,8 +7,12 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import logging
 import ssl
+import threading
+import urllib.parse
 import urllib.error
 import urllib.request
 from typing import Any
@@ -16,6 +20,32 @@ from typing import Any
 from .config import Config
 
 USER_AGENT = "afw-hermes/0.1"
+log = logging.getLogger("afw_hermes")
+_warned_lock = threading.Lock()
+_warned: set[str] = set()
+
+
+class InsecureTransportError(urllib.error.URLError):
+    """Refused: the agent token would travel in clear text to a non-local host."""
+
+
+def token_allowed(url: str) -> bool:
+    """``https`` always; ``http`` only to loopback, private IPs or dot-less (Docker service) names."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme == "https":
+        return True
+    if parts.scheme != "http":
+        return False
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "." not in host
+    return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -49,6 +79,15 @@ def request_json(config: Config, method: str, url: str, payload: Any | None, tim
     """Send a request; return ``(status, body)``. HTTP errors are returned, network errors raised."""
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"unsupported console URL scheme: {url!r}")
+    if config.agent_token and not token_allowed(url):
+        host = urllib.parse.urlsplit(url).hostname or url
+        with _warned_lock:
+            first = host not in _warned
+            _warned.add(host)
+        if first:
+            log.warning("afw-hermes: refusing to send the agent token in clear text (http) to %s; "
+                        "use https", host)
+        raise InsecureTransportError(f"clear-text token refused for {host}")
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
     if config.agent_token:
         headers["Authorization"] = f"Bearer {config.agent_token}"

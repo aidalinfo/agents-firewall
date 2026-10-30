@@ -24,10 +24,10 @@ MAX_HOOK_TIMEOUT = 0.05
 @dataclass(frozen=True)
 class Config:
     console_url: str | None = None
-    agent_token: str | None = None
+    agent_token: str | None = field(default=None, repr=False)
     agent_name: str = field(default_factory=lambda: socket.gethostname() or "hermes-agent")
     ca_file: str | None = None
-    state_dir: Path = field(default_factory=lambda: _hermes_home() / "afw")
+    state_dir: Path = field(default_factory=lambda: _default_state_dir())
     hook_timeout: float = MAX_HOOK_TIMEOUT
     send_timeout: float = 5.0
     policy_timeout: float = 5.0
@@ -70,6 +70,16 @@ def _hermes_home(env: Mapping[str, str] | None = None) -> Path:
     env = os.environ if env is None else env
     home = env.get("HERMES_HOME")
     return Path(home) if home else Path.home() / ".hermes"
+
+
+def _default_state_dir(env: Mapping[str, str] | None = None) -> Path:
+    """Outside the agent's Hermes home and workspace (ADR 0015): XDG state directory."""
+    env = os.environ if env is None else env
+    base = env.get("XDG_STATE_HOME")
+    if not base:
+        home = env.get("HOME")
+        base = str(Path(home) / ".local" / "state") if home else str(Path.home() / ".local" / "state")
+    return Path(base) / "afw-hermes"
 
 
 def _parse_flat_yaml(text: str) -> dict[str, Any]:
@@ -138,7 +148,7 @@ def load_config(env: Mapping[str, str] | None = None, path: str | Path | None = 
             kwargs[key] = str(values[key]).strip()
     if "console_url" in kwargs:
         kwargs["console_url"] = kwargs["console_url"].rstrip("/")
-    kwargs["state_dir"] = Path(values["state_dir"]) if values.get("state_dir") else _hermes_home(env) / "afw"
+    kwargs["state_dir"] = Path(values["state_dir"]) if values.get("state_dir") else _default_state_dir(env)
     for key, attr in (("hook_timeout_ms", "hook_timeout"), ("send_timeout_ms", "send_timeout"),
                       ("policy_timeout_ms", "policy_timeout"), ("flush_interval_ms", "flush_interval")):
         v = num(key)

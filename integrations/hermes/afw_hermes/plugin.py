@@ -16,7 +16,7 @@ from typing import Any, Mapping
 
 from .config import Config, load_config
 from .events import ToolCallEvent, summarize_args
-from .intent import PolicyStore
+from .intent import DEFAULT_POLICY, PolicyStore, evaluate
 from .sender import EventSender
 
 log = logging.getLogger("afw_hermes")
@@ -97,23 +97,32 @@ class AfwPlugin:
     # -- hooks ------------------------------------------------------------------------------
     def pre_tool_call(self, tool_name: Any = None, args: Any = None, context: Any = None,
                       **kwargs: Any) -> dict | None:
+        tool = str(tool_name or "")
+        # 1. Decision first, isolated: nothing that happens afterwards may reopen the gate.
         try:
-            tool = str(tool_name or "")
-            conv = conversation_id(context, kwargs)
             verdict = self.policy.evaluate(tool, args)
+        except Exception:  # noqa: BLE001
+            log.exception("afw-hermes: intent evaluation failed, using built-in policy")
+            try:
+                verdict = evaluate(DEFAULT_POLICY, tool, args)
+            except Exception:  # noqa: BLE001 - a raising pre hook would block every tool in Hermes
+                log.exception("afw-hermes: built-in intent evaluation failed")
+                return None
+        directive = verdict.as_hermes()
+        # 2. Reporting, best effort.
+        try:
+            conv = conversation_id(context, kwargs)
             event = ToolCallEvent.start(self.config.agent_name, conv, tool, args)
-            key = self._key(conv, tool, args, kwargs, context)
             if verdict.blocked:
                 event = event.finished(_BLOCKED_STATUS[verdict.decision])
                 log.warning("afw-hermes: %s %s (%s)", verdict.decision, tool, verdict.action_class.id)
             elif verdict.decision == "log":
                 log.info("afw-hermes: logged action class %s for %s", verdict.action_class.id, tool)
-            self._remember(key, event, verdict.blocked)
+            self._remember(self._key(conv, tool, args, kwargs, context), event, verdict.blocked)
             self.sender.enqueue(event)
-            return verdict.as_hermes()
-        except Exception:  # noqa: BLE001 - a raising pre hook would block every tool in Hermes
-            log.exception("afw-hermes: pre_tool_call failed")
-            return None
+        except Exception:  # noqa: BLE001
+            log.exception("afw-hermes: tool-call event not recorded")
+        return directive
 
     def post_tool_call(self, tool_name: Any = None, args: Any = None, result: Any = None,
                        context: Any = None, **kwargs: Any) -> None:

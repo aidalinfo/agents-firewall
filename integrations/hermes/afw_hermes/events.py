@@ -22,6 +22,9 @@ _SECRET_KEY = re.compile(
     r"private[-_]?key|cookie|client[-_]?secret|access[-_]?key)"
 )
 
+_SECRET_WORD = r"(?:password|passwd|pwd|secret|token|api[-_]?key|apikey|access[-_]?key|credential|authorization)"
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"'&;,]+)"
+
 _TEXT_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|$)", re.S),
      "-----BEGIN PRIVATE KEY-----" + MASK),
@@ -32,11 +35,25 @@ _TEXT_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), MASK),
     (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), MASK),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}"), MASK),
+    # --password X, --token=X, --client-secret X
+    (re.compile(rf"(?i)(?<![\w-])(--?[\w-]*{_SECRET_WORD}[\w-]*)(\s+|=)(?!\*\*\*)(?!-){_VALUE}"),
+     r"\1\2" + MASK),
+    # -u user:pass / --user user:pass (curl)
+    (re.compile(r"(?<![\w-])(-u|--user)(\s+|=)?([^\s:'\"]+):(?!\*\*\*)[^\s'\"]+"), r"\1\2\3:" + MASK),
+    # -pVALUE (mysql); a bare port mapping like -p8080:80 is left alone
+    (re.compile(r"(?<![\w-])-p(?![\d:]+(?:\s|$))(?!\*\*\*)(?=\S)[^\s'\"]+"), "-p" + MASK),
+    # export AWS_SECRET_ACCESS_KEY value / setenv TOKEN value
+    (re.compile(rf"(?i)\b(export|set|setenv)\s+([A-Z0-9_]*{_SECRET_WORD}[A-Z0-9_]*)(\s+)(?!\*\*\*){_VALUE}"),
+     r"\1 \2\3" + MASK),
+    # KEY=value, "token": "value", password: value
     (re.compile(
         r"(?i)\b([\w-]*(?:password|passwd|pwd|secret|token|api[-_]?key|apikey|x-api-key|authorization)"
         r"[\w-]*)(\"?'?\s*[:=]\s*\"?'?)(?!\*\*\*)(?!bearer\b|basic\b)([^\s\"'&;,]+)"),
      r"\1\2" + MASK),
 ]
+
+MAX_DEPTH = 8
+TRUNCATED = "[…]"
 
 
 def mask_secrets(text: str) -> str:
@@ -46,13 +63,20 @@ def mask_secrets(text: str) -> str:
     return text
 
 
-def _mask_structure(value: Any) -> Any:
+def _mask_structure(value: Any, depth: int = 0) -> Any:
+    """Mask every value (any type) under a sensitive key; nesting beyond ``MAX_DEPTH`` is elided."""
     if isinstance(value, dict):
-        return {str(k): (MASK if _SECRET_KEY.search(str(k)) and isinstance(v, (str, int, float))
-                         else _mask_structure(v)) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_mask_structure(v) for v in value]
-    return value
+        if depth >= MAX_DEPTH:
+            return TRUNCATED
+        return {str(k): (MASK if _SECRET_KEY.search(str(k)) else _mask_structure(v, depth + 1))
+                for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        if depth >= MAX_DEPTH:
+            return TRUNCATED
+        return [_mask_structure(v, depth + 1) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def _scalar(value: Any) -> str:

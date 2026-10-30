@@ -80,11 +80,11 @@ Variables d'environnement (prioritaires), sinon fichier `$HERMES_HOME/afw-hermes
 
 | Variable | Clé de fichier | Défaut | Rôle |
 |---|---|---|---|
-| `AFW_CONSOLE_URL` | `console_url` | — | URL de la console (sans elle : rien n'est envoyé, politique intégrée) |
+| `AFW_CONSOLE_URL` | `console_url` | — | URL de la console (sans elle : rien n'est envoyé, politique intégrée). `https` exigé, sauf bouclage, IP privée ou nom de service Docker sans point |
 | `AFW_AGENT_TOKEN` | `agent_token` | — | jeton d'agent (`Authorization: Bearer`) |
 | `AFW_AGENT_NAME` | `agent_name` | nom d'hôte | nom de l'agent dans les événements |
 | `AFW_CA_FILE` | `ca_file` | — | CA (PEM) de la console |
-| `AFW_STATE_DIR` | `state_dir` | `$HERMES_HOME/afw` | cache de politique, file disque |
+| `AFW_STATE_DIR` | `state_dir` | `$XDG_STATE_HOME/afw-hermes` (sinon `~/.local/state/afw-hermes`) | cache de politique, file disque (hors de `$HERMES_HOME`) |
 | `AFW_HOOK_TIMEOUT_MS` | `hook_timeout_ms` | 50 (plafond) | délai maximal côté hook |
 | `AFW_SEND_TIMEOUT_MS` | `send_timeout_ms` | 5000 | délai d'envoi d'un lot (tâche de fond) |
 | `AFW_POLICY_TIMEOUT_MS` | `policy_timeout_ms` | 5000 | délai de lecture de la politique (tâche de fond) |
@@ -120,7 +120,17 @@ Une classe s'applique si `tools` (globs, insensibles à la casse) est vide ou co
 si `patterns` (regex Python) est vide ou que l'un d'eux trouve une correspondance dans le *sujet* :
 nom de l'outil en première ligne, puis une ligne par argument (`clé: valeur`), normalisé NFKC
 (`\A` ancre donc sur le nom de l'outil). Décision la plus stricte retenue (deny > gate > log > allow).
-Une politique invalide est rejetée en entier et la précédente conservée.
+Une politique invalide (dont `tools`/`patterns` qui ne sont pas des listes) est rejetée en entier et
+la précédente conservée. Un même `id` peut apparaître dans plusieurs entrées de portées différentes.
+
+Dans la politique intégrée, les motifs de commande (`rm -r`, `rmdir`, `shred`, `shutil.rmtree`,
+`git push --force`, `-X DELETE`, SQL, `kubectl`/`docker`/`terraform`, `chmod`…) ne visent que les
+outils d'exécution (`terminal`, `shell`, `bash`, `execute_code`…). Pour les outils d'écriture de
+fichiers, les clés de contenu (`content`, `patch`, `text`, `body`, `new_string`…) ne sont jamais
+inspectées.
+
+Le cache de politique et la file disque sont modifiables par l'agent (même utilisateur) : l'étage
+intention est un garde-fou, pas une frontière de sécurité ; la barrière est la passerelle.
 
 ## Développement
 

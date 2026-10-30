@@ -105,11 +105,12 @@ pub async fn handle<S: AgentStream>(
         }
     };
     flow.tls_inspected.store(true, Ordering::Relaxed);
+    let agent_h2 = tls.get_ref().1.alpn_protocol() == Some(b"h2");
     flow.set_app(AppProto::Https);
     let capture = state
         .captures
         .for_agent(d0.agent_id)
         .map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
     let io = Tap::new(tls, flow.counters.clone(), capture);
-    serve_conn(HttpFlow::new(flow, true, upstream), io).await;
+    serve_conn(HttpFlow::with_alpn(flow, true, upstream, agent_h2), io).await;
 }

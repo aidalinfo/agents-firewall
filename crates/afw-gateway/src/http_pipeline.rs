@@ -94,15 +94,23 @@ pub struct HttpFlow {
     pub tls: bool,
     /// Address the gateway connects to (resolved from the name); `None` if resolution failed.
     pub upstream: Option<SocketAddr>,
+    /// The agent negotiated HTTP/2: offer h2 upstream too (otherwise HTTP/1.1 only, which
+    /// avoids a protocol translation and the h2 setup cost on each new connection).
+    pub agent_h2: bool,
     client: OnceLock<Client<Connector, GwBody>>,
 }
 
 impl HttpFlow {
     pub fn new(flow: Arc<Flow>, tls: bool, upstream: Option<SocketAddr>) -> Arc<Self> {
+        Self::with_alpn(flow, tls, upstream, false)
+    }
+
+    pub fn with_alpn(flow: Arc<Flow>, tls: bool, upstream: Option<SocketAddr>, agent_h2: bool) -> Arc<Self> {
         Arc::new(Self {
             flow,
             tls,
             upstream,
+            agent_h2,
             client: OnceLock::new(),
         })
     }

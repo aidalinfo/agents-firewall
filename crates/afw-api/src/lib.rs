@@ -51,6 +51,14 @@ impl Config {
 pub struct AppState {
     pub pool: Option<PgPool>,
     pub config: Arc<Config>,
+    /// OIDC token verifier (`AFW_OIDC_*`); `None`: only API tokens are accepted (lot L7c).
+    pub oidc: Option<Arc<auth::oidc::OidcVerifier>>,
+    /// Gateway PKI and protocol timings (lot L7c).
+    pub gateways: gateways::GatewayContext,
+    /// Links from the gateway protocol and enrollments to the policy and logs modules.
+    pub ports: gateways::ports::Ports,
+    /// Export of the audit chain head to immutable storage (lot L7c).
+    pub audit_export: Arc<audit::export::AuditExportConfig>,
 }
 
 impl AppState {
@@ -58,6 +66,7 @@ impl AppState {
         Self {
             pool,
             config: Arc::new(config),
+            ..Default::default()
         }
     }
 }
@@ -67,8 +76,9 @@ pub async fn migrate(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(pool).await
 }
 
-/// Full router: `/healthz`, `/api/v1/...` (policy, logs, auth, audit, gateways management)
-/// and `/gw/v1/...` (gateway protocol, served by the `gateways` module).
+/// Public router: `/healthz` and `/api/v1/...` (policy, logs, auth, audit, gateways management).
+/// The gateway protocol `/gw/v1/...` is NOT served here: only by the mutual-TLS listener
+/// ([`gateways::tls::serve`]), the only place where a gateway identity can be established.
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .merge(policy::routes())
@@ -79,7 +89,6 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .nest(API_PREFIX, api)
-        .merge(gateways::gw_routes())
         .with_state(state)
 }
 

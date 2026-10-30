@@ -71,6 +71,18 @@ pub enum DlpError {
     InvalidPattern { name: String, reason: String },
     #[error("invalid scanner options: {0}")]
     InvalidOptions(String),
+    #[error("unsupported content encoding `{0}`")]
+    UnsupportedEncoding(String),
+    #[error("decoded content larger than {max} bytes")]
+    TooLarge { max: usize },
+    #[error("invalid encoded content: {0}")]
+    Decode(String),
+}
+
+/// Undoes a `Content-Encoding` (stub).
+pub fn decode_content(encoding: &str, data: &[u8], max_out: usize) -> Result<Vec<u8>, DlpError> {
+    let _ = (encoding, max_out);
+    Ok(data.to_vec())
 }
 
 /// Scanner options.

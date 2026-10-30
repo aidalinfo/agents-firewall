@@ -51,6 +51,11 @@ impl<'a> StreamScanner<'a> {
         out
     }
 
+    /// Stub.
+    pub fn safe_len(&self) -> u64 {
+        u64::MAX
+    }
+
     /// Ends the stream; returns the findings still pending.
     pub fn finish(mut self) -> Vec<Finding> {
         let mut out = Vec::new();

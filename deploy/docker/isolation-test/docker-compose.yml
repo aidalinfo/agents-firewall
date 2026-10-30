@@ -12,6 +12,8 @@ services:
     cap_add: [NET_ADMIN]
     sysctls:
       net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.send_redirects: "0"
+      net.ipv4.conf.default.send_redirects: "0"
     entrypoint:
       - /bin/sh
       - -c
@@ -31,14 +33,18 @@ services:
         ipv4_address: 198.18.99.2
 
   web:
-    image: alpine:3.20
+    build:
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN apk add --no-cache busybox-extras socat
+    image: afw-isolation-web:local
     command:
       - /bin/sh
       - -c
       - |
         mkdir -p /www && echo hello-from-web > /www/index.html
-        (while true; do nc -l -p 4444 -e /bin/cat; done) &
-        exec httpd -f -v -p 80 -h /www
+        socat TCP-LISTEN:4444,fork,reuseaddr EXEC:/bin/cat &
+        exec busybox-extras httpd -f -v -p 80 -h /www
     networks:
       wan:
         ipv4_address: 198.18.99.20
@@ -51,6 +57,8 @@ services:
     image: afw-netinit:local
     cap_drop: [ALL]
     cap_add: [NET_ADMIN]
+    # As afw-enroll does: the agent's resolver is the gateway.
+    dns: [10.99.0.2]
     environment:
       AFW_GATEWAY_IP: 10.99.0.2
       AFW_AGENT_IP: 10.99.0.10

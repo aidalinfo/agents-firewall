@@ -31,13 +31,15 @@ echo "== routes seen by the agent"; agent ip route | sed 's/^/      | /'
 
 check "agent: direct IP (no DNS, no proxy) -> 403 from the gateway" ok \
   agent sh -c "out=\$(curl -s -m 8 --noproxy '*' -w ' %{http_code}' http://198.18.99.20/); echo \"\$out\"; case \"\$out\" in *'blocked by agents-firewall'*403) exit 0;; *) exit 1;; esac"
-check "agent: proxy ignored, denied domain -> explicit 403" ok \
-  agent sh -c "out=\$(curl -s -m 8 --noproxy '*' -w ' %{http_code}' http://denied.example/); echo \"\$out\"; case \"\$out\" in *'blocked by agents-firewall: denied.example not allowed for test-bot (rule default-deny)'*403) exit 0;; *) exit 1;; esac"
+check "agent: a denied name does not resolve" ko \
+  agent sh -c "getent hosts denied.example"
+check "agent: proxy ignored, denied domain (address known anyway) -> explicit 403" ok \
+  agent sh -c "out=\$(curl -s -m 8 --noproxy '*' --resolve denied.example:80:198.18.99.20 -w ' %{http_code}' http://denied.example/); echo \"\$out\"; case \"\$out\" in *'blocked by agents-firewall: denied.example not allowed for test-bot (rule default-deny)'*403) exit 0;; *) exit 1;; esac"
 check "agent: proxy ignored, allowed domain -> 200" ok \
   agent sh -c "out=\$(curl -s -m 8 --noproxy '*' -w ' %{http_code}' http://allowed.example/); echo \"\$out\"; case \"\$out\" in *hello-from-web*200) exit 0;; *) exit 1;; esac"
 check "agent: HTTPS to a denied domain -> explicit 403 over inspected TLS" ok \
   agent sh -c "out=\$(curl -s -m 8 --noproxy '*' --resolve denied.example:443:198.18.99.20 -w ' %{http_code}' https://denied.example/); echo \"\$out\"; case \"\$out\" in *'blocked by agents-firewall'*403) exit 0;; *) exit 1;; esac"
-check "agent: nc to an arbitrary external TCP port is refused" ko \
+check "agent: nc to an arbitrary external TCP port is refused (even to an allowed host's address)" ko \
   agent sh -c "printf 'ping\n' | nc -w 5 198.18.99.20 4444 | grep -q ping"
 check "agent: dig @8.8.8.8 for a denied name gets no answer (REFUSED)" ok \
   agent sh -c "out=\$(dig +tries=1 +time=4 @8.8.8.8 denied.example A); echo \"\$out\" | grep -E 'status|ANSWER:'; echo \"\$out\" | grep -q 'status: REFUSED' && echo \"\$out\" | grep -q 'ANSWER: 0'"

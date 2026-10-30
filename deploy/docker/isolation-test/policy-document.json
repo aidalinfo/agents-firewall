@@ -1,25 +1,114 @@
 {
   "objects": [
-    {"id": "00000000-0000-4000-8000-000000000101", "name": "allowed.example", "spec": {"type": "domain", "pattern": "allowed.example"}},
-    {"id": "00000000-0000-4000-8000-000000000102", "name": "cloud metadata", "category": "cloud_metadata", "spec": {"type": "host", "ip": "169.254.169.254"}}
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "allowed.example",
+      "spec": {
+        "type": "domain",
+        "pattern": "allowed.example"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "cloud metadata",
+      "category": "cloud_metadata",
+      "spec": {
+        "type": "host",
+        "ip": "169.254.169.254"
+      }
+    }
   ],
   "zones": [
-    {"id": "00000000-0000-4000-8000-000000000401", "name": "isolation", "mode": "enforce"}
+    {
+      "id": "00000000-0000-4000-8000-000000000401",
+      "name": "isolation",
+      "mode": "enforce"
+    }
   ],
   "agents": [
-    {"id": "00000000-0000-4000-8000-000000000501", "name": "test-bot", "zone_id": "00000000-0000-4000-8000-000000000401", "kind": "docker_compose", "addresses": ["10.99.0.10"]}
+    {
+      "id": "00000000-0000-4000-8000-000000000501",
+      "name": "test-bot",
+      "zone_id": "00000000-0000-4000-8000-000000000401",
+      "kind": "docker_compose",
+      "addresses": [
+        "10.99.0.10"
+      ]
+    }
   ],
   "rules": [
-    {"id": "00000000-0000-4000-8000-000000000601", "name": "cloud metadata", "layer": {"type": "baseline"}, "position": 1,
-     "destinations": ["00000000-0000-4000-8000-000000000102"], "action": "deny", "enabled": true},
-    {"id": "00000000-0000-4000-8000-000000000602", "name": "allowed site", "layer": {"type": "zone", "zone_id": "00000000-0000-4000-8000-000000000401"},
-     "position": 1, "sources": ["00000000-0000-4000-8000-000000000401"],
-     "destinations": ["00000000-0000-4000-8000-000000000101"], "action": "accept", "enabled": true}
+    {
+      "id": "00000000-0000-4000-8000-000000000601",
+      "name": "cloud metadata",
+      "layer": {
+        "type": "baseline"
+      },
+      "position": 1,
+      "destinations": [
+        "00000000-0000-4000-8000-000000000102"
+      ],
+      "action": "deny",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000602",
+      "name": "allowed site",
+      "layer": {
+        "type": "zone",
+        "zone_id": "00000000-0000-4000-8000-000000000401"
+      },
+      "position": 1,
+      "sources": [
+        "00000000-0000-4000-8000-000000000401"
+      ],
+      "destinations": [
+        "00000000-0000-4000-8000-000000000101"
+      ],
+      "action": "accept",
+      "enabled": true,
+      "services": [
+        "00000000-0000-4000-8000-000000000201",
+        "00000000-0000-4000-8000-000000000202"
+      ]
+    }
   ],
   "settings": {
-    "internal_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"],
+    "internal_networks": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "fc00::/7"
+    ],
     "max_buffered_body": 1048576,
     "max_stored_body": 262144,
-    "retention_days": {"flows": 30, "http": 14, "captures": 7}
-  }
+    "retention_days": {
+      "flows": 30,
+      "http": 14,
+      "captures": 7
+    }
+  },
+  "services": [
+    {
+      "id": "00000000-0000-4000-8000-000000000201",
+      "name": "http",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "start": 80,
+          "end": 80
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000202",
+      "name": "https",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "start": 443,
+          "end": 443
+        }
+      ]
+    }
+  ]
 }

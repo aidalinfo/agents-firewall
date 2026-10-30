@@ -64,9 +64,10 @@ if [ "$(cat /proc/sys/net/ipv4/ip_forward)" != 1 ]; then
   log "net.ipv4.ip_forward is not 1 (add sysctls: net.ipv4.ip_forward=1)"
   exit 65
 fi
-sysctl -qw net.ipv4.conf.all.send_redirects=0 2>/dev/null || log "cannot disable send_redirects (all)"
+# (/proc/sys may be read-only in a container: the nftables output rule below drops redirects anyway.)
+sysctl -qw net.ipv4.conf.all.send_redirects=0 2>/dev/null || log "send_redirects (all) not writable: relying on nftables"
 for i in $ifaces; do
-  sysctl -qw "net.ipv4.conf.$i.send_redirects=0" 2>/dev/null || log "cannot disable send_redirects ($i)"
+  sysctl -qw "net.ipv4.conf.$i.send_redirects=0" 2>/dev/null || log "send_redirects ($i) not writable: relying on nftables"
 done
 
 nft -f - <<NFT
@@ -81,6 +82,11 @@ table inet afw {
   }
   chain forward {
     type filter hook forward priority filter; policy drop;
+  }
+  chain output {
+    type filter hook output priority filter; policy accept;
+    oifname $set_list icmp type redirect drop
+    oifname $set_list icmpv6 type nd-redirect drop
   }
   chain input {
     type filter hook input priority filter; policy accept;

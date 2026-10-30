@@ -1,0 +1,22 @@
+# demo-dns: the only "public" DNS of the demo (CoreDNS, Apache-2.0). The gateway uses it as its upstream
+# resolver (AFW_UPSTREAM_DNS). Known demo names resolve to the fake services of the `wan` network
+# (198.18.0.0/24, RFC 2544 test range, outside the policy's internal networks); every other name is
+# NXDOMAIN. The only `forward` goes to the local NXDOMAIN block below: the demo never uses the Internet.
+.:53 {
+    hosts /etc/coredns/demo.hosts {
+        ttl 30
+        fallthrough
+    }
+    forward . 127.0.0.1:5300
+    log
+    errors
+}
+
+# Local catch-all: everything unknown is NXDOMAIN (CoreDNS runs `template` before `hosts`, hence the
+# separate server block).
+.:5300 {
+    bind 127.0.0.1
+    template ANY ANY {
+        rcode NXDOMAIN
+    }
+}

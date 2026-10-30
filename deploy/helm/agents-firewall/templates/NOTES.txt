@@ -1,0 +1,25 @@
+agents-firewall {{ .Chart.AppVersion }} installed as "{{ .Release.Name }}".
+
+API:      {{ .Values.api.publicUrl }} (service {{ include "afw.fullname" . }}-api:{{ .Values.api.service.port }})
+Gateways: {{ include "afw.gatewayEndpoint" . }} (mTLS, service {{ include "afw.fullname" . }}-api-gw)
+{{- if .Values.secrets.bootstrapAdminToken }}
+
+A bootstrap admin token is set: create real tokens / configure OIDC, then remove secrets.bootstrapAdminToken.
+{{- end }}
+{{- if not .Values.secrets.existingSecret }}
+
+Back up the content key now (stored HTTP bodies are unreadable without it):
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "afw.secretName" . }} -o jsonpath='{.data.data-key}' | base64 -d
+{{- end }}
+{{- range .Values.gateway.instances }}
+
+Gateway "{{ .name }}" in namespace "{{ .namespace }}":
+  - registration token: {{ if or .registrationToken .existingSecret }}provided{{ else }}MISSING — create one (afw gateways token create) and set it{{ end }}
+  - enrolled pods (label afw.enrolled=true) can only reach the gateway (NetworkPolicy afw-enrolled-egress)
+  {{- if not .caCertificate }}
+  - once registered, publish its inspection CA for the pods:
+      kubectl -n {{ .namespace }} exec deploy/{{ .name }} -- cat /var/lib/afw/public/gateway.crt > ca.crt
+      kubectl -n {{ .namespace }} create configmap afw-gateway-ca --from-file=ca.crt
+    (or set gateway.instances[].caCertificate)
+  {{- end }}
+{{- end }}

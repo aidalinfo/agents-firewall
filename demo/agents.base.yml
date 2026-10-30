@@ -1,0 +1,28 @@
+# Demo agents BEFORE enrollment. demo/docker-compose.agents.yml is generated from this file by afw-enroll
+# (deploy/tests/enroll-sync.sh --write): never enroll by hand.
+services:
+  daniel-bot:
+    # Fake Hermes agent driven over HTTP, with the afw-hermes plugin (integrations/hermes/demo).
+    image: afw-hermes-demo:local
+    build:
+      context: ../integrations/hermes
+      dockerfile: demo/Dockerfile.demo
+    environment:
+      AFW_STATE_DIR: /tmp/afw-hermes
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 128m
+
+  laurent-bot:
+    image: afw-demo-tools:local
+    command: ["sleep", "infinity"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 64m
+
+  acme-bot:
+    image: afw-demo-tools:local
+    command: ["sleep", "infinity"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 64m

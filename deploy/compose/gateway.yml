@@ -1,0 +1,53 @@
+# agents-firewall — gateway of one agents host (ADR 0003). Run on every host whose agents are enrolled.
+#   cp gateway.env.example gateway.env   # set AFW_CONSOLE_URL and a one-time registration token
+#   docker compose --env-file gateway.env -f gateway.yml up -d
+# Agents are then enrolled with `afw enroll compose …`, which attaches them to the `afw-internal` network
+# through an afw-net-<agent> container routing everything to this gateway.
+
+name: afw-gateway
+
+services:
+  gateway:
+    image: ${AFW_GATEWAY_IMAGE:-afw-gateway:local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.gateway
+    # nftables redirection and ip_forward (ADR 0003); Docker's default capabilities otherwise.
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      AFW_CONSOLE_URL: ${AFW_CONSOLE_URL:?set AFW_CONSOLE_URL (https://<console>:8443)}
+      AFW_CONSOLE_CA_FILE: ${AFW_CONSOLE_CA_FILE:-}
+      AFW_REGISTRATION_TOKEN: ${AFW_REGISTRATION_TOKEN:-}
+      AFW_GATEWAY_NAME: ${AFW_GATEWAY_NAME:-}
+      AFW_STATE_DIR: /var/lib/afw
+      AFW_CA_EXPORT: /var/lib/afw/public/gateway.crt
+      AFW_INTERNAL_SUBNETS: ${AFW_INTERNAL_SUBNET:-10.77.0.0/24}
+      AFW_UPSTREAM_DNS: ${AFW_UPSTREAM_DNS:-}
+      AFW_UPSTREAM_CA_FILE: ${AFW_UPSTREAM_CA_FILE:-}
+      RUST_LOG: ${AFW_LOG_LEVEL:-info}
+    volumes:
+      - gateway-state:/var/lib/afw
+      # Public certificate of the inspection CA, mounted read-only by enrolled agents.
+      - ${AFW_CA_PUBLIC_DIR:-/etc/agents-firewall}:/var/lib/afw/public
+    networks:
+      afw-internal:
+        ipv4_address: ${AFW_GATEWAY_IP:-10.77.0.2}
+      egress: {}
+    restart: unless-stopped
+
+networks:
+  # Agents' network: no access outside, no default route; only the gateway forwards (fail closed).
+  afw-internal:
+    name: ${AFW_INTERNAL_NETWORK:-afw-internal}
+    internal: true
+    ipam:
+      config:
+        - subnet: ${AFW_INTERNAL_SUBNET:-10.77.0.0/24}
+  egress:
+    name: afw-egress
+
+volumes:
+  # Gateway identity (mTLS key), inspection CA private key (never leaves this host) and last policy.
+  gateway-state:

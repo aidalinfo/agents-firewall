@@ -1,0 +1,26 @@
+# CI values: external PostgreSQL, ingress, ClickHouse log store and one gateway namespace.
+postgres:
+  enabled: false
+externalDatabase:
+  url: postgres://afw:secret@db.example.internal:5432/afw
+secrets:
+  dataKey: Y2ktb25seS1rZXktMzItYnl0ZXMtLS0tLS0tLS0tLS0=
+  bootstrapAdminToken: ci-only-token
+api:
+  logStore: clickhouse
+  clickhouse:
+    url: http://clickhouse.example.internal:8123
+ingress:
+  enabled: true
+  className: nginx
+  host: afw.example.com
+  tlsSecret: afw-tls
+gateway:
+  instances:
+    - name: agents-gw
+      namespace: agents
+      registrationToken: ci-only-registration-token
+      caCertificate: |
+        -----BEGIN CERTIFICATE-----
+        MIIBszCCAVmgAwIBAgIUCI0=
+        -----END CERTIFICATE-----

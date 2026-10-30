@@ -1,0 +1,5 @@
+# CI values for the default (built-in PostgreSQL) render: helm template cannot query the cluster.
+secrets:
+  dataKey: Y2ktb25seS1rZXktMzItYnl0ZXMtLS0tLS0tLS0tLS0=
+postgres:
+  password: ci-only-password

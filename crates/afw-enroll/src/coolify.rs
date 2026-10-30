@@ -251,14 +251,8 @@ async fn check(resp: reqwest::Response, path: &str) -> Result<reqwest::Response,
 /// file always contains `:` or whitespace, which base64 never does).
 fn decode_compose(s: &str) -> String {
     let looks_b64 = !s.contains(':') && !s.contains(char::is_whitespace);
-    if looks_b64 {
-        if let Some(text) = B64
-            .decode(s)
-            .ok()
-            .and_then(|b| String::from_utf8(b).ok())
-        {
-            return text;
-        }
+    if looks_b64 && let Some(text) = B64.decode(s).ok().and_then(|b| String::from_utf8(b).ok()) {
+        return text;
     }
     s.to_string()
 }

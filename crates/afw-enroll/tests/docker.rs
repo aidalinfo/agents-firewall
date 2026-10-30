@@ -32,7 +32,14 @@ fn pairs(args: &[String], flag: &str) -> Vec<String> {
 fn agent_joins_holder_namespace_without_capabilities() {
     let a = docker_run_args(&spec());
     assert_eq!(pairs(&a, "--network"), vec!["container:afw-net-solo"]);
-    for forbidden in ["--cap-add", "--privileged", "-p", "--publish", "--dns", "--ip"] {
+    for forbidden in [
+        "--cap-add",
+        "--privileged",
+        "-p",
+        "--publish",
+        "--dns",
+        "--ip",
+    ] {
         assert!(!a.iter().any(|x| x == forbidden), "{forbidden}");
     }
     let env = pairs(&a, "-e");
@@ -61,5 +68,8 @@ fn holder_has_net_admin_fixed_ip_and_gateway_dns() {
     let cmd = netinit_command(&s);
     assert_eq!(&cmd[..2], &["sh", "-c"]);
     assert!(cmd[2].contains("ip route replace default via 10.80.0.2"));
-    assert!(cmd[2].contains("wait $!"), "no compose escaping outside compose");
+    assert!(
+        cmd[2].contains("wait $!"),
+        "no compose escaping outside compose"
+    );
 }

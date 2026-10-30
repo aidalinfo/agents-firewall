@@ -90,7 +90,10 @@ fn strings(v: &Value) -> Vec<String> {
 fn host_network_is_refused() {
     let yaml = "services:\n  bot:\n    image: x\n    network_mode: host\n";
     let err = enroll_compose(yaml, &spec("bot", "bot")).unwrap_err();
-    assert!(matches!(err, EnrollError::HostNetwork(ref s) if s == "bot"), "{err}");
+    assert!(
+        matches!(err, EnrollError::HostNetwork(ref s) if s == "bot"),
+        "{err}"
+    );
     assert!(err.to_string().contains("network_mode: host"));
 }
 
@@ -111,10 +114,23 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
     let out = enroll_compose(&fixture("hermes-bot.yml"), &hermes_spec()).unwrap();
     let doc = parse(&out.yaml);
     let agent = service(&doc, "daniel-bot");
-    assert_eq!(agent["network_mode"].as_str(), Some("service:afw-net-daniel"));
+    assert_eq!(
+        agent["network_mode"].as_str(),
+        Some("service:afw-net-daniel")
+    );
     for k in [
-        "networks", "ports", "dns", "dns_search", "dns_opt", "hostname", "links", "extra_hosts",
-        "expose", "mac_address", "cap_add", "privileged",
+        "networks",
+        "ports",
+        "dns",
+        "dns_search",
+        "dns_opt",
+        "hostname",
+        "links",
+        "extra_hosts",
+        "expose",
+        "mac_address",
+        "cap_add",
+        "privileged",
     ] {
         assert!(agent.get(k).is_none(), "agent still has `{k}`");
     }
@@ -125,19 +141,29 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
         net["networks"]["afw-internal"]["ipv4_address"].as_str(),
         Some("10.80.0.11")
     );
-    assert_eq!(net["networks"].as_mapping().unwrap().len(), 1, "only the internal network");
+    assert_eq!(
+        net["networks"].as_mapping().unwrap().len(),
+        1,
+        "only the internal network"
+    );
     assert_eq!(strings(&net["dns"]), vec!["10.80.0.2"]);
     assert_eq!(strings(&net["ports"]), vec!["8080:8080"]);
     assert_eq!(net["hostname"].as_str(), Some("daniel"));
     assert_eq!(net["restart"].as_str(), Some("unless-stopped"));
     assert_eq!(net["image"].as_str(), Some("afw-netinit:local"));
     let cmd = strings(&net["command"]).join(" ");
-    assert!(cmd.contains("ip route replace default via 10.80.0.2"), "{cmd}");
+    assert!(
+        cmd.contains("ip route replace default via 10.80.0.2"),
+        "{cmd}"
+    );
     assert!(cmd.contains("sleep"), "{cmd}");
     assert_eq!(net["labels"]["afw.enrolled"].as_str(), Some("true"));
     assert_eq!(net["labels"]["afw.agent"].as_str(), Some("daniel"));
     // The gateway network is external (created with `internal: true` by the gateway deployment).
-    assert_eq!(doc["networks"]["afw-internal"]["external"].as_bool(), Some(true));
+    assert_eq!(
+        doc["networks"]["afw-internal"]["external"].as_bool(),
+        Some(true)
+    );
 }
 
 #[test]
@@ -146,7 +172,10 @@ fn privileged_agent_is_enrolled_with_warning() {
     let out = enroll_compose(yaml, &spec("bot", "bot")).unwrap();
     assert!(out.warnings.contains(&EnrollWarning::Privileged));
     // The flag is kept: [Killian] rejected refusing privileged containers.
-    assert_eq!(parse(&out.yaml)["services"]["bot"]["privileged"].as_bool(), Some(true));
+    assert_eq!(
+        parse(&out.yaml)["services"]["bot"]["privileged"].as_bool(),
+        Some(true)
+    );
 }
 
 #[test]
@@ -201,7 +230,10 @@ fn enrolling_twice_is_a_clear_error() {
     let s = hermes_spec();
     let once = enroll_compose(&fixture("hermes-bot.yml"), &s).unwrap();
     let err = enroll_compose(&once.yaml, &s).unwrap_err();
-    assert!(matches!(err, EnrollError::AlreadyEnrolled(ref a) if a == "daniel"), "{err}");
+    assert!(
+        matches!(err, EnrollError::AlreadyEnrolled(ref a) if a == "daniel"),
+        "{err}"
+    );
     assert!(err.to_string().contains("already enrolled"));
     // Same service under another agent name: still refused.
     let other = EnrollSpec {
@@ -264,7 +296,11 @@ fn proxy_and_ca_variables_are_set_and_override_existing_ones() {
     let doc = parse(&out.yaml);
     let agent = service(&doc, "daniel-bot");
     for k in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
-        assert_eq!(env_get(agent, k).as_deref(), Some("http://10.80.0.2:3128"), "{k}");
+        assert_eq!(
+            env_get(agent, k).as_deref(),
+            Some("http://10.80.0.2:3128"),
+            "{k}"
+        );
     }
     for k in [
         "REQUESTS_CA_BUNDLE",
@@ -288,9 +324,18 @@ fn map_environment_is_extended_as_a_map() {
     let agent = service(&doc, "laurent-bot");
     assert!(agent["environment"].is_mapping());
     assert_eq!(env_get(agent, "LOG_LEVEL").as_deref(), Some("debug"));
-    assert_eq!(env_get(agent, "HTTPS_PROXY").as_deref(), Some("http://10.80.0.2:3128"));
-    assert!(env_get(agent, "AFW_AGENT_TOKEN").is_none(), "no Hermes vars for a plain agent");
-    assert_eq!(env_get(agent, "NO_PROXY").as_deref(), Some("localhost,127.0.0.1,::1"));
+    assert_eq!(
+        env_get(agent, "HTTPS_PROXY").as_deref(),
+        Some("http://10.80.0.2:3128")
+    );
+    assert!(
+        env_get(agent, "AFW_AGENT_TOKEN").is_none(),
+        "no Hermes vars for a plain agent"
+    );
+    assert_eq!(
+        env_get(agent, "NO_PROXY").as_deref(),
+        Some("localhost,127.0.0.1,::1")
+    );
     assert_eq!(agent["labels"]["team"].as_str(), Some("ops"));
     assert_eq!(agent["labels"]["afw.enrolled"].as_str(), Some("true"));
     assert!(out.warnings.is_empty());
@@ -303,8 +348,14 @@ fn hermes_plugin_is_mounted_and_token_is_referenced_not_inlined() {
     let out = enroll_compose(&fixture("hermes-bot.yml"), &hermes_spec()).unwrap();
     let doc = parse(&out.yaml);
     let agent = service(&doc, "daniel-bot");
-    assert_eq!(env_get(agent, "AFW_CONSOLE_URL").as_deref(), Some("https://afw.example.org"));
-    assert_eq!(env_get(agent, "AFW_AGENT_TOKEN").as_deref(), Some("${AFW_TOKEN_DANIEL}"));
+    assert_eq!(
+        env_get(agent, "AFW_CONSOLE_URL").as_deref(),
+        Some("https://afw.example.org")
+    );
+    assert_eq!(
+        env_get(agent, "AFW_AGENT_TOKEN").as_deref(),
+        Some("${AFW_TOKEN_DANIEL}")
+    );
     assert_eq!(env_get(agent, "AFW_AGENT_NAME").as_deref(), Some("daniel"));
     // The plugin reaches the console without the explicit proxy (still routed via the gateway).
     for k in ["NO_PROXY", "no_proxy"] {
@@ -333,7 +384,11 @@ fn ipv6_agent_gets_ipv6_address() {
         net["networks"]["afw-internal"]["ipv6_address"].as_str(),
         Some("fd00:80::11")
     );
-    assert!(strings(&net["command"]).join(" ").contains("ip -6 route replace default via fd00:80::2"));
+    assert!(
+        strings(&net["command"])
+            .join(" ")
+            .contains("ip -6 route replace default via fd00:80::2")
+    );
 }
 
 #[test]
@@ -353,7 +408,10 @@ fn order_is_preserved_and_holder_is_inserted_before_agent() {
         .keys()
         .map(|k| k.as_str().unwrap().to_string())
         .collect();
-    assert_eq!(top, vec!["name", "services", "networks", "volumes", ORIGINAL_KEY]);
+    assert_eq!(
+        top,
+        vec!["name", "services", "networks", "volumes", ORIGINAL_KEY]
+    );
     // The agent keeps its key order (image first, restart second…).
     let agent_keys: Vec<_> = service(&doc, "daniel-bot")
         .as_mapping()
@@ -424,11 +482,17 @@ networks:
         .unwrap()
         .yaml;
     let doc = parse(&both);
-    assert_eq!(doc["networks"]["afw-internal"]["external"].as_bool(), Some(true));
+    assert_eq!(
+        doc["networks"]["afw-internal"]["external"].as_bool(),
+        Some(true)
+    );
     for order in [["a", "b"], ["b", "a"]] {
         let step = unenroll_compose(&both, order[0]).unwrap();
         // The shared gateway network stays while one agent remains enrolled.
-        assert_eq!(parse(&step)["networks"]["afw-internal"]["external"].as_bool(), Some(true));
+        assert_eq!(
+            parse(&step)["networks"]["afw-internal"]["external"].as_bool(),
+            Some(true)
+        );
         let back = unenroll_compose(&step, order[1]).unwrap();
         assert_eq!(parse(&back), parse(original), "{order:?}");
     }
@@ -441,7 +505,9 @@ fn unenroll_errors() {
         unenroll_compose(&yaml, "laurent").unwrap_err(),
         EnrollError::NotEnrolled(_)
     ));
-    let enrolled = enroll_compose(&yaml, &spec("laurent", "laurent-bot")).unwrap().yaml;
+    let enrolled = enroll_compose(&yaml, &spec("laurent", "laurent-bot"))
+        .unwrap()
+        .yaml;
     let mut doc = parse(&enrolled);
     doc[ORIGINAL_KEY]["laurent"] = Value::String("garbage".into());
     let damaged = serde_yaml::to_string(&doc).unwrap();

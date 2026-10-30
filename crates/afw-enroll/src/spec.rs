@@ -137,7 +137,10 @@ impl EnrollSpec {
         let mut env = proxy_environment(&self.proxy_url, &no_proxy, CA_CONTAINER_PATH);
         if let Some(h) = &self.hermes {
             env.push(("AFW_CONSOLE_URL".into(), h.console_url.clone()));
-            env.push(("AFW_AGENT_TOKEN".into(), format!("${{{}}}", h.agent_token_env)));
+            env.push((
+                "AFW_AGENT_TOKEN".into(),
+                format!("${{{}}}", h.agent_token_env),
+            ));
             env.push(("AFW_AGENT_NAME".into(), self.agent_name.clone()));
         }
         env
@@ -225,7 +228,7 @@ pub enum EnrollWarning {
     HostNamespace { namespace: String },
     /// `links` cannot be combined with `network_mode: service:`; they were removed.
     LinksRemoved,
-    /// Kubernetes: a container that may change the pod network (`privileged` or capability).
+    /// Kubernetes: a privileged container can reach the node and leave through another path.
     PodPrivileged { container: String },
 }
 
@@ -244,17 +247,16 @@ impl std::fmt::Display for EnrollWarning {
                 f,
                 "the Docker socket is mounted ({mount}): the agent can start containers that are not enrolled"
             ),
-            Self::HostNamespace { namespace } => write!(
-                f,
-                "the agent shares the host {namespace} namespace"
-            ),
+            Self::HostNamespace { namespace } => {
+                write!(f, "the agent shares the host {namespace} namespace")
+            }
             Self::LinksRemoved => write!(
                 f,
                 "`links` are incompatible with the shared network namespace and were removed"
             ),
             Self::PodPrivileged { container } => write!(
                 f,
-                "container {container} is privileged or has NET_ADMIN/SYS_ADMIN: it can bypass the gateway"
+                "container {container} is privileged: it can reach the node and bypass the gateway"
             ),
         }
     }
@@ -275,10 +277,19 @@ mod tests {
 
     #[test]
     fn url_host_extracts_the_host() {
-        assert_eq!(url_host("https://Afw.Example.org").as_deref(), Some("afw.example.org"));
-        assert_eq!(url_host("http://u:p@console:8443/api?x").as_deref(), Some("console"));
+        assert_eq!(
+            url_host("https://Afw.Example.org").as_deref(),
+            Some("afw.example.org")
+        );
+        assert_eq!(
+            url_host("http://u:p@console:8443/api?x").as_deref(),
+            Some("console")
+        );
         assert_eq!(url_host("http://[fd00::1]:80/").as_deref(), Some("fd00::1"));
-        assert_eq!(url_host("console.local:3000").as_deref(), Some("console.local"));
+        assert_eq!(
+            url_host("console.local:3000").as_deref(),
+            Some("console.local")
+        );
         assert_eq!(url_host("https://"), None);
     }
 }

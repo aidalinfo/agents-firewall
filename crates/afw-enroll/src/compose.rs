@@ -137,10 +137,7 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
     for key in MOVED_TO_HOLDER.iter().chain(DROPPED) {
         agent_svc.shift_remove(*key);
     }
-    agent_svc.insert(
-        "network_mode".into(),
-        format!("service:{net_name}").into(),
-    );
+    agent_svc.insert("network_mode".into(), format!("service:{net_name}").into());
     set_environment(&mut agent_svc, &spec.agent_environment());
     let mut mounts = vec![format!("{}:{CA_CONTAINER_PATH}:ro", spec.ca_path_host)];
     if let Some(h) = &spec.hermes {
@@ -210,9 +207,9 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
     if networks.is_null() {
         *networks = Value::Mapping(Mapping::new());
     }
-    let networks = networks.as_mapping_mut().ok_or_else(|| {
-        EnrollError::InvalidYaml("top-level `networks` is not a mapping".into())
-    })?;
+    let networks = networks
+        .as_mapping_mut()
+        .ok_or_else(|| EnrollError::InvalidYaml("top-level `networks` is not a mapping".into()))?;
     networks.insert(spec.network.clone().into(), map([("external", true)]));
 
     let ann = root
@@ -242,7 +239,9 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
         .and_then(|ann| ann.get(agent_name))
         .cloned()
         .ok_or_else(|| EnrollError::NotEnrolled(agent_name.into()))?;
-    let entry = entry.as_mapping().ok_or_else(|| broken("entry is not a mapping"))?;
+    let entry = entry
+        .as_mapping()
+        .ok_or_else(|| broken("entry is not a mapping"))?;
     let service = entry
         .get("service")
         .and_then(Value::as_str)
@@ -289,19 +288,17 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
     }
 
     // --- network declaration, restored by the last agent using it.
-    if !still_used {
-        if let Some(Value::Mapping(nets)) = root.get_mut("networks") {
-            match declaration {
-                Some(decl) => {
-                    nets.insert(network.into(), decl);
-                }
-                None => {
-                    nets.shift_remove(network.as_str());
-                }
+    if !still_used && let Some(Value::Mapping(nets)) = root.get_mut("networks") {
+        match declaration {
+            Some(decl) => {
+                nets.insert(network.into(), decl);
             }
-            if nets.is_empty() && !networks_key {
-                root.shift_remove("networks");
+            None => {
+                nets.shift_remove(network.as_str());
             }
+        }
+        if nets.is_empty() && !networks_key {
+            root.shift_remove("networks");
         }
     }
 

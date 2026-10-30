@@ -42,12 +42,20 @@ async fn resource(
     body: Option<Json<Value>>,
 ) -> Response {
     if !authorized(&headers) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"message": "Unauthenticated."}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"message": "Unauthenticated."})),
+        )
+            .into_response();
     }
     let mut s = st.lock().unwrap();
     s.calls.push(format!("{method} /{kind}/{uuid}"));
     if uuid != "res1" {
-        return (StatusCode::NOT_FOUND, Json(json!({"message": "Not found."}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"message": "Not found."})),
+        )
+            .into_response();
     }
     match method {
         Method::GET => {
@@ -198,12 +206,21 @@ async fn http_errors_stop_before_restart() {
         matches!(err, EnrollError::CoolifyStatus { status: 422, ref body, .. } if body.contains("base64")),
         "{err}"
     );
-    assert!(!st.lock().unwrap().calls.iter().any(|c| c.ends_with("restart")));
+    assert!(
+        !st.lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|c| c.ends_with("restart"))
+    );
 
     let err = enroll_coolify(&client, CoolifyKind::Service, "nope", &spec())
         .await
         .unwrap_err();
-    assert!(matches!(err, EnrollError::CoolifyStatus { status: 404, .. }), "{err}");
+    assert!(
+        matches!(err, EnrollError::CoolifyStatus { status: 404, .. }),
+        "{err}"
+    );
 }
 
 #[tokio::test]
@@ -211,7 +228,10 @@ async fn wrong_token_is_rejected_and_token_is_never_printed() {
     let (url, _st) = serve(with_compose()).await;
     let client = CoolifyClient::new(&url, "wrong").unwrap();
     let err = client.get_service("res1").await.unwrap_err();
-    assert!(matches!(err, EnrollError::CoolifyStatus { status: 401, .. }), "{err}");
+    assert!(
+        matches!(err, EnrollError::CoolifyStatus { status: 401, .. }),
+        "{err}"
+    );
     let good = CoolifyClient::new(&url, TOKEN).unwrap();
     assert!(!format!("{good:?}").contains("secret"));
 }

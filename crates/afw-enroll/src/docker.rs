@@ -10,7 +10,11 @@ use crate::spec::{CA_CONTAINER_PATH, EnrollSpec, LABEL_AGENT, LABEL_ENROLLED};
 ///
 /// `docker run <netinit_run_args…> <netinit_command…>`
 pub fn netinit_run_args(spec: &EnrollSpec) -> Vec<String> {
-    let ip_flag = if spec.agent_ip.is_ipv4() { "--ip" } else { "--ip6" };
+    let ip_flag = if spec.agent_ip.is_ipv4() {
+        "--ip"
+    } else {
+        "--ip6"
+    };
     vec![
         "-d".into(),
         "--name".into(),

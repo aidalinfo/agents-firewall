@@ -345,6 +345,159 @@ pub struct FlowDetail {
     pub http: Vec<HttpEvent>,
     pub tool_call: Option<ToolCallEvent>,
     pub correlation: Option<Correlation>,
+    /// Rules examined for this flow, in evaluation order, recomputed on the flow's revision
+    /// (empty when the revision or the engine is unavailable).
+    #[serde(default)]
+    pub trace: Vec<TraceStep>,
+    /// Exact text received by the agent when the flow was denied over HTTP(S) (EF-21).
+    #[serde(default)]
+    pub agent_message: Option<String>,
+    /// Prefilled proposal behind the "Allow" button (denied or observed flows).
+    #[serde(default)]
+    pub allow_proposal: Option<AllowProposal>,
+}
+
+/// Item of `GET /logs/flows`: the flow plus display fields computed by the API.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct FlowListItem {
+    #[serde(flatten)]
+    pub flow: FlowEvent,
+    pub agent_name: Option<String>,
+    pub zone_name: Option<String>,
+    /// `12 · name`, `socle · name` (baseline rule without number) or `default-deny`.
+    pub rule_label: String,
+    /// Correlated tool call (ADR 0007).
+    pub tool: Option<String>,
+    pub conversation_id: Option<String>,
+    pub correlation_confidence: Option<Confidence>,
+}
+
+pub type FlowListPage = Page<FlowListItem>;
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceOutcome {
+    Matched,
+    NotMatched,
+    /// Not evaluated (disabled, expired, or after the matching rule).
+    Skipped,
+}
+
+/// One rule examined while evaluating a flow.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct TraceStep {
+    pub rule_id: Option<Uuid>,
+    pub rule_number: Option<u32>,
+    pub rule_label: String,
+    /// `baseline`, `zone` or `implicit`.
+    pub layer: String,
+    pub outcome: TraceOutcome,
+    /// Why it matched or not (e.g. `destination not in api-objects`).
+    pub reason: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposedDestinationKind {
+    /// New object matching exactly the flow's domain or IP.
+    Exact,
+    /// New wildcard domain object (`*.parent`).
+    Wildcard,
+    /// Existing object (or group) of the policy that already matches the destination.
+    Existing,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ProposedDestination {
+    pub kind: ProposedDestinationKind,
+    pub label: String,
+    /// Object to create (`exact`, `wildcard`).
+    pub spec: Option<crate::policy::NetObjectSpec>,
+    /// Existing object (`existing`).
+    pub object_id: Option<Uuid>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ProposedService {
+    pub label: String,
+    /// Existing service matching the protocol and port, if any.
+    pub service_id: Option<Uuid>,
+    pub protocol: L4Proto,
+    pub port: u16,
+}
+
+/// Rule proposed by the "Allow" button: source = the agent's zone, accept, inserted at the
+/// top of the zone layer (see `POST /sessions/{id}/allow-from-log`).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct AllowProposal {
+    pub zone_id: Uuid,
+    pub zone_name: Option<String>,
+    /// Choices, most specific first: exact, wildcard, then existing objects.
+    pub destinations: Vec<ProposedDestination>,
+    pub service: ProposedService,
+    /// Number the new rule would get in the current policy.
+    pub rule_number: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StatsBucket {
+    #[serde(rename = "1m")]
+    OneMinute,
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
+}
+
+impl StatsBucket {
+    pub fn seconds(self) -> i64 {
+        match self {
+            Self::OneMinute => 60,
+            Self::FiveMinutes => 300,
+            Self::OneHour => 3600,
+        }
+    }
+}
+
+/// Flow counts of one histogram bucket (`allow` excludes `observed`).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct FlowStatsPoint {
+    pub at: DateTime<Utc>,
+    pub allow: u64,
+    pub deny: u64,
+    /// Allowed only because the zone is in observation mode (would have been denied).
+    pub observed: u64,
+}
+
+/// `GET /logs/flows/stats`.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct FlowStats {
+    pub bucket: StatsBucket,
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+    pub points: Vec<FlowStatsPoint>,
+    pub total: u64,
+    pub allow: u64,
+    pub deny: u64,
+    pub observed: u64,
+}
+
+/// Period shortcut of `GET /internal-map` (`from`/`to` take precedence).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MapPeriod {
+    #[serde(rename = "1h")]
+    OneHour,
+    #[serde(rename = "24h")]
+    OneDay,
+    #[serde(rename = "7d")]
+    SevenDays,
 }
 
 /// `POST /ingest/tool-calls` (agent token).

@@ -219,6 +219,58 @@ fn api_types_round_trip() {
             conversation_id: "conv-1".into(),
             confidence: Confidence::Probable,
         }),
+        trace: vec![TraceStep {
+            rule_id: Some(id(5)),
+            rule_number: Some(3),
+            rule_label: "3 · web".into(),
+            layer: "zone".into(),
+            outcome: TraceOutcome::NotMatched,
+            reason: "destination".into(),
+        }],
+        agent_message: Some("blocked by agents-firewall: x not allowed for y (rule 3)".into()),
+        allow_proposal: Some(AllowProposal {
+            zone_id: id(2),
+            zone_name: Some("bots".into()),
+            destinations: vec![ProposedDestination {
+                kind: ProposedDestinationKind::Exact,
+                label: "x".into(),
+                spec: Some(NetObjectSpec::Domain {
+                    pattern: "x".into(),
+                }),
+                object_id: None,
+            }],
+            service: ProposedService {
+                label: "tcp/443".into(),
+                service_id: None,
+                protocol: L4Proto::Tcp,
+                port: 443,
+            },
+            rule_number: Some(4),
+        }),
+    });
+    roundtrip(&FlowListItem {
+        flow: flow(),
+        agent_name: Some("bot".into()),
+        zone_name: None,
+        rule_label: "default-deny".into(),
+        tool: None,
+        conversation_id: None,
+        correlation_confidence: Some(Confidence::Certain),
+    });
+    roundtrip(&FlowStats {
+        bucket: StatsBucket::FiveMinutes,
+        from: at(),
+        to: at(),
+        points: vec![FlowStatsPoint {
+            at: at(),
+            allow: 1,
+            deny: 2,
+            observed: 3,
+        }],
+        total: 6,
+        allow: 1,
+        deny: 2,
+        observed: 3,
     });
     roundtrip(&ToolCallBatch {
         events: vec![tool_call()],

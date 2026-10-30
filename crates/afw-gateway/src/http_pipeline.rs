@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll, ready};
 
 use afw_core::events::{Body, BodyEncoding, GatewayEvent, HttpEvent, Verdict};
-use afw_core::policy::{AppProto, DataCategory, Track};
+use afw_core::policy::{AppProto, Track};
 use base64::Engine;
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
@@ -31,7 +31,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-use crate::dlp::{ContentScanner, DlpFinding, StreamScan, mask_bytes};
+use crate::dlp::{DlpFinding, Scanner, decode_content, is_secret, mask_bytes, to_event};
 use crate::engine::{Decision, FlowContext};
 use crate::flow::{AgentStream, Flow, resolve};
 use crate::io::Tap;
@@ -158,20 +158,28 @@ fn header_pairs(h: &HeaderMap) -> Vec<(String, String)> {
         .collect()
 }
 
-fn masked_headers(scanner: &dyn ContentScanner, h: &HeaderMap, location: &str) -> (Vec<(String, String)>, Vec<DlpFinding>) {
-    let mut out = Vec::new();
-    let mut found = Vec::new();
-    for (k, v) in h {
-        let name = k.as_str().to_string();
-        let value = v.as_bytes();
-        let f = scanner.scan(value, &format!("{location}:{name}"));
-        let shown = if SENSITIVE_HEADERS.contains(&name.as_str()) {
-            format!("[REDACTED:{}]", &hex::encode(Sha256::digest(value))[..12])
+fn masked_headers(scanner: &Scanner, h: &HeaderMap, location: &str) -> (Vec<(String, String)>, Vec<DlpFinding>) {
+    let pairs = header_pairs(h);
+    let mut found = scanner.scan_headers(&pairs);
+    let mut out = Vec::with_capacity(pairs.len());
+    for (name, value) in pairs {
+        let lname = name.to_ascii_lowercase();
+        let loc = format!("header:{lname}");
+        let mine: Vec<DlpFinding> = found.iter().filter(|f| f.location == loc).cloned().collect();
+        let shown = if SENSITIVE_HEADERS.contains(&lname.as_str()) {
+            format!("[REDACTED:{}]", &hex::encode(Sha256::digest(value.as_bytes()))[..12])
         } else {
-            String::from_utf8_lossy(&mask_bytes(value, &f)).into_owned()
+            String::from_utf8_lossy(&mask_bytes(value.as_bytes(), &mine)).into_owned()
         };
-        out.push((name, shown));
-        found.extend(f);
+        let shown_name = if found.iter().any(|f| f.location == format!("header_name:{lname}")) {
+            "[MASKED-HEADER-NAME]".to_string()
+        } else {
+            name
+        };
+        out.push((shown_name, shown));
+    }
+    for f in &mut found {
+        f.location = format!("{location}{}", f.location.trim_start_matches("header"));
     }
     (out, found)
 }
@@ -222,7 +230,7 @@ impl ContentJudge {
         let blocked = d.verdict == Verdict::Deny;
         let secrets: Vec<String> = findings
             .iter()
-            .filter(|f| f.category == DataCategory::Secret)
+            .filter(|f| is_secret(f))
             .map(|f| f.kind.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -278,7 +286,7 @@ impl HttpLog {
         self.ev.findings.extend(
             all.iter()
                 .filter(|f| seen.insert((f.fingerprint.clone(), f.location.clone())))
-                .map(DlpFinding::to_event),
+                .map(to_event),
         );
         self.state.events.emit(GatewayEvent::Http(self.ev));
     }
@@ -362,7 +370,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
         hf.authority(),
         String::from_utf8_lossy(&mask_bytes(path_q.as_bytes(), &url_findings))
     );
-    let (masked_req_headers, header_findings) = masked_headers(scanner.as_ref(), req.headers(), "request.header");
+    let (masked_req_headers, header_findings) = masked_headers(&scanner, req.headers(), "request.header");
     ev.request_headers = masked_req_headers;
 
     // 1. Host must match the flow's name (domain fronting, SNI/Host or CONNECT/Host mismatch).
@@ -475,7 +483,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
     let upstream_body: GwBody = if ended {
         let raw = buf.freeze();
         let analysed = match &encoding {
-            Some(enc) => match scanner.decode_content(enc, &raw, max_buf.saturating_mul(8).max(1)) {
+            Some(enc) => match decode_content(enc, &raw, max_buf.saturating_mul(8).max(1)) {
                 Ok(d) => Bytes::from(d),
                 Err(e) => {
                     tracing::info!(error = %e, "undecodable request body: denied");
@@ -514,11 +522,15 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             emit_denied_http(&state, ev);
             return deny_response(content_failure_message(&d, &host));
         }
-        let mut sb = ScanBody::new(body, StreamScan::new(scanner.clone(), "request.body"), judge.clone(), blocked_by.clone(), capture.clone(), max_stored + 4096);
-        if let Some((d2, f)) = sb.feed(buf.freeze()) {
-            return content_denied(d2, &f, ev);
+        // Early, stateless check of what is already buffered.
+        let first = scanner.scan(&buf, "request.body");
+        if !first.is_empty() {
+            let (d2, blocked) = judge.judge(&first);
+            if blocked {
+                return content_denied(d2, &first, ev);
+            }
         }
-        sb.boxed()
+        scanning_body(body, buf.freeze(), scanner.clone(), judge.clone(), blocked_by.clone(), capture.clone(), max_stored + 4096)
     };
     {
         let mut c = capture.lock().unwrap_or_else(|e| e.into_inner());
@@ -555,7 +567,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             let (mut parts, body) = resp.into_parts();
             let mut log = log;
             log.ev.status = Some(parts.status.as_u16());
-            log.ev.response_headers = masked_headers(scanner.as_ref(), &parts.headers, "response.header").0;
+            log.ev.response_headers = masked_headers(&scanner, &parts.headers, "response.header").0;
             hop_by_hop_strip(&mut parts.headers);
             parts.version = Version::HTTP_11;
             let tap = RespTap::new(body, log, scanner.clone(), max_buf, max_stored);
@@ -590,87 +602,105 @@ fn emit_denied_http(state: &GatewayState, ev: HttpEvent) {
 }
 
 fn emit_denied_http_findings(state: &GatewayState, mut ev: HttpEvent, findings: &[DlpFinding]) {
-    ev.findings = findings.iter().map(DlpFinding::to_event).collect();
+    ev.findings = findings.iter().map(to_event).collect();
     state.events.emit(GatewayEvent::Http(ev));
 }
 
-/// Request body streamed upstream with incremental analysis: never relays more than
-/// `safe_len`, and the remainder only once the end of stream was analysed clean. A
-/// detection that the policy denies ends the body with an error (the upstream request is
-/// aborted) and records the decision.
-struct ScanBody {
-    inner: Incoming,
-    scan: Option<StreamScan>,
+/// Request body streamed upstream with incremental analysis (`afw_dlp::StreamScanner`):
+/// never relays more than `safe_len()`, and the held-back rest only once `finish()` found
+/// nothing the policy denies. A denied detection ends the body with an error (the upstream
+/// request is aborted) and records the decision. The scanner borrows the shared `Scanner`,
+/// so the analysis runs in its own task fed by the agent's body.
+fn scanning_body(
+    mut body: Incoming,
+    prefix: Bytes,
+    scanner: Arc<Scanner>,
     judge: ContentJudge,
     blocked: Arc<Mutex<Option<Decision>>>,
     capture: Arc<Mutex<ReqCapture>>,
     capture_max: usize,
-    pending: BytesMut,
-    released: usize,
-    hasher: Sha256,
-    done: bool,
-    failed: bool,
+) -> GwBody {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, BoxError>>(4);
+    tokio::spawn(async move {
+        let mut ss = scanner.stream("request.body");
+        let mut pending = BytesMut::new();
+        let mut released: u64 = 0;
+        let mut hasher = Sha256::new();
+        let mut all: Vec<DlpFinding> = Vec::new();
+        // Returns false when the body must be cut.
+        let check = |found: Vec<DlpFinding>, all: &mut Vec<DlpFinding>| -> bool {
+            if found.is_empty() {
+                return true;
+            }
+            all.extend(found);
+            capture.lock().unwrap_or_else(|e| e.into_inner()).findings = all.clone();
+            let (d, deny) = judge.judge(all);
+            if deny {
+                *blocked.lock().unwrap_or_else(|e| e.into_inner()) = Some(d);
+                return false;
+            }
+            true
+        };
+        let mut next: Option<Bytes> = Some(prefix);
+        loop {
+            let data = match next.take() {
+                Some(d) => d,
+                None => match body.frame().await {
+                    None => break,
+                    Some(Err(e)) => {
+                        let _ = tx.send(Err(Box::new(e))).await;
+                        return;
+                    }
+                    Some(Ok(f)) => match f.into_data() {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    },
+                },
+            };
+            hasher.update(&data);
+            {
+                let mut c = capture.lock().unwrap_or_else(|e| e.into_inner());
+                c.total += data.len() as u64;
+                let room = capture_max.saturating_sub(c.data.len());
+                c.data.extend_from_slice(&data[..data.len().min(room)]);
+            }
+            let found = ss.feed(&data);
+            pending.extend_from_slice(&data);
+            if !check(found, &mut all) {
+                let _ = tx.send(Err(Box::new(ContentBlocked))).await;
+                return;
+            }
+            let n = (ss.safe_len().saturating_sub(released) as usize).min(pending.len());
+            if n > 0 {
+                released += n as u64;
+                if tx.send(Ok(pending.split_to(n).freeze())).await.is_err() {
+                    return;
+                }
+            }
+        }
+        capture.lock().unwrap_or_else(|e| e.into_inner()).sha256 = Some(hex::encode(hasher.finalize()));
+        let found = ss.finish();
+        if !check(found, &mut all) {
+            let _ = tx.send(Err(Box::new(ContentBlocked))).await;
+            return;
+        }
+        if !pending.is_empty() {
+            let _ = tx.send(Ok(pending.freeze())).await;
+        }
+    });
+    ChannelBody { rx }.boxed()
 }
 
-impl ScanBody {
-    fn new(inner: Incoming, scan: StreamScan, judge: ContentJudge, blocked: Arc<Mutex<Option<Decision>>>, capture: Arc<Mutex<ReqCapture>>, capture_max: usize) -> Self {
-        Self {
-            inner,
-            scan: Some(scan),
-            judge,
-            blocked,
-            capture,
-            capture_max,
-            pending: BytesMut::new(),
-            released: 0,
-            hasher: Sha256::new(),
-            done: false,
-            failed: false,
-        }
-    }
+struct ChannelBody {
+    rx: tokio::sync::mpsc::Receiver<Result<Bytes, BoxError>>,
+}
 
-    fn record(&self, found: &[DlpFinding]) {
-        self.capture.lock().unwrap_or_else(|e| e.into_inner()).findings.extend_from_slice(found);
-    }
+impl hyper::body::Body for ChannelBody {
+    type Data = Bytes;
+    type Error = BoxError;
 
-    /// Feeds data; returns the denying decision on a blocked detection.
-    fn feed(&mut self, data: Bytes) -> Option<(Decision, Vec<DlpFinding>)> {
-        self.hasher.update(&data);
-        {
-            let mut c = self.capture.lock().unwrap_or_else(|e| e.into_inner());
-            c.total += data.len() as u64;
-            let room = self.capture_max.saturating_sub(c.data.len());
-            c.data.extend_from_slice(&data[..data.len().min(room)]);
-        }
-        let found = self.scan.as_mut().map(|s| s.feed(&data)).unwrap_or_default();
-        self.pending.extend_from_slice(&data);
-        self.check(found)
-    }
-
-    fn check(&mut self, found: Vec<DlpFinding>) -> Option<(Decision, Vec<DlpFinding>)> {
-        if found.is_empty() {
-            return None;
-        }
-        self.record(&found);
-        let all = self.capture.lock().unwrap_or_else(|e| e.into_inner()).findings.clone();
-        let (d, blocked) = self.judge.judge(&all);
-        if blocked {
-            *self.blocked.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.clone());
-            self.failed = true;
-            return Some((d, all));
-        }
-        None
-    }
-
-    /// Bytes that may be relayed now.
-    fn releasable(&mut self) -> Option<Bytes> {
-        let safe = self.scan.as_ref().map(|s| s.safe_len()).unwrap_or(usize::MAX);
-        let n = safe.saturating_sub(self.released).min(self.pending.len());
-        if n == 0 {
-            return None;
-        }
-        self.released += n;
-        Some(self.pending.split_to(n).freeze())
+    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
+        self.rx.poll_recv(cx).map(|o| o.map(|r| r.map(Frame::data)))
     }
 }
 
@@ -685,54 +715,13 @@ impl std::fmt::Display for ContentBlocked {
 
 impl std::error::Error for ContentBlocked {}
 
-impl hyper::body::Body for ScanBody {
-    type Data = Bytes;
-    type Error = BoxError;
-
-    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
-        loop {
-            if self.failed {
-                return Poll::Ready(Some(Err(Box::new(ContentBlocked))));
-            }
-            if let Some(b) = self.releasable() {
-                return Poll::Ready(Some(Ok(Frame::data(b))));
-            }
-            if self.done {
-                if self.pending.is_empty() {
-                    return Poll::Ready(None);
-                }
-                let rest = self.pending.split().freeze();
-                return Poll::Ready(Some(Ok(Frame::data(rest))));
-            }
-            match ready!(Pin::new(&mut self.inner).poll_frame(cx)) {
-                None => {
-                    let found = self.scan.take().map(StreamScan::finish).unwrap_or_default();
-                    let sha = hex::encode(self.hasher.clone().finalize());
-                    self.capture.lock().unwrap_or_else(|e| e.into_inner()).sha256 = Some(sha);
-                    if self.check(found).is_some() {
-                        continue;
-                    }
-                    self.done = true;
-                }
-                Some(Err(e)) => return Poll::Ready(Some(Err(Box::new(e)))),
-                Some(Ok(frame)) => {
-                    if let Ok(data) = frame.into_data() {
-                        let _ = self.feed(data);
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// Response body relayed to the agent while being hashed, captured (bounded), analysed for
 /// the log; emits the HTTP event at the end (or when dropped).
 struct RespTap {
     inner: Incoming,
     log: Option<HttpLog>,
-    scan: Option<StreamScan>,
-    scan_budget: usize,
-    findings: Vec<DlpFinding>,
+    scanner: Arc<Scanner>,
+    scan_max: usize,
     captured: Vec<u8>,
     capture_max: usize,
     total: u64,
@@ -740,15 +729,14 @@ struct RespTap {
 }
 
 impl RespTap {
-    fn new(inner: Incoming, log: HttpLog, scanner: Arc<dyn ContentScanner>, max_buf: usize, max_stored: usize) -> Self {
+    fn new(inner: Incoming, log: HttpLog, scanner: Arc<Scanner>, max_buf: usize, max_stored: usize) -> Self {
         Self {
             inner,
             log: Some(log),
-            scan: Some(StreamScan::new(scanner, "response.body")),
-            scan_budget: max_buf,
-            findings: vec![],
+            scanner,
+            scan_max: max_buf,
             captured: vec![],
-            capture_max: max_stored + 4096,
+            capture_max: max_buf.max(max_stored + 4096),
             total: 0,
             hasher: Sha256::new(),
         }
@@ -756,12 +744,12 @@ impl RespTap {
 
     fn finish(&mut self) {
         let Some(log) = self.log.take() else { return };
-        if let Some(s) = self.scan.take() {
-            self.findings.extend(s.finish());
-        }
+        // Logging only: the response is analysed (first `max_buffered_body` bytes) to mask it.
+        let n = self.captured.len().min(self.scan_max);
+        let findings = self.scanner.scan(&self.captured[..n], "response.body");
         let sha = hex::encode(self.hasher.clone().finalize());
-        let body = (self.total > 0).then(|| stored_body(&self.captured, self.total, &self.findings, log.max_stored, sha));
-        log.emit(body, std::mem::take(&mut self.findings));
+        let body = (self.total > 0).then(|| stored_body(&self.captured, self.total, &findings, log.max_stored, sha));
+        log.emit(body, findings);
     }
 }
 
@@ -790,14 +778,6 @@ impl hyper::body::Body for RespTap {
                     self.total += data.len() as u64;
                     let room = self.capture_max.saturating_sub(self.captured.len());
                     self.captured.extend_from_slice(&data[..data.len().min(room)]);
-                    if self.scan_budget > 0 {
-                        let n = data.len().min(self.scan_budget);
-                        self.scan_budget -= n;
-                        if let Some(s) = self.scan.as_mut() {
-                            let f = s.feed(&data[..n]);
-                            self.findings.extend(f);
-                        }
-                    }
                 }
                 Poll::Ready(Some(Ok(frame)))
             }

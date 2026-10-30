@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 afw-core = { workspace = true }
 afw-tls = { workspace = true }
+afw-dlp = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

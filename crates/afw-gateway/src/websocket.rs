@@ -15,15 +15,8 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::dlp::StreamScan;
 use crate::engine::Decision;
-use crate::http_pipeline::{ContentJudge, GwBody, HttpFlow, HttpLog, deny_response, full, open_upstream};
-
-/// `Sec-WebSocket-Accept` is relayed from the upstream; nothing to compute here. Kept for
-/// API symmetry with tests that need a value.
-pub fn accept_key(key: &str) -> String {
-    format!("relayed-{}", key.len())
-}
+use crate::http_pipeline::{ContentJudge, GwBody, HttpFlow, HttpLog, full, open_upstream};
 
 fn bad_gateway(text: &str) -> Response<GwBody> {
     Response::builder()
@@ -81,6 +74,9 @@ pub async fn handle(hf: Arc<HttpFlow>, mut req: Request<Incoming>, upstream: Soc
     let (parts, _) = resp.into_parts();
     Response::from_parts(parts, full(""))
 }
+
+/// Bytes of previous messages rescanned with the next one.
+const WS_CARRY: usize = 8 * 1024;
 
 enum End {
     Closed,
@@ -185,7 +181,10 @@ where
     W: AsyncWrite + Unpin,
 {
     let scanner = judge.state.store.current().scanner.clone();
-    let mut stream = StreamScan::new(scanner.clone(), "websocket.message");
+    // Tail of the previous messages, rescanned with each new message so that a value split
+    // across messages is found before the message completing it is relayed.
+    let mut carry: Vec<u8> = Vec::new();
+    let mut msg: Vec<u8> = Vec::new();
     let mut held: Vec<Vec<u8>> = Vec::new();
     let mut msg_len = 0usize;
     let mut findings = Vec::new();
@@ -218,16 +217,27 @@ where
         if msg_len > max_msg {
             return End::Cut(None);
         }
-        let found = stream.feed(&f.payload);
+        msg.extend_from_slice(&f.payload);
         held.push(f.raw);
-        if !found.is_empty() {
-            findings.extend(found);
-            let (d, blocked) = judge.judge(&findings);
-            if blocked {
-                return End::Cut(Some(d));
-            }
-        }
         if f.fin {
+            let mut window = std::mem::take(&mut carry);
+            let tail = window.len();
+            window.extend_from_slice(&msg);
+            msg.clear();
+            let found: Vec<_> = scanner
+                .scan(&window, "websocket.message")
+                .into_iter()
+                .filter(|x| x.end > tail)
+                .collect();
+            if !found.is_empty() {
+                findings.extend(found);
+                let (d, blocked) = judge.judge(&findings);
+                if blocked {
+                    return End::Cut(Some(d));
+                }
+            }
+            let keep = window.len().min(WS_CARRY);
+            carry = window.split_off(window.len() - keep);
             for raw in held.drain(..) {
                 if uw.write_all(&raw).await.is_err() {
                     return End::Closed;
@@ -239,9 +249,4 @@ where
             msg_len = 0;
         }
     }
-}
-
-/// Denial before the upgrade (kept for symmetry with the HTTP pipeline).
-pub fn denied(d: &Decision, destination: &str) -> Response<GwBody> {
-    deny_response(d.deny_message(destination))
 }

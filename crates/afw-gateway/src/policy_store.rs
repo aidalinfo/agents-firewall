@@ -10,13 +10,13 @@ use std::sync::{Arc, RwLock};
 use afw_core::InstalledPolicy;
 use chrono::Utc;
 
-use crate::dlp::{ContentScanner, build_scanner};
+use crate::dlp::{Scanner, build_scanner};
 use crate::engine::CompiledPolicy;
 
 /// Everything derived from one installed policy.
 pub struct ActivePolicy {
     pub engine: CompiledPolicy,
-    pub scanner: Arc<dyn ContentScanner>,
+    pub scanner: Arc<Scanner>,
     pub installed: Option<InstalledPolicy>,
 }
 

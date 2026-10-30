@@ -35,9 +35,11 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Run(a)) => run(a).await,
         Some(Cmd::SealPolicy(a)) => {
-            let doc: afw_core::policy::PolicyDocument = serde_json::from_slice(&std::fs::read(&a.document)?)?;
+            let doc: afw_core::policy::PolicyDocument =
+                serde_json::from_slice(&std::fs::read(&a.document)?)?;
             let sealed = afw_core::InstalledPolicy::new(a.revision, "afw-gateway seal-policy", doc);
-            afw_engine::CompiledPolicy::compile(&sealed, chrono::Utc::now()).map_err(|e| anyhow::anyhow!("policy does not compile: {e}"))?;
+            afw_engine::CompiledPolicy::compile(&sealed, chrono::Utc::now())
+                .map_err(|e| anyhow::anyhow!("policy does not compile: {e}"))?;
             let json = serde_json::to_vec_pretty(&sealed)?;
             match a.out {
                 Some(p) => std::fs::write(p, json)?,
@@ -61,7 +63,11 @@ async fn run(a: RunArgs) -> anyhow::Result<()> {
             .filter(|p| !p.as_os_str().is_empty())
             .map(std::fs::read_to_string)
             .transpose()?;
-        let name = a.gateway_name.clone().filter(|n| !n.is_empty()).unwrap_or_else(hostname);
+        let name = a
+            .gateway_name
+            .clone()
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(hostname);
         match register(url, token, &name, ca, &a.state_dir).await {
             Ok(id) => tracing::info!(%id, "registered with the console"),
             Err(e) => {

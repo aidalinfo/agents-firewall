@@ -32,7 +32,10 @@ async fn read_response<S: tokio::io::AsyncRead + Unpin>(s: &mut S) {
             let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
             let len: usize = head
                 .lines()
-                .find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse().unwrap()))
+                .find_map(|l| {
+                    l.strip_prefix("content-length:")
+                        .map(|v| v.trim().parse().unwrap())
+                })
                 .unwrap_or(0);
             if buf.len() >= end + 4 + len {
                 assert!(head.starts_with("http/1.1 200"), "{head}");
@@ -56,9 +59,13 @@ async fn latency_direct_vs_gateway() {
     let mut handshake = Vec::new();
     for _ in 0..N {
         let t = Instant::now();
-        let tcp = tokio::net::TcpStream::connect(h.upstream_addr).await.unwrap();
+        let tcp = tokio::net::TcpStream::connect(h.upstream_addr)
+            .await
+            .unwrap();
         tcp.set_nodelay(true).unwrap();
-        let mut s = tls_with(tcp, "allowed.test", &up_ca, vec![b"http/1.1".to_vec()]).await.unwrap();
+        let mut s = tls_with(tcp, "allowed.test", &up_ca, vec![b"http/1.1".to_vec()])
+            .await
+            .unwrap();
         s.write_all(REQ).await.unwrap();
         read_response(&mut s).await;
         direct.push(t.elapsed());
@@ -76,11 +83,18 @@ async fn latency_direct_vs_gateway() {
     let (hs50, hs95) = pct(handshake);
     println!("new connection   gateway TLS handshake p50 {hs50:.2} ms  p95 {hs95:.2} ms");
     println!("new connection   direct  p50 {d50:.2} ms  p95 {d95:.2} ms");
-    println!("new connection   gateway p50 {g50:.2} ms  p95 {g95:.2} ms  (overhead p50 {:.2} ms)", g50 - d50);
+    println!(
+        "new connection   gateway p50 {g50:.2} ms  p95 {g95:.2} ms  (overhead p50 {:.2} ms)",
+        g50 - d50
+    );
 
     // Keep-alive: request overhead only.
-    let tcp = tokio::net::TcpStream::connect(h.upstream_addr).await.unwrap();
-    let mut ds = tls_with(tcp, "allowed.test", &up_ca, vec![b"http/1.1".to_vec()]).await.unwrap();
+    let tcp = tokio::net::TcpStream::connect(h.upstream_addr)
+        .await
+        .unwrap();
+    let mut ds = tls_with(tcp, "allowed.test", &up_ca, vec![b"http/1.1".to_vec()])
+        .await
+        .unwrap();
     let tcp = h.transparent(AGENT_IP, h.upstream_addr).await;
     let mut gs = h.tls(tcp, "allowed.test").await.unwrap();
     let mut direct = Vec::new();
@@ -98,7 +112,10 @@ async fn latency_direct_vs_gateway() {
     let (d50, d95) = pct(direct);
     let (g50, g95) = pct(via);
     println!("keep-alive       direct  p50 {d50:.2} ms  p95 {d95:.2} ms");
-    println!("keep-alive       gateway p50 {g50:.2} ms  p95 {g95:.2} ms  (overhead p50 {:.2} ms)", g50 - d50);
+    println!(
+        "keep-alive       gateway p50 {g50:.2} ms  p95 {g95:.2} ms  (overhead p50 {:.2} ms)",
+        g50 - d50
+    );
     let (p50, p95) = h.gw.state.metrics.percentiles();
     println!("decision latency p50 {p50} us  p95 {p95} us");
 }

@@ -105,7 +105,12 @@ impl HttpFlow {
         Self::with_alpn(flow, tls, upstream, false)
     }
 
-    pub fn with_alpn(flow: Arc<Flow>, tls: bool, upstream: Option<SocketAddr>, agent_h2: bool) -> Arc<Self> {
+    pub fn with_alpn(
+        flow: Arc<Flow>,
+        tls: bool,
+        upstream: Option<SocketAddr>,
+        agent_h2: bool,
+    ) -> Arc<Self> {
         Arc::new(Self {
             flow,
             tls,

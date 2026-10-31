@@ -5,7 +5,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const TOKEN = process.env.AFW_E2E_TOKEN ?? 'afw-e2e-admin-token-0123456789'
-const OUT = process.env.AFW_E2E_SCREENSHOTS_DIR ?? '../docs/screenshots'
+const OUT = process.env.AFW_E2E_SCREENSHOTS_DIR ?? 'docs/screenshots'
 
 test.skip(!process.env.AFW_E2E_SCREENSHOTS, 'screenshots only on demand')
 
@@ -25,8 +25,8 @@ test('console screenshots on the real API', async ({ page }) => {
   await page.goto('/login')
   await shot(page, 'connexion')
   await login(page)
-  await page.getByTestId('flow-row-00000000-0000-4000-8000-00000000f003').click()
-  await page.waitForTimeout(500)
+  await page.goto('/?flow=00000000-0000-4000-8000-00000000f003')
+  await page.waitForTimeout(800)
   await shot(page, 'journal-sombre')
   await page.goto('/flows/00000000-0000-4000-8000-00000000f002')
   await page.waitForTimeout(800)

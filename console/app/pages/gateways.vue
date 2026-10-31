@@ -173,6 +173,11 @@ onMounted(() => void refreshShell())
                 {{ t('gateways.bufferValue', { q: g.stats.events_queued, d: g.stats.events_dropped }) }}
               </dd>
               <dt class="text-text3">
+                {{ t('gateways.latency') }}
+              </dt><dd class="m-0">
+                p50 {{ g.stats.p50_ms }} ms · p95 {{ g.stats.p95_ms }} ms
+              </dd>
+              <dt class="text-text3">
                 {{ t('gateways.uptime') }}
               </dt><dd class="m-0">
                 {{ uptime(g.stats.uptime_secs) }}

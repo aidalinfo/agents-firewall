@@ -1628,6 +1628,11 @@ export interface components {
             /** Format: uint64 */
             bytes_out: number;
             /**
+             * @description The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+             * @default false
+             */
+            content_inspected: boolean;
+            /**
              * @description Names of the data classes detected in the flow.
              * @default []
              */
@@ -1664,6 +1669,11 @@ export interface components {
             bytes_in: number;
             /** Format: uint64 */
             bytes_out: number;
+            /**
+             * @description The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+             * @default false
+             */
+            content_inspected: boolean;
             conversation_id?: string | null;
             correlation_confidence?: components["schemas"]["Confidence"] | null;
             /**
@@ -1797,6 +1807,11 @@ export interface components {
             /** Format: uint64 */
             bytes_out: number;
             /**
+             * @description The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+             * @default false
+             */
+            content_inspected: boolean;
+            /**
              * @description Names of the data classes detected in the flow.
              * @default []
              */
@@ -1918,6 +1933,18 @@ export interface components {
             events_queued: number;
             /** Format: uint64 */
             flows_total: number;
+            /**
+             * Format: double
+             * @description Latency added by the gateway (decision, inspection, analysis; upstream time excluded) over recent requests and connections, median, in milliseconds. Absent from older gateways.
+             * @default 0
+             */
+            p50_ms: number;
+            /**
+             * Format: double
+             * @description Same, 95th percentile, in milliseconds.
+             * @default 0
+             */
+            p95_ms: number;
             /** Format: uint64 */
             uptime_secs: number;
         };

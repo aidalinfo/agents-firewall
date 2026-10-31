@@ -153,7 +153,7 @@
     "noExpiryLong": "no expiry",
     "notApplied": "nothing applies before install",
     "option": {
-      "exact": "exact domain · new object",
+      "exact": "exact domain",
       "group": "zone group (created if needed)",
       "wildcard": "wildcard"
     },
@@ -349,7 +349,8 @@
     "truncated": "truncated for display · actual size {size}",
     "uncertain": "Uncertain attribution",
     "untrusted": "untrusted input · {source}",
-    "why": "Why this verdict"
+    "why": "Why this verdict",
+    "notInspected": "content not inspected (TCP relay)"
   },
   "form": {
     "comment": "Comment",

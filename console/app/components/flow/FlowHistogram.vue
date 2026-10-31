@@ -32,7 +32,8 @@ const segments = computed(() => {
 const points = computed(() => props.stats?.points ?? [])
 const max = computed(() => Math.max(1, ...points.value.map(h => h.allow + h.deny + h.observed)))
 const bars = computed(() => points.value.map((h) => {
-  const scale = 60 / Math.max(max.value, 60)
+  // Tallest bucket fills the 60 px of the chart.
+  const scale = 60 / max.value
   const dim = (props.segment === 'deny' && h.deny === 0) || (props.segment === 'observed' && h.observed === 0)
   return { ...h, ok: Math.round(h.allow * scale), ko: Math.round(h.deny * scale), obs: Math.round(h.observed * scale), dim, tip: t('journal.histTip', { time: fmt.hm(h.at), ok: h.allow, ko: h.deny, obs: h.observed }) }
 }))

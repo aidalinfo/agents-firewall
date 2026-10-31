@@ -121,3 +121,13 @@ describe('« Autoriser » journey (mock API)', () => {
     expect((await api.policyStatus()).latest_revision).toBe(43)
   })
 })
+
+describe('content not inspected (raw TCP relay)', () => {
+  it('says so in the flow detail', async () => {
+    const page = await mountSuspended(JournalPage)
+    await until(() => page.find(`[data-testid="flow-row-${FLOW_IDS.ssh}"]`).exists(), 'flow rows')
+    await page.find(`[data-testid="flow-row-${FLOW_IDS.ssh}"]`).trigger('click')
+    await until(() => page.find('[data-testid="not-inspected"]').exists(), 'badge')
+    expect(page.find('[data-testid="not-inspected"]').text()).toBe('contenu non inspecté (relais TCP)')
+  })
+})

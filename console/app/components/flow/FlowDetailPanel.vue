@@ -87,6 +87,7 @@ const protoLabel = computed(() => {
   if (!f) return ''
   const parts = [proto.value.toUpperCase()]
   if (f.tls_inspected) parts.push(t('flow.decrypted'))
+  if (!f.content_inspected) parts.push(t('flow.notInspected'))
   else if (f.app === 'ssh' || f.app === 'other') parts.push(t('flow.notDecrypted'))
   if (f.internal) parts.push(t('flow.internal'))
   if (f.llm_provider) parts.push(t('flow.llmProvider'))
@@ -264,6 +265,11 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
             >{{ agentName }}</NuxtLink><span class="text-text3">@{{ zoneName }}</span>
             → {{ flow.domain ?? dst.host }}:{{ dst.port }} · {{ proto }} · ↑ {{ fmt.bytes(flow.bytes_out) }} ↓ {{ fmt.bytes(flow.bytes_in) }}
           </span>
+          <span
+            v-if="!flow.content_inspected"
+            class="self-start rounded-[5px] bg-sub px-[7px] py-px font-mono text-[11px] font-semibold text-text2"
+            data-testid="not-inspected"
+          >{{ t('flow.notInspected') }}</span>
         </div>
 
         <div class="flex flex-col overflow-hidden rounded-lg border border-line bg-code">

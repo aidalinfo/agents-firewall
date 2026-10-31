@@ -116,6 +116,8 @@ Le contrat `docs/api/openapi.yaml` (L0, L7a/b/c) et l'API Rust existent. La revu
 5. **Données absentes du contrat : écrans adaptés, contrat inchangé.** Aucune donnée indispensable à un
    écran ne manquait ; les éléments de la maquette sans source dans le contrat sont retirés ou remplacés
    par ce que l'API fournit, sans modifier l'API :
+   - détail de flux : `FlowEvent.content_inspected = false` (relais TCP brut, TLS non inspecté) s'affiche
+     « contenu non inspecté (relais TCP) » ; la latence p50/p95 des passerelles vient de `GatewayStats` ;
    - journal : le segment « alertes » devient « observés » (`FlowStats.observed`) ; la colonne méthode +
      chemin montre le protocole et la destination (le chemin est dans le détail, `FlowDetail.http`) ;
    - corrélation : confiance + conversation + appel d'outil (`tool_call`) ; le titre de conversation, la

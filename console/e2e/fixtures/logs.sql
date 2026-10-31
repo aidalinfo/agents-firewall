@@ -33,7 +33,7 @@ BEGIN
                                    'layer', p_layer, 'reason', CASE WHEN p_rule IS NULL THEN 'no rule matched' ELSE 'matched' END,
                                    'revision', 1),
     'internal', p_internal, 'llm_provider', p_llm, 'observed', p_observed,
-    'tls_inspected', p_app = 'https' AND NOT p_llm, 'data_classes', '[]'::jsonb);
+    'tls_inspected', p_app = 'https' AND NOT p_llm, 'content_inspected', p_app = 'http' OR (p_app = 'https' AND NOT p_llm), 'data_classes', '[]'::jsonb);
   INSERT INTO flows (id, gateway_id, agent_id, zone_id, src_ip, dst_ip, dst_port, protocol, app, dest, domain, sni,
                      search, started_at, verdict, rule_id, internal, observed, bytes_out, bytes_in, event, tool_call_id, confidence)
   VALUES (p_id, '00000000-0000-4000-8000-0000000000a1', p_agent, p_zone, p_src::inet, p_dst_ip::inet, p_port, 'tcp', p_app,
@@ -95,4 +95,13 @@ VALUES ('00000000-0000-4000-8000-0000000000e1', now() - interval '6 minutes', 'c
           'at', to_char((now() - interval '6 minutes') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'kind', 'cloud_metadata', 'severity', 'critical', 'agent_id', '00000000-0000-4000-8000-000000000503',
           'summary', 'acme-bot a tenté de joindre 169.254.169.254 (métadonnées cloud)', 'details', '{}'::jsonb))
+ON CONFLICT DO NOTHING;
+
+-- Rule hit counters reported by gw-demo-01 (EF-06), for the rule base usage column.
+INSERT INTO rule_hits (rule_id, gateway_id, revision, hits, last_hit_at) VALUES
+  ('00000000-0000-4000-8000-000000000604', '00000000-0000-4000-8000-0000000000a1', 1, 1240, now() - interval '2 minutes'),
+  ('00000000-0000-4000-8000-000000000611', '00000000-0000-4000-8000-0000000000a1', 1, 312, now() - interval '9 minutes'),
+  ('00000000-0000-4000-8000-000000000612', '00000000-0000-4000-8000-0000000000a1', 1, 2875, now() - interval '1 minute'),
+  ('00000000-0000-4000-8000-000000000621', '00000000-0000-4000-8000-0000000000a1', 1, 640, now() - interval '3 minutes'),
+  ('00000000-0000-4000-8000-000000000601', '00000000-0000-4000-8000-0000000000a1', 1, 4, now() - interval '6 minutes')
 ON CONFLICT DO NOTHING;

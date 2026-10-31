@@ -32,24 +32,24 @@ Playwright (conteneur `mcr.microsoft.com/playwright` épinglé), Postgres 17, im
 
 ## Tâches
 
-- [ ] 1. `openapi-typescript` + `openapi-fetch` ; `pnpm gen:api` ; test « schema.d.ts à jour » (échoue si différent).
-- [ ] 2. `types.ts` = alias ; `AfwApi` aligné sur les opérations du contrat (lectures avec session optionnelle,
+- [x] 1. `openapi-typescript` + `openapi-fetch` ; `pnpm gen:api` ; test « schema.d.ts à jour » (échoue si différent).
+- [x] 2. `types.ts` = alias ; `AfwApi` aligné sur les opérations du contrat (lectures avec session optionnelle,
        écritures avec session requise, publication 201|202, installations `{installs}`, pages sans total…).
-- [ ] 3. TDD `http.ts` sur `openapi-fetch` : en-têtes (`X-Afw-Interface`, bearer, `X-Afw-Session`), problem+json
+- [x] 3. TDD `http.ts` sur `openapi-fetch` : en-têtes (`X-Afw-Interface`, bearer, `X-Afw-Session`), problem+json
        → `ApiError` (401 → retour connexion, 409, 423 « verrouillé par X »), 202 → approbation, SSE (événement nommé,
        `lagged`, reconnexion).
-- [ ] 4. TDD du mock réécrit (formes du contrat, validées par les types générés) : allow-from-log → publication →
+- [x] 4. TDD du mock réécrit (formes du contrat, validées par les types générés) : allow-from-log → publication →
        installation ; verrou 423 ; approbation 202.
-- [ ] 5. Pages adaptées au contrat (journal, détail de flux, règles, objets, agents, flux internes, alertes,
+- [x] 5. Pages adaptées au contrat (journal, détail de flux, règles, objets, agents, flux internes, alertes,
        révisions, audit, passerelles, connexion OIDC PKCE via `/auth/oidc/config`).
-- [ ] 6. Formulaires EF-44 : objet, service, classe de données, zone, règle, section, agent (zone), règle
+- [x] 6. Formulaires EF-44 : objet, service, classe de données, zone, règle, section, agent (zone), règle
        d'inspection, canaux d'alerte, jetons d'API ; erreurs de l'API affichées telles quelles.
-- [ ] 7. Bannières : approbation en attente (202), verrou (423), conflit (409).
-- [ ] 8. e2e Playwright : Postgres + afw-api (image locale) + console (mode http) ; politique de démo importée,
+- [x] 7. Bannières : approbation en attente (202), verrou (423), conflit (409).
+- [x] 8. e2e Playwright : Postgres + afw-api (image locale) + console (mode http) ; politique de démo importée,
        flux refusé inséré par fixture SQL ; parcours refus → Autoriser → publier → installer ; révision vérifiée.
        Plus un test « contrat » qui appelle chaque méthode de `createHttpApi` contre l'API réelle.
-- [ ] 9. Workflow `.github/workflows/console-e2e.yml` séparé (conteneur Playwright épinglé).
-- [ ] 10. Captures `console/docs/screenshots/` sur l'API réelle avec données de démo ; ADR 0014 complété ; PR.
+- [x] 9. Workflow `.github/workflows/console-e2e.yml` séparé (conteneur Playwright épinglé).
+- [x] 10. Captures `console/docs/screenshots/` sur l'API réelle avec données de démo ; ADR 0014 complété ; PR.
 
 ## Critères d'acceptation
 

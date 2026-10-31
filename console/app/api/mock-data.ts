@@ -205,7 +205,7 @@ export function seedDocument(): PolicyDocument {
 }
 
 export function seedGateways(now: number): Gateway[] {
-  const stats = (flows: number, denied: number) => ({ uptime_secs: 86_400 * 6, active_flows: 12, flows_total: flows, denied_total: denied, bytes_in: flows * 9_000, bytes_out: flows * 2_400, events_queued: 0, events_dropped: 0 })
+  const stats = (flows: number, denied: number) => ({ uptime_secs: 86_400 * 6, active_flows: 12, flows_total: flows, denied_total: denied, bytes_in: flows * 9_000, bytes_out: flows * 2_400, events_queued: 0, events_dropped: 0, p50_ms: 1.2, p95_ms: 3.8 })
   return [
     { id: GW_IDS.hermes01, name: 'gw-hermes-01', hostname: 'hermes-01.interne.lan', status: 'online', version: '0.1.0', active_revision: 42, desired_revision: 42, last_seen_at: new Date(now - 4_000).toISOString(), registered_at: new Date(now - 30 * 86_400_000).toISOString(), ca_fingerprint: 'sha256:4f2a…9c1d', stats: stats(48_210, 312) },
     { id: GW_IDS.hermes02, name: 'gw-hermes-02', hostname: 'hermes-02.interne.lan', status: 'online', version: '0.1.0', active_revision: 42, desired_revision: 42, last_seen_at: new Date(now - 7_000).toISOString(), registered_at: new Date(now - 30 * 86_400_000).toISOString(), ca_fingerprint: 'sha256:4f2a…9c1d', stats: stats(12_877, 95) },
@@ -282,6 +282,8 @@ function flowOf(s: FlowSeed, now: number, ruleNumber: (id: Uuid | null) => numbe
     llm_provider: !!s.llm,
     observed: !!s.observed,
     tls_inspected: s.app === 'https' && !s.llm,
+    // Raw TCP relays (internal SSH, metadata-only flows) carry no analysed content.
+    content_inspected: s.app === 'http' || (s.app === 'https' && !s.llm),
     data_classes: [],
   }
 }

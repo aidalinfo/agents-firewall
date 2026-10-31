@@ -153,7 +153,7 @@
     "noExpiryLong": "sans expiration",
     "notApplied": "rien n’est appliqué avant installation",
     "option": {
-      "exact": "domaine exact · nouvel objet",
+      "exact": "domaine exact",
       "group": "groupe de la zone (créé au besoin)",
       "wildcard": "joker"
     },
@@ -349,7 +349,8 @@
     "truncated": "tronqué à l’affichage · taille réelle {size}",
     "uncertain": "Rattachement incertain",
     "untrusted": "entrée non fiable · {source}",
-    "why": "Pourquoi ce verdict"
+    "why": "Pourquoi ce verdict",
+    "notInspected": "contenu non inspecté (relais TCP)"
   },
   "form": {
     "comment": "Commentaire",

@@ -6,7 +6,7 @@
 scenario_begin 07-llm-exempte "Secret vers le fournisseur LLM : passe, masqué dans le journal"
 require_demo laurent-bot
 since="$(now_iso)"
-key="AKIA$(LC_ALL=C tr -dc 'A-Z2-7' </dev/urandom | head -c 16)"
+key="AKIA$(rand_chars 'A-Z2-7' 16)"
 out="$(agent_sh laurent-bot "curl -sS -w '\nHTTP %{http_code}' --max-time 15 -H 'content-type: application/json' -H 'anthropic-version: 2023-06-01' -d '{\"model\":\"demo\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Explain this config: aws_access_key_id=$key\"}]}' https://api.anthropic.com/v1/messages" 2>&1 || true)"
 code="$(printf '%s' "$out" | sed -n 's/^HTTP \([0-9]*\)$/\1/p')"
 evidence "laurent-bot -> api.anthropic.com/v1/messages with a secret in the prompt: HTTP $code"

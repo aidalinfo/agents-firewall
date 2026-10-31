@@ -43,7 +43,7 @@ spec:
             - { name: AFW_LISTEN, value: "0.0.0.0:8080" }
             - { name: AFW_GW_LISTEN, value: "0.0.0.0:8443" }
             - { name: AFW_PUBLIC_URL, value: {{ .Values.api.publicUrl | quote }} }
-            - name: AFW_PUBLIC_HOSTNAMES
+            - name: AFW_GW_SERVER_NAMES
               value: {{ printf "%s,%s-api-gw,%s-api-gw.%s.svc" .Values.api.publicHostnames $fullname $fullname .Release.Namespace | trimPrefix "," | quote }}
             - { name: AFW_STATE_DIR, value: /var/lib/afw-api }
             - { name: AFW_CONSOLE_CA_EXPORT, value: /var/lib/afw-api/public/console-ca.crt }

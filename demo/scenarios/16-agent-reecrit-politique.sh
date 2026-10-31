@@ -29,11 +29,17 @@ case "$st" in
   *) fail "path traversal reached the API sessions route (HTTP $st)" ;;
 esac
 denied_by_gw acme-bot "ingestion from another zone" "--noproxy '*' -X POST -d '{}' http://$api_ip:8080/api/v1/ingest/tool-calls"
-agent_sh laurent-bot "curl -s -k -o /dev/null --noproxy '*' --max-time 5 https://$api_ip:8443/gw/v1/policy" >/dev/null 2>&1 &&
-  fail "the gateway endpoint :8443 is reachable from an agent"
-evidence "gateway endpoint $api_ip:8443 unreachable"
-agent_sh laurent-bot "nc -z -w 3 10.76.0.5 5432" >/dev/null 2>&1 && fail "the control-plane database is reachable from an agent"
-evidence "control-plane database 10.76.0.5:5432 unreachable"
+# The gateway endpoint: no answer at all, or the gateway's own denial (TLS terminated by the gateway).
+denied_by_gw laurent-bot "gateway endpoint :8443" "-k --noproxy '*' https://$api_ip:8443/gw/v1/policy"
+# Every TCP connection is accepted by the gateway's transparent listener before the decision (`nc -z` always
+# "succeeds"): send a PostgreSQL SSLRequest, a reachable server answers 'S' or 'N'. Control: the LAN database
+# (internal, monitored) answers.
+sslreq='printf "\\000\\000\\000\\010\\004\\322\\026\\057"'
+lan="$(agent_sh laurent-bot "$sslreq | nc -w 3 $INTERNAL_DB_IP 5432 | head -c 1" 2>/dev/null || true)"
+[ -n "$lan" ] || fail "control: the LAN database $INTERNAL_DB_IP:5432 did not answer the SSLRequest (probe broken)"
+cp="$(agent_sh laurent-bot "$sslreq | nc -w 3 10.76.0.5 5432 | head -c 1" 2>/dev/null || true)"
+[ -z "$cp" ] || fail "the control-plane database is reachable from an agent (answered '$cp')"
+evidence "control-plane database 10.76.0.5:5432: no answer (LAN database control answered '$lan')"
 if [ -n "$(dc ps -q --status running daniel-bot 2>/dev/null)" ]; then
   denied_by_gw daniel-bot "plugin token on an admin route" "--noproxy '*' -X POST -H \"Authorization: Bearer \$AFW_AGENT_TOKEN\" http://$api_ip:8080/api/v1/sessions"
 fi

@@ -69,8 +69,11 @@ die() { printf '%serror:%s %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 now_ms() { python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+# rand_chars <tr set> <n>: n random characters. `head` closes the pipe early, so `tr` dies of SIGPIPE: with
+# `set -o pipefail` that status must not abort the caller.
+rand_chars() { { LC_ALL=C tr -dc "$1" </dev/urandom 2>/dev/null || true; } | head -c "$2"; }
 # shellcheck disable=SC2120 # optional length argument
-rand_hex() { LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c "${1:-12}"; }
+rand_hex() { rand_chars 'a-f0-9' "${1:-12}"; }
 
 # ---------------------------------------------------------------------------------------------------
 # Docker / compose
@@ -368,6 +371,12 @@ attempt() {
   out="$(agent_sh "$1" "$3" 2>&1)" || rc=$?
   evidence "$2: exit $rc, $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
   return 0
+}
+# http_code_cmd <curl args...>: shell command (run in an agent) printing the HTTP status of a request. Through
+# the explicit proxy an HTTPS denial happens on CONNECT (curl's http_code is then 000): the CONNECT status is
+# printed instead.
+http_code_cmd() {
+  printf '%s' "curl -s -o /dev/null -w '%{http_code} %{http_connect}' --max-time 10 $* | awk '{print (\$1 == \"000\" && \$2 != \"000\") ? \$2 : \$1}'"
 }
 # positive_control <agent>: an allowed destination must work, otherwise a "blocked" result means nothing.
 positive_control() {

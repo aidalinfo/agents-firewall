@@ -53,6 +53,11 @@ async fn main() -> anyhow::Result<()> {
             afw_tls::ConsolePki::load_or_create(&gw.pki_dir)
                 .with_context(|| format!("console PKI in {}", gw.pki_dir.display()))?,
         );
+        if let Some(path) = &gw.console_ca_export {
+            afw_api::gateways::export_console_ca(&pki, path)
+                .with_context(|| format!("AFW_CONSOLE_CA_EXPORT {}", path.display()))?;
+            tracing::info!(path = %path.display(), "console CA certificate exported");
+        }
         state.gateways.pki = Some(pki.clone());
         let tls = pki
             .server_config(&gw.server_names)

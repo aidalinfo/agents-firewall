@@ -4,7 +4,7 @@
 #   deploy/docker/isolation-test/run.sh          # build, run every check, tear down
 #   KEEP=1 deploy/docker/isolation-test/run.sh   # leave the stack up for inspection
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit
 dc() { docker compose -f docker-compose.yml "$@"; }
 pass=0; fail=0
 check() { # name, expected (ok|ko), command...

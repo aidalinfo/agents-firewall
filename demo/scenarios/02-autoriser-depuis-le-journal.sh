@@ -7,7 +7,7 @@
 scenario_begin 02-autoriser-depuis-le-journal "Un refus légitime corrigé depuis le journal en < 2 min"
 require_demo acme-bot
 since="$(now_iso)"
-call='curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.github.com/zen'
+call="$(http_code_cmd https://api.github.com/zen)"
 
 t0="$(now_ms)"
 code="$(agent_sh acme-bot "$call" || true)"

@@ -302,9 +302,9 @@ pub fn tools() -> Vec<ToolDef> {
         ),
         t(
             "list_audit",
-            r("Audit log entries (ascending sequence)."),
+            r("Audit log entries, most recent first (order=asc for oldest first)."),
             obj(
-                json!({"from_seq": int("First sequence"), "actor": s("Actor"), "action": s("Action"), "interface": {"type": "string", "enum": ["ui", "cli", "mcp", "api", "system"]}, "limit": int("Page size"), "cursor": s("Cursor")}),
+                json!({"from_seq": int("First sequence"), "actor": s("Actor"), "action": s("Action"), "interface": {"type": "string", "enum": ["ui", "cli", "mcp", "api", "system"]}, "order": {"type": "string", "enum": ["desc", "asc"]}, "limit": int("Page size"), "cursor": s("Cursor")}),
                 &[],
             ),
             false,
@@ -603,10 +603,13 @@ async fn run(c: &AfwClient, name: &str, a: Args) -> Result<Outcome, Fail> {
             }
             None => Outcome::text("No open session.".into()),
         },
-        "discard_session" => {
-            let id = c.ensure_session(false).await?;
-            Outcome::ok(&c.discard_session(id).await?)
-        }
+        "discard_session" => match c.ensure_session(false).await {
+            Ok(id) => Outcome::ok(&c.discard_session(id).await?),
+            Err(afw_client::ClientError::NoSession) => {
+                Outcome::text("No open session: nothing to discard.".into())
+            }
+            Err(e) => return Err(e.into()),
+        },
         "publish_session" => {
             let comment = a.req("comment")?;
             let id = c.ensure_session(false).await?;
@@ -782,6 +785,7 @@ async fn run(c: &AfwClient, name: &str, a: Args) -> Result<Outcome, Fail> {
                 action: a.str("action"),
                 cursor: a.str("cursor"),
                 limit: a.u32("limit")?,
+                order: a.word("order")?,
                 ..Default::default()
             })
             .await?,

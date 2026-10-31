@@ -209,6 +209,9 @@ pub struct AuditQuery {
     pub cursor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// `None` = the API default (most recent first).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<afw_core::api::SortOrder>,
 }
 
 /// `GET /internal-map` filters.
@@ -366,11 +369,17 @@ impl AfwClient {
         *self.session.write().expect("session lock") = id;
     }
 
-    /// Active session, else the caller's open session on the API, else (when `open`) a new one.
-    /// The session found becomes the active one.
+    /// Active session when it is still open on the API, else the caller's open session, else
+    /// (when `open`) a new one. The session found becomes the active one. A remembered session
+    /// closed elsewhere (discarded by an administrator, published after an approval) is
+    /// forgotten: writes never target a closed session.
     pub async fn ensure_session(&self, open: bool) -> Result<Uuid> {
         if let Some(id) = self.session() {
-            return Ok(id);
+            match self.get_session(id).await {
+                Ok(s) if s.state == afw_core::api::SessionState::Open => return Ok(id),
+                Ok(_) | Err(ClientError::Api { status: 404, .. }) => self.forget_session(id),
+                Err(e) => return Err(e),
+            }
         }
         if let Some(s) = self.open_session_of_caller().await? {
             self.set_session(Some(s.id));

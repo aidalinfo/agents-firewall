@@ -32,7 +32,11 @@ Le serveur s'authentifie auprès de l'API avec un jeton de rôle `mcp_agent`, do
 }
 ```
 
-**HTTP** (*streamable HTTP*, chemin `/mcp`) : `afw-mcp http [--listen 127.0.0.1:8765]` (`AFW_MCP_LISTEN`). Quiconque atteint ce point d'accès agirait comme l'agent agréé : il exige donc le jeton d'écoute `AFW_MCP_LISTEN_TOKEN` (16 caractères au moins), que le client MCP envoie en `Authorization: Bearer …` ; sans lui le serveur refuse de démarrer, et toute requête sans le bon jeton reçoit `401`.
+**HTTP** (*streamable HTTP*, chemin `/mcp`) : `afw-mcp http [--listen 127.0.0.1:8765] [--allowed-host nom[:port]]` (`AFW_MCP_LISTEN`, `AFW_MCP_ALLOWED_HOSTS`). Quiconque atteint ce point d'accès agirait comme l'agent agréé :
+
+- le jeton d'écoute `AFW_MCP_LISTEN_TOKEN` (16 caractères au moins) est obligatoire ; le client MCP l'envoie en `Authorization: Bearer …` ; sans lui le serveur refuse de démarrer, et une requête sans le bon jeton reçoit `401` ;
+- `Host` doit être l'adresse d'écoute, `localhost` sur son port ou un hôte autorisé, et un en-tête `Origin` présent doit désigner l'un d'eux, sinon `403` (protection contre le *DNS rebinding* et les requêtes intersites) ;
+- le serveur ne fait pas de TLS : écouter hors de `127.0.0.1` affiche un avertissement ; mettre un proxy TLS devant (et l'ajouter avec `--allowed-host`).
 
 ## Outils
 
@@ -44,14 +48,27 @@ Le serveur s'authentifie auprès de l'API avec un jeton de rôle `mcp_agent`, do
 | `where_used`, `move_rule`, `get_rulebase` | « où est-il utilisé ? », déplacement, base de règles complète |
 | `open_session`, `current_session`, `discard_session`, `publish_session` | session d'édition |
 | `allow_from_log` | règle préremplie depuis un flux refusé (EF-42) |
-| `verify_policy`, `list_revisions`, `diff_revision` | vérification et révisions |
+| `verify_policy`, `list_revisions`, `diff_revision`, `revert_revision` | vérification, révisions, retour arrière (session à publier) |
 | `install_revision`, `list_installs`, `list_gateways`, `policy_status` | installation et passerelles |
 | `search_flows`, `get_flow`, `search_dns` | journal (filtres agent, zone, destination, verdict, règle, période, texte) |
 | `agent_overview`, `internal_map` | vue agent, carte des flux internes |
-| `list_alerts`, `ack_alert` | alertes |
+| `list_alerts`, `ack_alert`, `list_alert_channels` | alertes, canaux d'alerte (lecture) |
+| `list_captures`, `start_capture` | captures de paquets (le téléchargement reste humain) |
+| `get_intent_policy`, `update_intent_policy` | politique d'intention du plugin Hermes (l'API peut refuser la modification au MCP) |
 | `list_audit`, `verify_audit`, `list_approvals` | audit et approbations |
 
-Les écritures utilisent la session ouverte de l'agent, ou en ouvrent une. Aucun outil ne permet de décider une approbation ni de gérer des jetons : ces actions restent humaines.
+Les écritures utilisent la session ouverte de l'agent, ou en ouvrent une.
+
+**Exclusions volontaires**, réservées à un humain (EF-51/52) — aucune ne doit pouvoir être déclenchée par l'agent dont elles bornent le pouvoir :
+
+| Opération exclue | Raison |
+|---|---|
+| décider une approbation | l'agent validerait ses propres élargissements (EF-52) |
+| jetons d'API | il pourrait se créer d'autres identités ou élargir son rôle |
+| enregistrement de passerelles, commandes passerelle, suppression de passerelle | elles changent le point d'application de la politique |
+| enrôlement | il crée des agents et des jetons de plugin |
+| réglages globaux (`settings`) | ils s'appliquent à toutes les zones, y compris la sienne |
+| téléchargement de captures | contenu brut du trafic, consultation humaine tracée |
 
 ## Désigner l'agent agréé
 

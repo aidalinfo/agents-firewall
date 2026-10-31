@@ -53,16 +53,39 @@ et des choix sur la session d'édition, le stockage du jeton, l'enrôlement et l
 ### Serveur `afw-mcp`
 12. **Table d'outils déclarative** (pas de macros rmcp) : nom, description, schéma JSON, exécution par
     `afw-client` avec `Interface::Mcp`. Ressources de politique par outils génériques
-    (`list/get/create/update/delete_resource` avec `kind`). Pas d'outil de décision d'approbation ni
-    de gestion de jetons (réservés aux humains).
+    (`list/get/create/update/delete_resource` avec `kind`), plus révisions (dont `revert_revision`),
+    installation, journal, alertes, canaux d'alerte (lecture), captures (`list_captures`,
+    `start_capture`), politique d'intention (`get_intent_policy`, `update_intent_policy` : l'API
+    refuse au MCP ce qui lui est interdit), audit.
+    **Exclusions volontaires** (réservées à un humain, EF-51/52) : aucune de ces opérations ne doit
+    pouvoir être déclenchée par l'agent dont elles bornent le pouvoir.
+    - décision d'approbation (`approvals/{id}/decision`) : l'agent validerait ses propres
+      élargissements (EF-52) ;
+    - jetons d'API (`tokens`) : l'agent pourrait se créer d'autres identités ou élargir son rôle ;
+    - enregistrement de passerelles (`registration-tokens`), commandes passerelle et suppression de
+      passerelle : ils changent le point d'application de la politique, pas la politique ;
+    - enrôlement (`enrollments`) : il crée des agents et des jetons de plugin ;
+    - réglages globaux (`settings` : réseaux internes, rétention) : ils s'appliquent à toutes les zones,
+      y compris celle de l'agent ;
+    - téléchargement des captures : contenu brut du trafic, consultation humaine tracée.
 13. **Aucun contrôle d'autorisation côté MCP** : l'API est l'autorité (EF-51/52). Les refus sont rendus
     lisibles : 403 → résultat d'outil en erreur expliquant la délégation et « ne pas réessayer » ;
     publication 202 → « PENDING HUMAN APPROVAL ». Les descriptions des outils d'écriture et les
     instructions du serveur rappellent que l'agent ne peut jamais modifier sa propre zone.
 14. **Transport HTTP** (streamable HTTP, `/mcp`) : quiconque l'atteint agit comme l'agent agréé ; il
     exige donc un jeton d'écoute `AFW_MCP_LISTEN_TOKEN` (16 caractères au moins, comparaison à temps
-    constant) et écoute par défaut sur `127.0.0.1:8765`. Le jeton d'API ne passe jamais en argument
-    (`AFW_TOKEN` ou `--token-file`).
+    constant) et écoute par défaut sur `127.0.0.1:8765`. Contre le *DNS rebinding* et les requêtes
+    intersites d'un navigateur, `Host` doit être l'adresse d'écoute, `localhost` sur son port ou un
+    hôte autorisé (`--allowed-host`), et un `Origin` présent doit désigner l'un d'eux (sinon 403).
+    Écouter hors boucle locale sans TLS déclenche un avertissement (mettre un proxy TLS devant). Le
+    jeton d'API ne passe jamais en argument (`AFW_TOKEN` ou `--token-file`).
+15. **Secrets et fichiers de la CLI** : `afw login` lit le jeton sans écho sur un terminal (termios),
+    tel quel sur un tube ; il refuse d'envoyer le jeton en clair (`http://`) vers un hôte non local
+    sans `--insecure-http`. Les écritures de fichiers (configuration, compose) passent par un fichier
+    temporaire au nom aléatoire créé avec `create_new` directement avec le mode final (celui de
+    l'original, 0600 pour la configuration), puis renommé sur la cible d'un éventuel lien symbolique.
+    Seul un dossier créé par la CLI est passé en 0700. Tout texte venant de l'API (messages, erreurs,
+    rapports) est débarrassé des caractères de contrôle avant affichage.
 
 ## Conséquences
 - Un ajout de champ au contrat ne casse ni la CLI ni le MCP ; un renommage reste une rupture de

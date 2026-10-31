@@ -85,6 +85,12 @@ pub enum Command {
     /// Published revisions: history, detail, differences, rollback.
     #[command(subcommand)]
     Revisions(RevisionsCmd),
+    /// Installations per gateway.
+    #[command(subcommand)]
+    Installs(InstallsCmd),
+    /// Global policy settings (internal networks, body limits, retention).
+    #[command(subcommand)]
+    Settings(SettingsCmd),
     /// Install a revision on gateways and wait for each gateway's result.
     Install(InstallArgs),
     /// Gateways, registration tokens, commands.
@@ -128,7 +134,11 @@ pub enum Command {
 
 /// `afw login --url <console> [--ca-cert <pem>]`: the global flags give the URL and CA.
 #[derive(Args, Debug)]
-pub struct LoginArgs {}
+pub struct LoginArgs {
+    /// Accept an http:// console URL that is not on this machine (the token travels in clear).
+    #[arg(long = "insecure-http")]
+    pub insecure_http: bool,
+}
 
 #[derive(Subcommand, Debug)]
 pub enum ConfigCmd {
@@ -478,6 +488,49 @@ pub struct InstallArgs {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum InstallsCmd {
+    /// List installations (state per gateway).
+    List {
+        #[arg(long)]
+        revision: Option<u64>,
+        /// Gateway (name or id).
+        #[arg(long)]
+        gateway: Option<String>,
+        #[command(flatten)]
+        paging: Paging,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SettingsCmd {
+    /// Show the settings (your session draft when a session is open).
+    Show,
+    /// Change settings in your session (only the given fields change).
+    Set {
+        #[command(flatten)]
+        file: FileArg,
+        /// Internal network (CIDR); repeatable; replaces the list.
+        #[arg(long = "internal-network")]
+        internal_networks: Vec<String>,
+        /// Maximum body buffered for inspection, in bytes.
+        #[arg(long = "max-buffered-body")]
+        max_buffered_body: Option<u64>,
+        /// Maximum body stored in the log, in bytes.
+        #[arg(long = "max-stored-body")]
+        max_stored_body: Option<u64>,
+        /// Retention of flows, in days.
+        #[arg(long = "retention-flows")]
+        retention_flows: Option<u32>,
+        /// Retention of HTTP contents, in days.
+        #[arg(long = "retention-http")]
+        retention_http: Option<u32>,
+        /// Retention of captures, in days.
+        #[arg(long = "retention-captures")]
+        retention_captures: Option<u32>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum GatewaysCmd {
     /// List gateways (status, desired and active revisions).
     List,
@@ -668,6 +721,8 @@ pub enum AuditCmd {
     },
     /// Verify the hash chain on the server.
     Verify,
+    /// Export the chain head to immutable storage now (also done periodically).
+    Anchor,
     /// Export the log as JSON lines and check the chain locally.
     Export {
         #[arg(long = "from-seq")]

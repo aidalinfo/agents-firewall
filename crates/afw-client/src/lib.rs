@@ -1014,6 +1014,11 @@ impl AfwClient {
             .await?;
         Ok(resp.bytes().await?)
     }
+    /// `POST /audit/export`: exports the chain head to immutable storage now
+    /// (`{seq, hash, at}`).
+    pub async fn anchor_audit(&self) -> Result<Value> {
+        self.json(self.request(Method::POST, "/audit/export")).await
+    }
     pub async fn list_approvals(&self, status: Option<ApprovalStatus>) -> Result<Vec<Approval>> {
         let q = FilterOnly {
             status,

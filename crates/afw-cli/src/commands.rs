@@ -16,7 +16,7 @@ use afw_core::api::{
 use afw_core::events::{AuditEntry, GatewayEvent, Severity, Verdict};
 use afw_core::policy::Track;
 use afw_core::protocol::GatewayCommand;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -24,8 +24,8 @@ use uuid::Uuid;
 use crate::Ctx;
 use crate::cli::{
     AlertsCmd, AllowArgs, ApprovalsCmd, AuditCmd, CapturesCmd, GatewaysCmd, ImportCmd, InstallArgs,
-    IntentPolicyCmd, LogFilter, LoginArgs, LogsCmd, MapArgs, Paging, Period, RevisionsCmd,
-    SessionCmd, TokensCmd,
+    InstallsCmd, IntentPolicyCmd, LogFilter, LoginArgs, LogsCmd, MapArgs, Paging, Period,
+    RevisionsCmd, SessionCmd, SettingsCmd, TokensCmd,
 };
 use crate::config::{self, Config};
 use crate::output::{col, colf, kv, scalar, table, time_cell};
@@ -47,21 +47,25 @@ fn parse_enum<T: serde::de::DeserializeOwned>(what: &str, word: &str) -> Result<
 // Login, configuration, identity
 
 pub async fn login(ctx: &mut Ctx<'_>, a: LoginArgs, stdin: &mut dyn Read) -> Result<()> {
-    let _ = a;
     let url = ctx
         .url_override()
         .or_else(|| ctx.config.url.clone())
         .ok_or_else(|| anyhow!("give the console URL: afw login --url https://<console>"))?;
     let token = match ctx.token_override() {
         Some(t) => t,
+        None if ctx.stdin_tty => {
+            write!(ctx.err, "API token (not echoed): ")?;
+            ctx.err.flush()?;
+            config::read_secret_from_tty()?
+        }
         None => {
-            writeln!(ctx.err, "API token (read from stdin, never displayed):")?;
             let mut line = String::new();
             BufReader::new(stdin).read_line(&mut line)?;
             line
         }
     };
     let token = config::validate_token(&token)?;
+    check_transport(&url, a.insecure_http)?;
     let ca_cert = ctx
         .ca_cert_override()
         .map(|p| std::path::absolute(&p).unwrap_or(p))
@@ -95,6 +99,33 @@ pub async fn login(ctx: &mut Ctx<'_>, a: LoginArgs, stdin: &mut dyn Read) -> Res
         ctx.config_path.display()
     );
     ctx.say(&msg)
+}
+
+/// The token travels in clear over `http://`: only to the local machine, unless explicitly
+/// accepted with `--insecure-http`.
+fn check_transport(url: &str, insecure: bool) -> Result<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("http://") else {
+        return Ok(());
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if let Some(v6) = host.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        host.split(':').next().unwrap_or("")
+    };
+    let local = host == "localhost"
+        || host.ends_with(".localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if local || insecure {
+        return Ok(());
+    }
+    bail!(
+        "refusing to send the API token in clear text to {host} (http://): use https://, or --insecure-http if you accept it"
+    )
 }
 
 pub fn config_show(ctx: &mut Ctx<'_>) -> Result<()> {
@@ -576,6 +607,113 @@ pub async fn install(ctx: &mut Ctx<'_>, a: InstallArgs) -> Result<i32> {
     Ok(0)
 }
 
+pub async fn installs(ctx: &mut Ctx<'_>, cmd: InstallsCmd) -> Result<()> {
+    let c = ctx.client()?;
+    let InstallsCmd::List {
+        revision,
+        gateway,
+        paging,
+    } = cmd;
+    let gateway = match gateway {
+        Some(g) => Some(c.resolve_gateway(&g).await?),
+        None => None,
+    };
+    let page = c
+        .list_installs(&InstallQuery {
+            gateway,
+            revision,
+            cursor: paging.cursor,
+            limit: paging.limit,
+        })
+        .await?;
+    if ctx.json {
+        return ctx.print_json(&page);
+    }
+    let names = Names::from_pairs(
+        c.list_gateways()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|g| (g.id.to_string(), g.name)),
+    );
+    table(
+        ctx.out,
+        &values(&page.items)?,
+        &[
+            colf("GATEWAY", move |v| names.name(&v["gateway_id"])),
+            col("REVISION", "/revision"),
+            col("STATE", "/state"),
+            colf("REQUESTED", |v| time_cell(v.get("requested_at"))),
+            col("BY", "/requested_by/name"),
+            colf("ACKED", |v| time_cell(v.get("acked_at"))),
+            col("ERROR", "/error"),
+            col("ID", "/id"),
+        ],
+    )?;
+    next_cursor(ctx, page.next_cursor.as_deref())
+}
+
+pub async fn settings(ctx: &mut Ctx<'_>, cmd: SettingsCmd) -> Result<()> {
+    match cmd {
+        SettingsCmd::Show => {
+            let c = ctx.attach_session().await?;
+            let s = c.get_settings().await?;
+            ctx.print_json(&s)
+        }
+        SettingsCmd::Set {
+            file,
+            internal_networks,
+            max_buffered_body,
+            max_stored_body,
+            retention_flows,
+            retention_http,
+            retention_captures,
+        } => {
+            let c = ctx.client()?;
+            let session = ctx.session().await?;
+            let mut v = serde_json::to_value(c.get_settings().await?)?;
+            if let Some(path) = &file.file {
+                let text = crate::resources::read_input(path)?;
+                let parsed: Value = serde_yaml::from_str(&text)
+                    .with_context(|| format!("{} is not valid JSON or YAML", path.display()))?;
+                let Value::Object(fields) = parsed else {
+                    bail!("{} must contain an object", path.display());
+                };
+                for (k, val) in fields {
+                    v[k] = val;
+                }
+            }
+            if !internal_networks.is_empty() {
+                v["internal_networks"] = json!(internal_networks);
+            }
+            if let Some(n) = max_buffered_body {
+                v["max_buffered_body"] = json!(n);
+            }
+            if let Some(n) = max_stored_body {
+                v["max_stored_body"] = json!(n);
+            }
+            for (k, val) in [
+                ("flows", retention_flows),
+                ("http", retention_http),
+                ("captures", retention_captures),
+            ] {
+                if let Some(d) = val {
+                    v["retention_days"][k] = json!(d);
+                }
+            }
+            let settings: afw_core::policy::PolicySettings =
+                serde_json::from_value(v).map_err(|e| anyhow!("invalid settings: {e}"))?;
+            let saved = c.update_settings(&settings).await?;
+            if ctx.json {
+                return ctx.print_json(&saved);
+            }
+            ctx.say(&format!(
+                "Updated settings in session {session}. Publish with: afw session publish -m <comment>"
+            ))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Gateways
 
@@ -1009,7 +1147,11 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                         let line = event_line(&ev, &agents);
                         writeln!(ctx.out, "{}", crate::output::sanitize(&line))?;
                     }
-                    Err(e) => writeln!(ctx.err, "warning: {e}")?,
+                    Err(e) => writeln!(
+                        ctx.err,
+                        "warning: {}",
+                        crate::output::sanitize(&e.to_string())
+                    )?,
                 }
                 ctx.out.flush()?;
             }
@@ -1289,6 +1431,20 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
             }
             Ok(if r.ok { 0 } else { 1 })
         }
+        AuditCmd::Anchor => {
+            let a = c.anchor_audit().await?;
+            if ctx.json {
+                ctx.print_json(&a)?;
+            } else {
+                ctx.say(&format!(
+                    "Anchored audit head: seq {} hash {} at {}.",
+                    scalar(a.get("seq")),
+                    scalar(a.get("hash")),
+                    time_cell(a.get("at"))
+                ))?;
+            }
+            Ok(0)
+        }
         AuditCmd::Export { from_seq, output } => {
             let data = c.export_audit(from_seq).await?;
             let mut entries = Vec::new();
@@ -1472,7 +1628,7 @@ pub async fn rulebase(ctx: &mut Ctx<'_>) -> Result<()> {
         ));
     }
     for (title, secs, cleanup) in layers {
-        writeln!(ctx.out, "{title}")?;
+        writeln!(ctx.out, "{}", crate::output::sanitize(&title))?;
         for sec in secs {
             if let Some(n) = sec.get("name").and_then(Value::as_str) {
                 writeln!(ctx.out, "  [{}]", crate::output::sanitize(n))?;
@@ -1581,7 +1737,11 @@ pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<i32> {
         return Ok(0);
     }
     if !ctx.json {
-        write!(ctx.out, "{}", plan.report.to_markdown())?;
+        write!(
+            ctx.out,
+            "{}",
+            crate::output::sanitize_text(&plan.report.to_markdown())
+        )?;
     }
     if !apply {
         writeln!(

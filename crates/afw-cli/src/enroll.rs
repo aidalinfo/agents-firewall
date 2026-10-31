@@ -417,15 +417,8 @@ fn docker_compose_up(ctx: &mut Ctx<'_>, file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Writes through a temporary file in the same directory, keeping the original mode.
 fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("afw-tmp");
-    std::fs::write(&tmp, data).with_context(|| format!("cannot write {}", tmp.display()))?;
-    if let Ok(m) = std::fs::metadata(path) {
-        let _ = std::fs::set_permissions(&tmp, m.permissions());
-    }
-    std::fs::rename(&tmp, path).with_context(|| format!("cannot write {}", path.display()))?;
-    Ok(())
+    crate::config::write_atomic(path, data, None)
 }
 
 /// Sets `VAR=value` in a .env file (other lines kept), mode 0600.

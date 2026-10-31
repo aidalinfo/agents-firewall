@@ -26,6 +26,7 @@ async fn afw(api: &real_api::RealApi, dir: &std::path::Path, args: &[&str]) -> O
             out: &mut out,
             err: &mut err,
             stdin: &mut stdin,
+            stdin_tty: false,
             env_token: Some(api.admin_token.clone()),
             coolify_token: None,
             docker: "docker".into(),
@@ -133,6 +134,14 @@ async fn session_object_rule_publish_diff_audit() {
     afw(&api, d, &["rulebase"]).await;
     afw(&api, d, &["verify", "--revision", "2"]).await;
     afw(&api, d, &["status"]).await;
+    afw(&api, d, &["installs", "list"]).await;
+    let st = afw(&api, d, &["settings", "show"]).await;
+    assert!(st.out.contains("internal_networks"), "{}", st.out);
+    afw(&api, d, &["settings", "set", "--retention-flows", "45"]).await;
+    afw(&api, d, &["session", "publish", "-m", "retention"]).await;
+    let st = afw(&api, d, &["--json", "settings", "show"]).await;
+    assert!(st.out.contains("45"), "{}", st.out);
+    afw(&api, d, &["audit", "anchor"]).await;
     let wu = afw(&api, d, &["where-used", "pypi"]).await;
     assert!(wu.out.contains("allow-pypi"), "{}", wu.out);
 

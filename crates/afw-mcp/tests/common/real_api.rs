@@ -39,7 +39,14 @@ pub async fn start() -> Option<RealApi> {
     .execute(&pool)
     .await
     .expect("insert admin token");
-    let app = afw_api::router(AppState::new(Config::default(), Some(pool.clone())));
+    let mut state = AppState::new(Config::default(), Some(pool.clone()));
+    // Audit anchors in a temporary directory (`afw audit anchor`).
+    let anchors = std::env::temp_dir().join(format!("afw-anchors-{name}"));
+    state.audit_export = std::sync::Arc::new(afw_api::audit::export::AuditExportConfig {
+        dir: Some(anchors),
+        ..Default::default()
+    });
+    let app = afw_api::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {

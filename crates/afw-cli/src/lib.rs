@@ -32,6 +32,8 @@ pub struct Io<'a> {
     pub out: &'a mut dyn Write,
     pub err: &'a mut dyn Write,
     pub stdin: &'a mut dyn Read,
+    /// The real standard input is a terminal: secrets are read from it without echo.
+    pub stdin_tty: bool,
     /// `AFW_TOKEN`.
     pub env_token: Option<String>,
     /// `AFW_COOLIFY_TOKEN`.
@@ -54,6 +56,7 @@ pub struct Ctx<'a> {
     client: Option<AfwClient>,
     pub coolify_token: Option<String>,
     pub docker: String,
+    pub stdin_tty: bool,
 }
 
 impl Ctx<'_> {
@@ -140,8 +143,9 @@ impl Ctx<'_> {
         Ok(())
     }
 
+    /// Prints text that may contain API data: control characters (terminal escapes) removed.
     pub fn say(&mut self, line: &str) -> Result<()> {
-        writeln!(self.out, "{line}")?;
+        writeln!(self.out, "{}", output::sanitize_text(line))?;
         Ok(())
     }
 }
@@ -165,6 +169,7 @@ pub async fn run(args: impl IntoIterator<Item = OsString>, io: Io<'_>) -> i32 {
         out,
         err,
         stdin,
+        stdin_tty,
         env_token,
         coolify_token,
         docker,
@@ -204,11 +209,12 @@ pub async fn run(args: impl IntoIterator<Item = OsString>, io: Io<'_>) -> i32 {
         client: None,
         coolify_token,
         docker,
+        stdin_tty,
     };
     match dispatch(&mut ctx, cli.command, stdin).await {
         Ok(code) => code,
         Err(e) => {
-            let _ = writeln!(ctx.err, "error: {}", error_text(&e));
+            let _ = writeln!(ctx.err, "error: {}", output::sanitize_text(&error_text(&e)));
             1
         }
     }
@@ -293,6 +299,8 @@ async fn dispatch(ctx: &mut Ctx<'_>, cmd: Command, stdin: &mut dyn Read) -> Resu
         Command::Verify { revision } => return commands::verify(ctx, revision).await,
         Command::Allow(a) => commands::allow(ctx, a).await,
         Command::Revisions(c) => commands::revisions(ctx, c).await,
+        Command::Installs(c) => commands::installs(ctx, c).await,
+        Command::Settings(c) => commands::settings(ctx, c).await,
         Command::Install(a) => return commands::install(ctx, a).await,
         Command::Gateways(c) => commands::gateways(ctx, c).await,
         Command::Logs(c) => commands::logs(ctx, c).await,

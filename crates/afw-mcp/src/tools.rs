@@ -666,6 +666,46 @@ async fn run(c: &AfwClient, name: &str, a: Args) -> Result<Outcome, Fail> {
                 .ok_or("missing argument `revision`".to_string())?;
             Outcome::ok(&c.diff_revision(n, a.u64("against")?).await?)
         }
+        "revert_revision" => {
+            let n = a
+                .u64("revision")?
+                .ok_or("missing argument `revision`".to_string())?;
+            Outcome::ok(&c.revert_to_revision(n).await?)
+        }
+        "list_captures" => Outcome::ok(
+            &c.list_captures(&PageQuery {
+                cursor: a.str("cursor"),
+                limit: a.u32("limit")?,
+            })
+            .await?,
+        ),
+        "start_capture" => {
+            let agent_id = c.resolve(PolicyKind::Agents, &a.req("agent")?).await?;
+            let duration_secs = a.u32("duration_secs")?.unwrap_or(60);
+            Outcome::ok(
+                &c.start_capture(&afw_core::api::CaptureRequest {
+                    agent_id,
+                    duration_secs,
+                })
+                .await?,
+            )
+        }
+        "list_alert_channels" => Outcome::ok(&c.list_alert_channels().await?),
+        "get_intent_policy" => Outcome::ok(&c.intent_policy().await?),
+        "update_intent_policy" => {
+            let mut v =
+                a.0.get("intent_policy")
+                    .cloned()
+                    .filter(Value::is_object)
+                    .ok_or("`intent_policy` must be an object".to_string())?;
+            v.as_object_mut()
+                .expect("object")
+                .entry("version")
+                .or_insert(json!(0));
+            let p: afw_core::api::IntentPolicy =
+                serde_json::from_value(v).map_err(|e| format!("invalid intent policy: {e}"))?;
+            Outcome::ok(&c.update_intent_policy(&p).await?)
+        }
         "install_revision" => {
             let revision = a
                 .u64("revision")?

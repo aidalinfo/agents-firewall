@@ -63,6 +63,7 @@ async fn afw_full(
         out: &mut out,
         err: &mut err,
         stdin: &mut input,
+        stdin_tty: false,
         env_token: token.map(str::to_string),
         coolify_token: None,
         docker: docker.into(),
@@ -285,6 +286,37 @@ async fn login_stores_token_0600_and_never_prints_it() {
         fake.requests_to("GET", "/zones")[0].header("x-afw-interface"),
         Some("cli")
     );
+}
+
+#[tokio::test]
+async fn login_refuses_cleartext_token_to_a_remote_host() {
+    let env = Env::new();
+    let o = afw_full(
+        &env,
+        None,
+        None,
+        &["login", "--url", "http://afw.example.org"],
+        "tok\n",
+        "docker",
+    )
+    .await;
+    assert_eq!(o.code, 1);
+    assert!(o.err.contains("--insecure-http"), "{}", o.err);
+    assert!(!env.config().exists());
+}
+
+#[tokio::test]
+async fn api_text_cannot_inject_terminal_escapes() {
+    let env = Env::new();
+    let fake = FakeApi::start().await;
+    fake.on(
+        "GET",
+        "/me",
+        Reply::problem(500, "Boom", "bad\u{1b}[2Jthing"),
+    );
+    let o = afw(&env, &fake, &["me"]).await;
+    assert_eq!(o.code, 1);
+    assert!(!o.err.contains('\u{1b}'), "{:?}", o.err);
 }
 
 #[tokio::test]

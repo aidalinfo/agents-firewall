@@ -39,6 +39,14 @@ enum Transport {
     Http {
         #[arg(long, default_value = "127.0.0.1:8765", env = "AFW_MCP_LISTEN")]
         listen: SocketAddr,
+        /// Extra accepted Host header (`name` or `name:port`), e.g. behind a TLS reverse proxy;
+        /// repeatable.
+        #[arg(
+            long = "allowed-host",
+            env = "AFW_MCP_ALLOWED_HOSTS",
+            value_delimiter = ','
+        )]
+        allowed_hosts: Vec<String>,
     },
 }
 
@@ -82,7 +90,10 @@ async fn main() -> Result<()> {
             let running = server.serve(rmcp::transport::stdio()).await?;
             running.waiting().await?;
         }
-        Transport::Http { listen } => {
+        Transport::Http {
+            listen,
+            allowed_hosts,
+        } => {
             let listen_token = std::env::var("AFW_MCP_LISTEN_TOKEN").unwrap_or_default();
             if listen_token.len() < 16 {
                 bail!(
@@ -93,7 +104,18 @@ async fn main() -> Result<()> {
                 .await
                 .with_context(|| format!("cannot listen on {listen}"))?;
             eprintln!("afw-mcp listening on http://{listen}/mcp");
-            axum::serve(listener, http_router(server, listen_token))
+            if !listen.ip().is_loopback() {
+                eprintln!(
+                    "warning: afw-mcp listens on {listen} without TLS: the listen token and the \
+                     firewall data travel in clear; put it behind a TLS reverse proxy or listen on 127.0.0.1"
+                );
+            }
+            let opts = afw_mcp::HttpOptions {
+                listen_token,
+                listen,
+                allowed_hosts,
+            };
+            axum::serve(listener, http_router(server, opts))
                 .with_graceful_shutdown(async {
                     let _ = tokio::signal::ctrl_c().await;
                 })

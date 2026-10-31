@@ -119,23 +119,92 @@ impl ServerHandler for AfwMcp {
     }
 }
 
-/// HTTP router (streamable HTTP transport on `/mcp`), protected by a listen token: anyone
-/// reaching this endpoint would otherwise act as the approved agent.
-pub fn http_router(server: AfwMcp, listen_token: String) -> axum::Router {
+/// HTTP transport settings.
+#[derive(Clone, Debug)]
+pub struct HttpOptions {
+    /// Bearer token clients must send (anyone reaching the endpoint acts as the agent).
+    pub listen_token: String,
+    /// Listening address: `Host` must name it (or `localhost` on its port).
+    pub listen: std::net::SocketAddr,
+    /// Extra accepted `Host` values (`name` or `name:port`), e.g. behind a reverse proxy.
+    pub allowed_hosts: Vec<String>,
+}
+
+impl HttpOptions {
+    /// Accepted `Host` header values (lower case).
+    fn hosts(&self) -> Vec<String> {
+        let port = self.listen.port();
+        let mut h = vec![
+            self.listen.to_string(),
+            format!("localhost:{port}"),
+            format!("127.0.0.1:{port}"),
+            format!("[::1]:{port}"),
+        ];
+        if self.listen.ip().is_unspecified() {
+            // 0.0.0.0 / [::]: the Host is then whatever name or address the client used; only
+            // the explicitly allowed ones are accepted.
+            h.truncate(4);
+        }
+        h.extend(self.allowed_hosts.iter().map(|s| s.to_ascii_lowercase()));
+        h
+    }
+}
+
+/// HTTP router (streamable HTTP transport on `/mcp`), protected by:
+/// - a listen token (bearer): anyone reaching this endpoint would otherwise act as the agent;
+/// - `Host` and `Origin` checks (DNS rebinding, cross-site requests from a browser): `Host` must
+///   be the listening address, `localhost` on its port, or an allowed host; an `Origin` header,
+///   when present, must be `http(s)://<one of those hosts>`; otherwise 403.
+pub fn http_router(server: AfwMcp, opts: HttpOptions) -> axum::Router {
     let service = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
-    let token = Arc::new(listen_token);
+    let token = Arc::new(opts.listen_token.clone());
+    let hosts = Arc::new(opts.hosts());
     axum::Router::new()
         .nest_service("/mcp", service)
         .layer(axum::middleware::from_fn(
             move |req: Request, next: Next| {
                 let token = token.clone();
-                async move { check_bearer(&token, req, next).await }
+                let hosts = hosts.clone();
+                async move {
+                    if !host_and_origin_ok(&hosts, &req) {
+                        return (StatusCode::FORBIDDEN, "host or origin not allowed\n")
+                            .into_response();
+                    }
+                    check_bearer(&token, req, next).await
+                }
             },
         ))
+}
+
+fn host_and_origin_ok(hosts: &[String], req: &Request) -> bool {
+    let header = |name| {
+        req.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_ascii_lowercase)
+    };
+    let host = header(axum::http::header::HOST).or_else(|| {
+        req.uri()
+            .authority()
+            .map(|a| a.as_str().to_ascii_lowercase())
+    });
+    let Some(host) = host else { return false };
+    if !hosts.contains(&host) {
+        return false;
+    }
+    match header(axum::http::header::ORIGIN) {
+        None => true,
+        Some(origin) => {
+            let rest = origin
+                .strip_prefix("http://")
+                .or_else(|| origin.strip_prefix("https://"));
+            rest.is_some_and(|r| hosts.iter().any(|h| h == r.trim_end_matches('/')))
+        }
+    }
 }
 
 async fn check_bearer(token: &str, req: Request, next: Next) -> Response {

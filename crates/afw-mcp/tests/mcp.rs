@@ -96,11 +96,20 @@ fn tool_list_covers_the_cli_operations() {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
     // No tool to decide approvals nor to manage tokens: those stay human.
-    assert!(
-        !names
-            .iter()
-            .any(|n| n.contains("decide") || n.contains("token"))
-    );
+    assert!(!names.iter().any(|n| {
+        [
+            "decide",
+            "approve",
+            "token",
+            "enroll",
+            "gateway_command",
+            "delete_gateway",
+            "registration",
+            "settings",
+        ]
+        .iter()
+        .any(|x| n.contains(x))
+    }));
     for t in &tools {
         assert_eq!(
             t.input_schema.get("type"),
@@ -110,7 +119,11 @@ fn tool_list_covers_the_cli_operations() {
         );
         let write = t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(false);
         let desc = t.description.as_deref().unwrap_or_default();
-        if write && t.name != "open_session" && t.name != "discard_session" && t.name != "ack_alert"
+        if write
+            && t.name != "open_session"
+            && t.name != "discard_session"
+            && t.name != "ack_alert"
+            && t.name != "start_capture"
         {
             assert!(
                 desc.contains("NEVER modify your own zone"),
@@ -278,9 +291,16 @@ async fn json_rpc_session_over_a_byte_stream() {
 #[tokio::test]
 async fn http_transport_requires_the_listen_token() {
     let fake = FakeApi::start().await;
-    let app = afw_mcp::http_router(server(&fake), "listen-secret-0123456789".into());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let app = afw_mcp::http_router(
+        server(&fake),
+        afw_mcp::HttpOptions {
+            listen_token: "listen-secret-0123456789".into(),
+            listen: addr,
+            allowed_hosts: vec![],
+        },
+    );
     tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
@@ -301,6 +321,36 @@ async fn http_transport_requires_the_listen_token() {
     };
     assert_eq!(post(None).await.unwrap().status(), 401);
     assert_eq!(post(Some("wrong")).await.unwrap().status(), 401);
+    // DNS rebinding / cross-site: wrong Host or foreign Origin → 403, even with the token.
+    let forged = http
+        .post(&url)
+        .header("host", "evil.example:80")
+        .bearer_auth("listen-secret-0123456789")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forged.status(), 403);
+    let cross = http
+        .post(&url)
+        .header("origin", "https://evil.example")
+        .bearer_auth("listen-secret-0123456789")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cross.status(), 403);
+    let same_origin = http
+        .post(&url)
+        .header("accept", "application/json, text/event-stream")
+        .header("origin", format!("http://localhost:{}", addr.port()))
+        .header("host", format!("localhost:{}", addr.port()))
+        .bearer_auth("listen-secret-0123456789")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(same_origin.status(), 200);
     let ok = post(Some("listen-secret-0123456789")).await.unwrap();
     assert_eq!(ok.status(), 200);
     assert!(ok.text().await.unwrap().contains("afw-mcp"));

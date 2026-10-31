@@ -22,6 +22,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 toml = { workspace = true }
+libc = { workspace = true }
 
 [dev-dependencies]
 # Real API for end-to-end tests (skipped without AFW_TEST_DATABASE_URL).

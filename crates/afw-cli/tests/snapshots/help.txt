@@ -22,6 +22,8 @@ Commands:
   verify            Pre-install verification: shadowed rules, unused objects, expired rules
   allow             Prepare an accept rule in your session from a denied flow of the log
   revisions         Published revisions: history, detail, differences, rollback
+  installs          Installations per gateway
+  settings          Global policy settings (internal networks, body limits, retention)
   install           Install a revision on gateways and wait for each gateway's result
   gateways          Gateways, registration tokens, commands
   logs              Traffic log: flows, flow detail, DNS, live tail

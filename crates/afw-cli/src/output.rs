@@ -110,6 +110,13 @@ pub fn sanitize(s: &str) -> String {
         .collect()
 }
 
+/// Like [`sanitize`] but keeps line feeds (multi-line messages).
+pub fn sanitize_text(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+        .collect()
+}
+
 /// Pretty JSON.
 pub fn json(out: &mut dyn Write, v: &impl Serialize) -> std::io::Result<()> {
     let s = serde_json::to_string_pretty(v).map_err(std::io::Error::other)?;

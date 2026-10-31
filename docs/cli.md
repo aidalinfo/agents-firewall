@@ -7,13 +7,14 @@ L'aide de chaque commande est donnée par `afw --help` et `afw <commande> [<sous
 ## Connexion et configuration
 
 ```sh
-printf '%s\n' "$JETON" | afw login --url https://afw.example.org [--ca-cert ca-console.pem]
+afw login --url https://afw.example.org [--ca-cert ca-console.pem]   # jeton saisi sans écho
+printf '%s\n' "$JETON" | afw login --url https://afw.example.org     # ou lu sur un tube
 afw me                      # identité, rôle, zones modifiables
 afw config show             # le jeton n'est jamais affiché
 afw config path
 ```
 
-`afw login` lit le jeton d'API sur l'entrée standard (jamais en argument), le vérifie par `GET /me`, puis écrit `~/.config/afw/config.toml` (ou `$XDG_CONFIG_HOME/afw/config.toml`) en mode `0600` :
+`afw login` lit le jeton d'API sur l'entrée standard (sans écho sur un terminal, jamais en argument), refuse une URL `http://` vers un hôte non local sauf `--insecure-http`, vérifie le jeton par `GET /me`, puis écrit `~/.config/afw/config.toml` (ou `$XDG_CONFIG_HOME/afw/config.toml`) en mode `0600` :
 
 ```toml
 url = "https://afw.example.org"
@@ -81,6 +82,9 @@ afw rulebase                      # base complète par couche et section, numér
 afw where-used <objet>
 afw agents overview <agent>       # vue agent (EF-43)
 afw intent-policy show | set -f politique.yaml
+afw settings show
+afw settings set [-f réglages.yaml] [--internal-network CIDR …] [--max-buffered-body N] [--max-stored-body N] \
+    [--retention-flows J] [--retention-http J] [--retention-captures J]      # dans la session
 ```
 
 ## Corriger un refus, de bout en bout
@@ -104,6 +108,7 @@ afw revisions revert <n>          # ouvre une session au contenu de n ; publier 
 afw verify [--revision n]
 afw status                        # révision publiée / installée, passerelles à jour
 afw install <n> (--gateway G … | --all) [--no-wait] [--timeout 120]
+afw installs list [--revision n] [--gateway G]
 ```
 
 `afw install` sort en code 1 si une passerelle échoue ou ne confirme pas dans le délai.
@@ -139,6 +144,7 @@ afw captures download <id> [-o fichier.pcap]    # fichier écrit en 0600
 ```sh
 afw audit list [--from-seq --actor --action --interface cli|mcp|ui|api|system --from --to]
 afw audit verify                     # vérifie la chaîne côté serveur (code 1 si rompue)
+afw audit anchor                     # exporte la tête de chaîne vers le stockage immuable maintenant
 afw audit export [--from-seq N] [-o audit.ndjson]   # et revérifie la chaîne localement
 afw approvals list [--status pending|approved|rejected] | show <id>
 afw approvals approve <id> [-m commentaire]

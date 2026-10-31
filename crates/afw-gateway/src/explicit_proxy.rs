@@ -12,7 +12,7 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::flow::{Flow, Target, resolve};
+use crate::flow::{Flow, Target, decide_and_resolve};
 use crate::http_pipeline::{GwBody, HttpFlow, deny_response, full, handle_request};
 use crate::sniff::host_only;
 use crate::state::GatewayState;
@@ -68,15 +68,13 @@ async fn proxy_request(
             Some(host.clone()),
             None,
         );
-        let dst = resolve(&state, &host, port).await;
-        if let Some(d) = dst {
-            flow.set_dst(d);
-        }
         let mut best = None;
+        let mut dst = None;
         for app in [None, Some(AppProto::Https), Some(AppProto::Http)] {
-            let (d, _) = state.decide(&flow.ctx(app, dst.map(|a| a.ip()), true));
+            let (d, a) = decide_and_resolve(&flow, app).await;
             if d.verdict == Verdict::Allow || d.needs_l7 {
                 best = Some(d);
+                dst = a;
                 break;
             }
             best.get_or_insert(d);
@@ -128,10 +126,7 @@ async fn proxy_request(
         None,
     );
     flow.set_app(AppProto::Http);
-    let dst = resolve(&state, &host, port).await;
-    if let Some(d) = dst {
-        flow.set_dst(d);
-    }
+    let (_, dst) = decide_and_resolve(&flow, Some(AppProto::Http)).await;
     let hf = HttpFlow::new(flow, false, dst);
     handle_request(hf, req).await
 }

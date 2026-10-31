@@ -33,7 +33,7 @@ use uuid::Uuid;
 
 use crate::dlp::{DlpFinding, Scanner, decode_content, is_secret, mask_bytes, to_event};
 use crate::engine::{Decision, FlowContext};
-use crate::flow::{AgentStream, Flow, resolve};
+use crate::flow::{AgentStream, Flow};
 use crate::io::Tap;
 use crate::sniff::host_only;
 use crate::state::GatewayState;
@@ -170,14 +170,7 @@ impl HttpFlow {
 /// Serves plain HTTP from a transparent connection or a CONNECT tunnel.
 pub async fn serve_plain<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     let state = flow.state.clone();
-    let upstream = match (&flow.name, flow.target.addr()) {
-        (Some(name), _) => resolve(&state, name, flow.port()).await,
-        (None, orig) => orig,
-    };
-    if let Some(a) = upstream {
-        flow.set_dst(a);
-    }
-    let (d0, _) = state.decide(&flow.ctx(Some(AppProto::Http), upstream.map(|a| a.ip()), true));
+    let (d0, upstream) = crate::flow::decide_and_resolve(&flow, Some(AppProto::Http)).await;
     if let Some(a) = upstream {
         state.alerts.on_connection(d0.agent_id, a, d0.internal);
     }
@@ -439,6 +432,18 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
                 .map(str::to_string)
         })
         .map(|h| host_only(&h));
+    // Absolute URI (or h2 `:authority`) and `Host` must agree; several `Host` headers are
+    // refused (domain fronting through the header the upstream will use).
+    let host_headers: Vec<Option<String>> = req
+        .headers()
+        .get_all(header::HOST)
+        .iter()
+        .map(|v| v.to_str().ok().map(host_only))
+        .collect();
+    let uri_host = req.uri().host().map(host_only);
+    let host_conflict = host_headers.len() > 1
+        || host_headers.iter().any(|h| h.is_none())
+        || matches!((&uri_host, host_headers.first()), (Some(u), Some(Some(h))) if u != h);
     let path_q = req
         .uri()
         .path_and_query()
@@ -485,9 +490,13 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
     // 1. Host must match the flow's name (domain fronting, SNI/Host or CONNECT/Host mismatch).
     let expected = hf.expected_host();
     let host = match (&req_host, &expected) {
+        _ if host_conflict => String::new(),
         (Some(h), Some(e)) if h == e => e.clone(),
         (None, Some(e)) => e.clone(),
-        _ => {
+        _ => String::new(),
+    };
+    if host.is_empty() {
+        {
             let (mut d, _) = state.decide(&base_ctx());
             d.verdict = Verdict::Deny;
             ev.agent_id = d.agent_id;
@@ -502,7 +511,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
                 "blocked by agents-firewall: {shown} not allowed for {agent} (rule host-mismatch)"
             ));
         }
-    };
+    }
 
     // 2. Decision with method and path.
     let (d1, _) = state.decide(&base_ctx());

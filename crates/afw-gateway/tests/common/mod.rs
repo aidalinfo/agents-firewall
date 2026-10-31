@@ -235,7 +235,9 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
                 "outbound secrets",
                 Layer::Baseline,
                 2,
-                &[],
+                // External destinations only: internal raw TCP flows stay relayable (a
+                // content rule that could apply forbids uninspectable L4 flows, ADR 0017).
+                &[OBJ_ALLOWED, OBJ_LLM, OBJ_K8S, OBJ_PATH],
                 &[CLASS_SECRETS],
                 Action::Deny,
             ),

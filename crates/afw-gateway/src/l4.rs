@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use afw_core::events::Verdict;
 
-use crate::flow::{AgentStream, Flow, resolve};
+use crate::flow::{AgentStream, Flow, decide_and_resolve};
 use crate::io::Tap;
 
 pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
@@ -14,15 +14,19 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     let app = *flow.app.lock().unwrap_or_else(|e| e.into_inner());
     // CONNECT target name: resolved by the gateway. Transparent: the original destination is
     // the real destination (any name only comes from the DNS cache, for attribution).
-    let dst = match (flow.target.addr(), &flow.name) {
-        (Some(orig), _) => Some(orig),
-        (None, Some(name)) => resolve(&state, name, flow.port()).await,
-        (None, None) => None,
+    let (mut d, dst) = match flow.target.addr() {
+        Some(orig) => (state.decide(&flow.ctx(app, Some(orig.ip()), true)).0, Some(orig)),
+        None => decide_and_resolve(&flow, app).await,
     };
-    if let Some(d) = dst {
-        flow.set_dst(d);
+    // Raw TCP content is never analysed: if a deny-by-content rule could apply to this
+    // destination, the flow is refused rather than relayed uninspected (ADR 0017).
+    if d.verdict == afw_core::events::Verdict::Allow && d.content_rules_apply {
+        d.verdict = afw_core::events::Verdict::Deny;
+        d.rule_id = None;
+        d.rule_number = None;
+        d.implicit = None;
+        d.rule_name = "content-not-inspectable".into();
     }
-    let (d, _) = state.decide(&flow.ctx(app, dst.map(|a| a.ip()), true));
     if let Some(dst) = dst {
         state.alerts.on_connection(d.agent_id, dst, d.internal);
     }

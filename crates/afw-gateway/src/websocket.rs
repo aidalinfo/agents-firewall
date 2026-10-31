@@ -73,6 +73,8 @@ pub async fn handle(
         .parse()
         .unwrap_or_default();
     parts.headers.remove("proxy-connection");
+    // No extension (permessage-deflate would hide the payload from the analysis).
+    parts.headers.remove("sec-websocket-extensions");
     parts.headers.remove("proxy-authorization");
     let mut resp = match sender
         .send_request(Request::from_parts(parts, full("")))
@@ -108,6 +110,8 @@ const WS_CARRY: usize = 8 * 1024;
 
 enum End {
     Closed,
+    /// Frame with a reserved bit set (no extension was negotiated): protocol error 1002.
+    Protocol,
     Cut(Option<Decision>),
 }
 
@@ -122,6 +126,13 @@ where
         e = agent_to_upstream(&mut ar, &mut uw, &judge, max_msg) => e,
         _ = tokio::io::copy(&mut ur, &mut aw) => End::Closed,
     };
+    if let End::Protocol = end {
+        let _ = aw.write_all(&close_frame(1002, "agents-firewall: websocket extensions are not allowed")).await;
+        let _ = aw.flush().await;
+        let _ = aw.shutdown().await;
+        let _ = uw.shutdown().await;
+        return;
+    }
     if let End::Cut(d) = end {
         let reason = match &d {
             Some(d) => d.deny_message(&judge.destination),
@@ -162,6 +173,7 @@ struct RawFrame {
     raw: Vec<u8>,
     opcode: u8,
     fin: bool,
+    rsv: u8,
     payload: Vec<u8>,
 }
 
@@ -203,6 +215,7 @@ async fn read_frame<R: AsyncRead + Unpin>(r: &mut R, max: usize) -> Result<RawFr
         raw,
         opcode: h[0] & 0x0f,
         fin: h[0] & 0x80 != 0,
+        rsv: h[0] & 0x70,
         payload,
     })
 }
@@ -231,6 +244,9 @@ where
             Err(true) => return End::Cut(None),
             Err(false) => return End::Closed,
         };
+        if f.rsv != 0 {
+            return End::Protocol;
+        }
         if f.opcode >= 0x8 {
             // Control frames (ping/pong/close, <= 125 bytes) are analysed on their own.
             let found = scanner.scan(&f.payload, "websocket.control");

@@ -229,7 +229,8 @@ impl GatewayState {
 
     /// Cloud metadata may only be reached through an explicit baseline accept rule.
     pub fn metadata_blocked(&self, d: &Decision, ip: Option<IpAddr>, name: Option<&str>) -> bool {
-        let meta = ip.is_some_and(is_cloud_metadata)
+        let literal = name.and_then(|n| n.trim_matches(['[', ']']).parse::<IpAddr>().ok());
+        let meta = ip.or(literal).is_some_and(is_cloud_metadata)
             || name.is_some_and(crate::upstream::is_cloud_metadata_name);
         meta && !(d.verdict == Verdict::Allow
             && d.layer == DecisionLayer::Baseline

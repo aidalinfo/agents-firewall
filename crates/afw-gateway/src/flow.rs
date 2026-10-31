@@ -255,6 +255,31 @@ pub async fn resolve(state: &GatewayState, name: &str, port: u16) -> Option<Sock
     Some(SocketAddr::new(ip, port))
 }
 
+/// Connection-level decision and upstream address (ADR 0018): a name that the policy denies
+/// by name is never resolved upstream (no exfiltration through resolution). Otherwise the name
+/// is resolved by the gateway and the decision is taken again with that trusted address.
+/// Nameless flows are judged on their original destination.
+pub async fn decide_and_resolve(flow: &Flow, app: Option<AppProto>) -> (Decision, Option<SocketAddr>) {
+    let state = &flow.state;
+    let Some(name) = &flow.name else {
+        let dst = flow.target.addr();
+        let (d, _) = state.decide(&flow.ctx(app, dst.map(|a| a.ip()), true));
+        return (d, dst);
+    };
+    let (pre, _) = state.decide(&flow.ctx(app, None, false));
+    if pre.verdict == Verdict::Deny && !pre.needs_l7 {
+        return (pre, None);
+    }
+    match resolve(state, name, flow.port()).await {
+        Some(a) => {
+            flow.set_dst(a);
+            let (d, _) = state.decide(&flow.ctx(app, Some(a.ip()), true));
+            (d, Some(a))
+        }
+        None => (pre, None),
+    }
+}
+
 /// Entry point for a new agent connection (transparent or CONNECT tunnel).
 pub async fn handle<S: AgentStream>(
     state: Arc<GatewayState>,
@@ -299,6 +324,18 @@ pub async fn handle<S: AgentStream>(
                 flow.set_app(a);
             }
             crate::l4::handle(flow, stream).await;
+        }
+        Sniff::Suspect => {
+            // Looks like TLS/HTTP but cannot be classified (slow, truncated or malformed): never
+            // relayed raw (it would escape inspection).
+            let flow = Flow::new(state.clone(), src, target, connect_name, None);
+            let (mut d, _) = state.decide(&flow.ctx(None, flow.target.addr().map(|a| a.ip()), true));
+            d.verdict = Verdict::Deny;
+            d.rule_id = None;
+            d.rule_number = None;
+            d.rule_name = "unclassified-protocol".into();
+            flow.emit_deny(&d);
+            stream.reset();
         }
         Sniff::NeedMore => unreachable!("read_initial never returns NeedMore"),
     }

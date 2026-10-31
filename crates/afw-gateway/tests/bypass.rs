@@ -92,9 +92,12 @@ async fn corrupted_policy_keeps_last_valid() {
 #[tokio::test]
 async fn unknown_agent_denied() {
     let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    // Refused before any certificate is minted: the handshake fails (reset).
     let s = h.transparent(UNKNOWN_IP, h.upstream_addr).await;
-    let mut tls = h.tls(s, "allowed.test").await.unwrap();
-    let resp = http_raw(&mut tls, &get("allowed.test", "/")).await;
+    assert!(h.tls(s, "allowed.test").await.is_err());
+    // Plain HTTP: explicit message.
+    let mut s = h.transparent(UNKNOWN_IP, h.plain_addr).await;
+    let resp = http_raw(&mut s, &get("allowed.test", "/")).await;
     assert!(resp.starts_with("HTTP/1.1 403"), "{resp}");
     assert!(resp.contains("(rule unknown-agent)"), "{resp}");
     h.wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.agent_id.is_none()))
@@ -732,4 +735,89 @@ async fn path_accept_rule_is_evaluated_per_request() {
             .iter()
             .any(|s| s.path == "/admin" || s.path == "/other")
     );
+}
+
+#[tokio::test]
+async fn raw_tcp_where_content_rules_apply_is_refused() {
+    use hickory_proto::op::{Message, MessageType, OpCode, Query};
+    use hickory_proto::rr::{Name, RecordType};
+    let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    // The agent resolves allowed.test through the gateway (name attribution), then opens a
+    // raw (non-HTTP, non-TLS) connection: a deny-by-content rule targets allowed.test and the
+    // content could never be analysed => refused.
+    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0")).await.unwrap();
+    let mut m = Message::new();
+    m.set_id(9).set_message_type(MessageType::Query).set_op_code(OpCode::Query);
+    m.add_query(Query::query(Name::from_ascii("allowed.test.").unwrap(), RecordType::A));
+    sock.send_to(&m.to_vec().unwrap(), h.dns()).await.unwrap();
+    let mut buf = [0u8; 512];
+    let _ = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await.unwrap();
+    let mut t = h.transparent(AGENT_IP, h.plain_addr).await;
+    let _ = t.write_all(format!("\x00\x01raw {AWS_KEY}").as_bytes()).await;
+    let mut b = [0u8; 16];
+    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut b)).await.unwrap();
+    assert!(matches!(r, Ok(0) | Err(_)), "{r:?}");
+    let ev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.domain.as_deref() == Some("allowed.test")))
+        .await;
+    assert_eq!(flow(&ev).unwrap().decision.rule_name, "content-not-inspectable");
+    assert!(!h.log.contains_bytes(AWS_KEY.as_bytes()));
+}
+
+#[tokio::test]
+async fn host_header_must_match_absolute_uri_and_be_unique() {
+    let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    let port = h.plain_addr.port();
+    // Plain HTTP (transparent): absolute URI vs Host.
+    let mut s = h.transparent(AGENT_IP, h.plain_addr).await;
+    let raw = format!("GET http://allowed.test:{port}/a HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n");
+    let resp = http_raw(&mut s, raw.as_bytes()).await;
+    assert!(resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"), "{resp}");
+    // Two Host headers.
+    let mut s = h.transparent(AGENT_IP, h.plain_addr).await;
+    let raw = "GET /b HTTP/1.1\r\nHost: allowed.test\r\nHost: denied.test\r\nConnection: close\r\n\r\n";
+    let resp = http_raw(&mut s, raw.as_bytes()).await;
+    assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+    // Inspected HTTPS, two Host headers.
+    let resp = post_tls(&h, "allowed.test", raw.as_bytes().to_vec()).await;
+    assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+    // Explicit proxy.
+    let mut p = tokio::net::TcpStream::connect(h.proxy()).await.unwrap();
+    let raw = format!("GET http://allowed.test:{port}/c HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n");
+    let resp = http_raw(&mut p, raw.as_bytes()).await;
+    assert!(resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"), "{resp}");
+    assert!(h.log.all().is_empty(), "{:?}", h.log.all());
+}
+
+#[tokio::test]
+async fn h2_authority_and_host_must_agree() {
+    use http_body_util::{BodyExt, Empty};
+    let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    for (authority, host, ok) in [("allowed.test", "denied.test", false), ("allowed.test", "allowed.test", true)] {
+        let s = h.transparent(AGENT_IP, h.upstream_addr).await;
+        let tls = tls_with(s, "allowed.test", &h.inspection_ca(), vec![b"h2".to_vec()]).await.unwrap();
+        assert_eq!(tls.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
+        let (mut send, conn) = hyper::client::conn::http2::handshake(
+            hyper_util::rt::TokioExecutor::new(),
+            hyper_util::rt::TokioIo::new(tls),
+        )
+        .await
+        .unwrap();
+        tokio::spawn(conn);
+        let req = http::Request::builder()
+            .uri(format!("https://{authority}/h2"))
+            .header("host", host)
+            .body(Empty::<bytes::Bytes>::new())
+            .unwrap();
+        let resp = send.send_request(req).await.unwrap();
+        let status = resp.status().as_u16();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        if ok {
+            assert_eq!(status, 200, "{body:?}");
+        } else {
+            assert_eq!(status, 403, "{body:?}");
+            assert!(String::from_utf8_lossy(&body).contains("host-mismatch"));
+        }
+    }
+    assert!(h.log.all().iter().all(|s| !s.host.starts_with("denied")));
 }

@@ -15,11 +15,48 @@ pub enum Sniff {
     Http { host: Option<String> },
     Ssh,
     Other,
+    /// Looks like TLS or HTTP but is malformed or incomplete (slow or truncated start):
+    /// refused, never relayed raw.
+    Suspect,
 }
 
-const METHODS: &[&str] = &[
-    "GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ", "PATCH ", "CONNECT ", "TRACE ",
-];
+fn is_tchar(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
+}
+
+/// `token SP target SP HTTP/1.x` or `PRI * HTTP/2.0` (complete line, without CRLF).
+fn is_request_line(line: &[u8]) -> bool {
+    if line == b"PRI * HTTP/2.0" {
+        return true;
+    }
+    let mut parts = line.split(|&b| b == b' ');
+    let (Some(m), Some(t), Some(v), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    !m.is_empty()
+        && m.iter().all(|&b| is_tchar(b))
+        && !t.is_empty()
+        && t.iter().all(|&b| b.is_ascii_graphic())
+        && (v == b"HTTP/1.1" || v == b"HTTP/1.0")
+}
+
+/// Could `partial` (no CRLF yet) still become a request line?
+fn could_be_request_line(partial: &[u8]) -> bool {
+    if b"PRI * HTTP/2.0".starts_with(partial) {
+        return true;
+    }
+    let mut parts = partial.split(|&b| b == b' ');
+    let m = parts.next().unwrap_or_default();
+    if !m.iter().all(|&b| is_tchar(b)) {
+        return false;
+    }
+    let Some(t) = parts.next() else { return true };
+    if !t.iter().all(|&b| b.is_ascii_graphic()) || (t.is_empty() && parts.clone().next().is_some()) {
+        return false;
+    }
+    let Some(v) = parts.next() else { return true };
+    parts.next().is_none() && (b"HTTP/1.1".starts_with(v) || b"HTTP/1.0".starts_with(v))
+}
 
 pub fn classify(buf: &[u8]) -> Sniff {
     if buf.is_empty() {
@@ -30,7 +67,7 @@ pub fn classify(buf: &[u8]) -> Sniff {
             return Sniff::NeedMore;
         }
         if buf[1] != 0x03 {
-            return Sniff::Other;
+            return Sniff::Suspect;
         }
         let len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
         if buf.len() < 5 + len {
@@ -46,24 +83,41 @@ pub fn classify(buf: &[u8]) -> Sniff {
     if b"SSH-".starts_with(&buf[..buf.len().min(4)]) {
         return Sniff::NeedMore;
     }
-    let text = &buf[..buf.len().min(8)];
-    let maybe_method = METHODS.iter().any(|m| {
-        let m = m.as_bytes();
-        let n = text.len().min(m.len());
-        text[..n] == m[..n]
-    });
-    if !maybe_method {
-        return Sniff::Other;
+    // HTTP/1.x: leading empty lines are ignored by servers (RFC 9112 §2.2).
+    let mut start = 0;
+    while buf[start..].starts_with(b"\r\n") || buf[start..].starts_with(b"\n") {
+        start += if buf[start] == b'\r' { 2 } else { 1 };
     }
-    if !METHODS.iter().any(|m| buf.starts_with(m.as_bytes())) {
+    let rest = &buf[start..];
+    if rest.is_empty() || rest == b"\r" {
         return Sniff::NeedMore;
     }
-    match find(buf, b"\r\n\r\n") {
-        Some(end) => Sniff::Http {
-            host: header(&buf[..end], "host"),
-        },
-        None if buf.len() >= MAX_SNIFF => Sniff::Http { host: None },
-        None => Sniff::NeedMore,
+    match rest.iter().position(|&b| b == b'\n') {
+        None => {
+            if could_be_request_line(rest.strip_suffix(b"\r").unwrap_or(rest)) {
+                if buf.len() >= MAX_SNIFF { Sniff::Suspect } else { Sniff::NeedMore }
+            } else {
+                Sniff::Other
+            }
+        }
+        Some(nl) => {
+            let line = rest[..nl].strip_suffix(b"\r").unwrap_or(&rest[..nl]);
+            if !is_request_line(line) {
+                // A complete line that only looks like a request (wrong version, extra spaces…).
+                let looks_http = line.windows(6).any(|w| w == b" HTTP/") || line.starts_with(b"PRI ");
+                return if looks_http { Sniff::Suspect } else { Sniff::Other };
+            }
+            if line.starts_with(b"PRI ") {
+                return Sniff::Http { host: None };
+            }
+            match find(rest, b"\r\n\r\n").or_else(|| find(rest, b"\n\n")) {
+                Some(end) => Sniff::Http {
+                    host: header(&rest[..end], "host"),
+                },
+                None if buf.len() >= MAX_SNIFF => Sniff::Suspect,
+                None => Sniff::NeedMore,
+            }
+        }
     }
 }
 
@@ -175,12 +229,15 @@ pub async fn read_initial<S: AsyncRead + Unpin>(
             return Ok((buf, c));
         }
         if buf.len() >= MAX_SNIFF {
-            return Ok((buf, Sniff::Other));
+            return Ok((buf, Sniff::Suspect));
         }
+        // Timeout or end of stream: nothing sent (server-first protocol) is L4; a started but
+        // incomplete TLS or HTTP preamble is refused.
+        let partial = if buf.is_empty() { Sniff::Other } else { Sniff::Suspect };
         let want = chunk.len().min(MAX_SNIFF - buf.len());
         match tokio::time::timeout_at(deadline, s.read(&mut chunk[..want])).await {
-            Err(_) => return Ok((buf, Sniff::Other)),
-            Ok(Ok(0)) => return Ok((buf, Sniff::Other)),
+            Err(_) => return Ok((buf, partial)),
+            Ok(Ok(0)) => return Ok((buf, partial)),
             Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
             Ok(Err(e)) => return Err(e),
         }
@@ -200,6 +257,13 @@ mod tests {
             }
         );
         assert_eq!(classify(b"GE"), Sniff::NeedMore);
+        assert_eq!(classify(b"\r\nPROPFIND /a HTTP/1.1\r\nHost: x\r\n\r\n"), Sniff::Http { host: Some("x".into()) });
+        assert_eq!(classify(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"), Sniff::Http { host: None });
+        assert_eq!(classify(b"GET / HTTP/1.1\r\nHost: a"), Sniff::NeedMore);
+        assert_eq!(classify(b"GET / HTTP/9.9\r\n\r\n"), Sniff::Suspect);
+        assert_eq!(classify(b"PING\r\n"), Sniff::Other);
+        assert_eq!(classify(b"\x16"), Sniff::NeedMore);
+        assert_eq!(classify(b"\x16\x01\x00\x00\x01"), Sniff::Suspect);
         assert_eq!(
             classify(b"GET / HTTP/1.0\r\n\r\n"),
             Sniff::Http { host: None }

@@ -9,7 +9,7 @@ use std::time::Duration;
 use afw_core::events::Verdict;
 use afw_core::policy::AppProto;
 
-use crate::flow::{AgentStream, Flow, resolve};
+use crate::flow::{AgentStream, Flow, decide_and_resolve};
 use crate::http_pipeline::{HttpFlow, serve_conn};
 use crate::io::{Prefixed, Tap};
 
@@ -23,14 +23,7 @@ pub async fn handle<S: AgentStream>(
     let state = flow.state.clone();
     // The name (SNI or CONNECT host) is resolved by the gateway; the agent's address is only
     // used for nameless flows.
-    let upstream = match (&flow.name, flow.target.addr()) {
-        (Some(name), _) => resolve(&state, name, flow.port()).await,
-        (None, orig) => orig,
-    };
-    if let Some(a) = upstream {
-        flow.set_dst(a);
-    }
-    let (d0, _) = state.decide(&flow.ctx(Some(AppProto::Https), upstream.map(|a| a.ip()), true));
+    let (d0, upstream) = decide_and_resolve(&flow, Some(AppProto::Https)).await;
     if let Some(a) = upstream {
         state.alerts.on_connection(d0.agent_id, a, d0.internal);
     }
@@ -69,6 +62,14 @@ pub async fn handle<S: AgentStream>(
         return;
     }
 
+    // Unknown agent (or no valid policy): refused before any certificate is minted.
+    if d0.agent_id.is_none() {
+        let mut d = d0;
+        d.verdict = Verdict::Deny;
+        flow.emit_deny(&d);
+        stream.reset();
+        return;
+    }
     // Inspection (also used to deliver the explicit EF-21 denial over TLS).
     let leaf_name = match (&flow.name, upstream.or(flow.target.addr())) {
         (Some(n), _) => n.clone(),
@@ -92,7 +93,15 @@ pub async fn handle<S: AgentStream>(
         .ca
         .server_config_for_target(&leaf_name, vec![b"h2".to_vec(), b"http/1.1".to_vec()]);
     let acceptor = tokio_rustls::TlsAcceptor::from(cfg);
-    let tls = match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+    // Counting and pcap capture on the wire, below TLS: a capture holds the encrypted bytes
+    // exchanged with the agent, never decrypted content (EF-33/EF-35; the decrypted exchange
+    // only exists, masked, in HTTP events).
+    let capture = state
+        .captures
+        .for_agent(d0.agent_id)
+        .map(|c| (c, flow.src, upstream.or(flow.target.addr()).unwrap_or(flow.src)));
+    let wire = Tap::new(stream, flow.counters.clone(), capture);
+    let tls = match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(wire)).await {
         Ok(Ok(t)) => t,
         _ => {
             // No way to show a message: still log the denial when the flow was refused.
@@ -107,10 +116,5 @@ pub async fn handle<S: AgentStream>(
     flow.tls_inspected.store(true, Ordering::Relaxed);
     let agent_h2 = tls.get_ref().1.alpn_protocol() == Some(b"h2");
     flow.set_app(AppProto::Https);
-    let capture = state
-        .captures
-        .for_agent(d0.agent_id)
-        .map(|c| (c, flow.src, upstream.unwrap_or(flow.src)));
-    let io = Tap::new(tls, flow.counters.clone(), capture);
-    serve_conn(HttpFlow::with_alpn(flow, true, upstream, agent_h2), io).await;
+    serve_conn(HttpFlow::with_alpn(flow, true, upstream, agent_h2), tls).await;
 }

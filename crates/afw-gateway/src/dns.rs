@@ -1,7 +1,8 @@
 //! Filtering DNS (`:53` UDP and TCP, EF-31). A name may be resolved when the policy would
 //! allow the agent to reach it (ADR 0018): a DNS-service decision first; when that only hits
-//! the cleanup rule, the services of the policy are tried for the name, then the internal
-//! monitor on the resolved addresses. Refused names get `REFUSED`. Answers come from the
+//! the cleanup rule, the services of the policy are tried for the name (without resolving it),
+//! then, for enrolled agents' names only, the internal monitor on the resolved addresses.
+//! Refused names get `REFUSED` and are never resolved upstream. Answers come from the
 //! gateway's own resolver and are remembered per agent (name attribution of later raw TCP
 //! connections). Every query is logged.
 
@@ -153,7 +154,19 @@ async fn decide_name(
             }
         }
     }
-    // Internal names: allowed when every resolved address is monitored internal.
+    // A refused name is never sent upstream (exfiltration through the query name). Names
+    // matching an `internal` object are already accepted by the engine (internal monitor);
+    // the only other internal names resolved are those of enrolled agents (`<agent>` or
+    // `<agent>.<domain>`), accepted when every address is a monitored internal one.
+    let is_agent_name = active.installed.as_ref().is_some_and(|p| {
+        p.document.agents.iter().any(|a| {
+            let n = a.name.to_ascii_lowercase();
+            name == n || name.strip_prefix(n.as_str()).is_some_and(|r| r.starts_with('.'))
+        })
+    });
+    if !is_agent_name {
+        return (d, None);
+    }
     if let Ok(ips) = state.resolver.lookup(name).await
         && !ips.is_empty()
     {

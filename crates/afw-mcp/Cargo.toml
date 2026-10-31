@@ -14,4 +14,18 @@ anyhow = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmcp = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+axum = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+
+[dev-dependencies]
+afw-client = { workspace = true, features = ["fake"] }
+reqwest = { workspace = true }
+
+[[bin]]
+name = "afw-mcp"
+path = "src/main.rs"

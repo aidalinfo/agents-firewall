@@ -10,9 +10,9 @@
 . "$(dirname "$0")/../lib.sh"
 scenario_begin 10-mcp-agree-audit "Administration par l'agent agréé via MCP, tracée ; sa propre zone refusée"
 require_demo
-T_OPEN="${MCP_TOOL_SESSION_OPEN:-session_open}"
-T_RULE="${MCP_TOOL_RULE_CREATE:-rules_create}"
-T_PUB="${MCP_TOOL_PUBLISH:-session_publish}"
+T_OPEN="${MCP_TOOL_SESSION_OPEN:-open_session}"
+T_RULE="${MCP_TOOL_RULE_CREATE:-create_resource}"
+T_PUB="${MCP_TOOL_PUBLISH:-publish_session}"
 since="$(now_iso)"
 clients="$(demo_id "$(did 402)")"; internes="$(demo_id "$(did 401)")"
 allowed="$(demo_id "$(did 108)")"; https="$(demo_id "$(did 201)")"
@@ -41,11 +41,11 @@ if image_exists "$AFW_CLI_IMAGE" && docker run --rm --entrypoint sh "$AFW_CLI_IM
     sleep 1; jqx -nc '{jsonrpc: "2.0", method: "notifications/initialized"}'
     jqx -nc '{jsonrpc: "2.0", id: 2, method: "tools/list"}'
     call 3 "$T_OPEN" '{}'; sleep 1
-    call 4 "$T_RULE" "$(rule_args "$clients")"; sleep 1
-    call 5 "$T_RULE" "$(rule_args "$internes")"; sleep 1
+    call 4 "$T_RULE" "$(rule_args "$clients" | jqx -c '{kind: "rules", resource: .}')"; sleep 1
+    call 5 "$T_RULE" "$(rule_args "$internes" | jqx -c '{kind: "rules", resource: .}')"; sleep 1
     call 6 "$T_PUB" '{"comment": "Démo 10 : règle ajoutée par l agent agréé via MCP"}'; sleep 3
   } | docker run --rm -i --network "${DEMO_PROJECT}_control" -e "$AFW_CLI_URL_ENV=$AFW_API_URL_IN_DOCKER" \
-    -e "$AFW_CLI_TOKEN_ENV=$token" --entrypoint afw-mcp "$AFW_CLI_IMAGE" 2>/dev/null || true)"
+    -e "$AFW_CLI_TOKEN_ENV=$token" --entrypoint afw-mcp "$AFW_CLI_IMAGE" stdio 2>/dev/null || true)"
   resp() { printf '%s\n' "$out" | jqx -c --argjson id "$1" 'select(.id == $id)' 2>/dev/null | head -n1; }
   tools="$(resp 2 | jqx -r '[.result.tools[].name] | join(", ")' 2>/dev/null || true)"
   evidence "afw-mcp tools: ${tools:-none}"
@@ -53,7 +53,8 @@ if image_exists "$AFW_CLI_IMAGE" && docker run --rm --entrypoint sh "$AFW_CLI_IM
 fi
 
 if [ "$transport" = mcp ]; then
-  r4="$(resp 4)"; r5="$(resp 5)"; r6="$(resp 6)"
+  r3="$(resp 3)"; r4="$(resp 4)"; r5="$(resp 5)"; r6="$(resp 6)"
+  evidence "open_session: $(printf '%s' "$r3" | cut -c1-160)"
   ok4() { [ -n "$r4" ] && ! failed "$r4"; }; ko5() { [ -n "$r5" ] && failed "$r5"; }; ok6() { [ -n "$r6" ] && ! failed "$r6"; }
 else
   [ "${AFW_DEMO_MCP_FALLBACK:-1}" = 1 ] || skip "afw-mcp not available in $AFW_CLI_IMAGE (lots L8/L9 not merged)"

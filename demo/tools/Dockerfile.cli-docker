@@ -1,0 +1,8 @@
+# afw CLI + docker client (compose plugin), for the demo only: lets `afw enroll ... --apply` run
+# `docker compose up -d` from a container (scenario 11), with the host's Docker socket mounted.
+# Build (from the repository root, after afw-cli:local): docker build -t afw-cli-docker:local -f demo/tools/Dockerfile.cli-docker demo/tools
+FROM docker:27.5.1-cli AS docker
+FROM afw-cli:local
+USER root
+COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose

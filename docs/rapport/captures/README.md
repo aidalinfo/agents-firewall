@@ -27,7 +27,7 @@ agréé…). Console réelle sur l'API réelle, 1440×900, Playwright `v1.64.1` 
 | `18-alertes-mouvement-lateral.png` | Alertes, dont `port_scan` levée par le scénario 08. |
 | `19-objets-ou-utilise.png` | Objet `allowed.example` et « où utilisé ». |
 | `20-zones.png` | Zones `internes` et `clients` (toutes deux en application, `clients` déléguée à l'agent agréé) avec leurs agents ; liste des objets. |
-| `21-audit-sombre.png` | Journal d'audit, dernières entrées : interfaces API, MCP (agent agréé, scénario 10) et Console (« Autoriser »). |
+| `21-audit-sombre.png` | Journal d'audit, dernières entrées : interfaces Console (« Autoriser »), CLI `afw`, MCP (agent agréé) et API, chaîne intègre. |
 | `22-audit-clair.png` | Le même audit en thème clair. |
 | `23-passerelles-sombre.png` | Passerelle `demo-gw` : en ligne, révision installée, latence ajoutée, installations. |
 | `24-passerelles-clair.png` | Passerelles en thème clair. |
@@ -35,5 +35,6 @@ agréé…). Console réelle sur l'API réelle, 1440×900, Playwright `v1.64.1` 
 | `26-inspection-tls.png` | Inspection TLS (règles d'inspection, CA de la passerelle). |
 | `27-parametres.png` | Paramètres. |
 
-L'interface `cli` n'apparaît pas encore dans l'audit : la CLI `afw` (lots L8/L9) n'était pas fusionnée lors de la
-prise ; captures à rafraîchir après fusion (`demo/screenshots.sh`).
+Juste avant la prise, `demo/screenshots.sh` fait agir les trois interfaces sur le même refus : la CLI renouvelle le
+jeton de l'agent agréé et ouvre le flux, l'agent agréé le lit par `afw-mcp` et prépare une règle dans sa zone déléguée
+(non publiée), puis le parcours « Autoriser » de la console est chronométré.

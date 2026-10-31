@@ -62,6 +62,8 @@ fi
 if [ "$build" = 1 ] && [ -e "$ROOT/crates/afw-cli/src/main.rs" ]; then
   step "build $AFW_CLI_IMAGE"
   docker build -q -t "$AFW_CLI_IMAGE" -f "$ROOT/deploy/docker/Dockerfile.cli" "$ROOT" >/dev/null || warn "CLI image build failed (scenarios fall back to curl)"
+  # afw + docker client, for `afw enroll --apply` from a container (scenario 11).
+  docker build -q -t afw-cli-docker:local -f "$DEMO_DIR/tools/Dockerfile.cli-docker" "$DEMO_DIR/tools" >/dev/null || warn "afw-cli-docker image build failed"
 fi
 if [ -n "$missing" ]; then
   warn "images that cannot be built yet (lots not merged):$missing"

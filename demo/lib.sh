@@ -149,9 +149,11 @@ wait_api() {
 # afw CLI (lot L8) with curl fallback
 # ---------------------------------------------------------------------------------------------------
 # afw <args...>: runs the CLI in its image, on the demo control network.
+# The open policy session, if any, is passed as AFW_SESSION (docs/cli.md).
 afw() {
   docker run --rm -i --network "${DEMO_PROJECT}_control" \
     -e "$AFW_CLI_URL_ENV=$AFW_API_URL_IN_DOCKER" -e "$AFW_CLI_TOKEN_ENV=$AFW_TOKEN" \
+    ${AFW_SESSION_ID:+-e "AFW_SESSION=$AFW_SESSION_ID"} \
     "$AFW_CLI_IMAGE" "$@"
 }
 # cli_has <subcommand...>: the CLI image exists and implements this subcommand (non-empty help).
@@ -185,8 +187,8 @@ session_discard() {
 # publish <comment>: publishes the open session, prints the new revision number.
 publish() {
   local comment="$1" rev
-  if cli_has publish; then
-    rev="$(afw publish --comment "$comment" --json | jqx -r '.number // .revision.number')"
+  if cli_has session publish; then
+    rev="$(afw session publish -m "$comment" --json | jqx -r '.number // .revision.number')"
   else
     rev="$(api_post "/sessions/$AFW_SESSION_ID/publish" "$(jqx -nc --arg c "$comment" '{comment: $c}')" | jqx -r '.number')"
   fi
@@ -196,7 +198,7 @@ publish() {
 }
 # install <revision>: installs a revision on every gateway.
 install() {
-  if cli_has install; then afw install --revision "$1" --json >/dev/null
+  if cli_has install; then afw install "$1" --all --no-wait --json >/dev/null
   else api_post /installs "$(jqx -nc --argjson r "$1" '{revision: $r, gateways: []}')" >/dev/null; fi
 }
 gateways_json() { api_get /gateways | items; }
@@ -304,7 +306,7 @@ zone_id() { api_get /zones | items | jqx -r --arg n "$1" 'select(.name == $n) | 
 # Gateways, tokens, logs, alerts, audit
 # ---------------------------------------------------------------------------------------------------
 gateway_registration_token() {
-  if cli_has gateways token create; then afw gateways token create --name "$1" --json | jqx -r '.token'
+  if cli_has gateways token; then afw gateways token --name "$1" --json | jqx -r '.token'
   else api_post /gateways/registration-tokens "$(jqx -nc --arg n "$1" '{name: $n}')" | jqx -r '.token'; fi
 }
 # api_token_create <name> <role> [agent id]: prints the secret.
@@ -327,7 +329,7 @@ find_flow() {
   return 1
 }
 allow_from_log() { # allow_from_log <flow id> : prints the created rule (JSON)
-  if cli_has logs allow; then afw logs allow "$1" --json
+  if cli_has allow; then afw allow "$1" --json
   else api_post "/sessions/$AFW_SESSION_ID/allow-from-log" "$(jqx -nc --arg f "$1" '{flow_id: $f}')"; fi
 }
 alerts_since() { api_get "/alerts?from=$1&limit=200" | items; }

@@ -29,8 +29,8 @@ Les agents enrôlés (`docker-compose.agents.yml`) sont **générés par afw-enr
 | 07-llm-exempte | secret vers le fournisseur LLM : passe, masqué dans le journal |
 | 08-mouvement-lateral | balayage de ports interne : alerte `port_scan` |
 | 09-publier-installer-rollback | révision installée puis retour arrière, vérifiés par le trafic |
-| 10-mcp-agree-audit | agent agréé via `afw-mcp` : zone déléguée tracée, sa propre zone refusée (repli REST avec le jeton `mcp_agent` tant que `afw-mcp` manque) |
-| 11-hermes-une-commande | nouveau bot Hermes enrôlé en une commande et visible |
+| 10-mcp-agree-audit | agent agréé via `afw-mcp` : zone déléguée tracée, sa propre zone refusée |
+| 11-hermes-une-commande | nouveau bot Hermes enrôlé, publié et démarré en une commande (`afw enroll … --apply`), visible et protégé |
 | 12-latence | p50/p95 avec et sans passerelle, HTTPS inspecté, connexion nouvelle et réutilisée, médiane de 5 passes |
 | 13-agent-vers-agent | aucun chemin direct entre agents (flux interne journalisé ou refus journalisé) |
 | 14-tracabilite | flux → agent, conversation, outil, contenu, règle en < 60 s (appel d'outil de daniel-bot) |
@@ -44,5 +44,6 @@ Les agents enrôlés (`docker-compose.agents.yml`) sont **générés par afw-enr
 Hors démo (production) : migration de Daniel, Laurent et Vulcain et retrait de l'egress-guard actuel (cahier §8).
 
 Un scénario rend `SKIP` quand une brique n'est pas encore disponible (image non construite, commande absente).
-Tous les appels à l'API et à la CLI sont dans `demo/lib.sh`. Tests des fichiers de déploiement :
+Tous les appels à l'API et à la CLI sont dans `demo/lib.sh`. Captures d'écran de la console sur la démo en cours :
+`demo/screenshots.sh` (après `run-all.sh`). Tests des fichiers de déploiement :
 `deploy/tests/run.sh [static|enroll|netinit|world|images]`.

@@ -33,9 +33,14 @@ trancher, pour chaque écart, entre corriger le produit et corriger le scénario
    - **Écoute transparente** : toute connexion TCP est acceptée localement par la passerelle avant la décision, donc
      `nc -z` « réussit » toujours. Une sonde d'accessibilité doit obtenir une réponse du service : requête
      `SSLRequest` PostgreSQL (un serveur joignable répond `S`/`N`), avec un témoin positif sur la base du LAN.
-   - **Agent agréé (scénario 10)** : tant que `afw-mcp` n'est pas fusionné, les mêmes appels sont faits en REST avec
-     le MÊME jeton `mcp_agent` ; l'API applique EF-51 et trace l'interface `mcp` d'après le rôle du jeton, quel que
-     soit le transport. Le résultat l'indique (« repli REST ») ; à rejouer avec `afw-mcp`.
+   - **Agent agréé (scénario 10)** : joué avec `afw-mcp stdio` (outils `open_session`, `create_resource`,
+     `publish_session`). Si `afw-mcp` manque, les mêmes appels sont faits en REST avec le MÊME jeton `mcp_agent`
+     (l'API applique EF-51 et trace l'interface `mcp` d'après le rôle du jeton) et le résultat l'indique.
+   - **Bot Hermes en une commande (scénario 11)** : `afw enroll … --compose … --hermes --publish … --apply`, lancé
+     depuis l'image de démo `afw-cli-docker:local` (CLI + client Docker, socket de l'hôte) pour que `--apply` puisse
+     lancer `docker compose` ; la CA de la passerelle est copiée sur l'hôte (`--ca-path`). L'installation de la
+     révision publiée reste une étape distincte (comme tout changement de politique) : avant elle, l'agent inconnu de
+     la passerelle est refusé partout (protégé), après elle il suit les règles de sa zone.
 3. **Scénarios ajoutés** : 18 (passerelle arrêtée : plus de réseau, reprise avec la révision installée), 19 (API
    arrêtée : la passerelle applique toujours refus, autorisations et DLP, et livre ses événements au retour),
    20 (mesures du journal par l'API).
@@ -58,4 +63,7 @@ trancher, pour chaque écart, entre corriger le produit et corriger le scénario
   par 403 ; le journal d'audit est listé du plus ancien au plus récent (les dernières modifications sont derrière
   « Charger plus ») ; la plupart des clients HTTPS n'affichent pas le message EF-21 d'un `CONNECT` refusé (seul le
   statut 403 est visible de l'agent, le message reste lisible dans le journal).
-- Scénarios 10 et 11 à rejouer avec la CLI (`afw-mcp`, `afw enroll compose`) après fusion des lots L8/L9.
+- Constats sur la CLI et le MCP : la lecture d'un flux par `afw-mcp` (`get_flow`) n'est pas tracée dans l'audit
+  (la lecture par la CLI, la console et l'API l'est, `flow.content_access`) ; `discard_session` sans argument, envoyé dans le même
+  échange stdio que `open_session` et `create_resource`, a laissé la session MCP ouverte (à vérifier par le lot L9 ;
+  la démo la ferme par l'API).

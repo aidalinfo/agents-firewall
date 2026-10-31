@@ -1,0 +1,36 @@
+# Console end-to-end tests against the real API (lot L3b): PostgreSQL + afw-api (image built from
+# deploy/docker/Dockerfile.api) + the console in http mode, Playwright in its pinned container.
+# House CI model (ADR 0002): on PRs to main, nightly on dev, and on demand. Images stay local.
+name: console-e2e
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [console/**, crates/**, docs/api/openapi.yaml, deploy/docker/Dockerfile.api, demo/policy/**, .github/workflows/console-e2e.yml]
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: refus → Autoriser → publier → installer, contract of the HTTP client
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.1-noble
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - name: Run the e2e stack and Playwright
+        run: console/e2e/run.sh
+      - name: Keep traces of failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: console/e2e/test-results
+          retention-days: 7

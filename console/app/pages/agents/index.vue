@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import type { AgentListItem } from '~/api/types'
+import type { Agent, AgentOverview } from '~/api/types'
 
 const { t } = useI18n()
 const api = useApi()
 const fmt = useFmt()
+const dir = useDirectory()
 
 useHead({ title: () => `${t('nav.agents')} — agents-firewall` })
 
-const { data: agents, status } = useAsyncData('agents', () => api.listAgents(), { default: () => [] as AgentListItem[] })
+/** Agents and their 24 h counters, both from the API (one overview per agent, EF-43). */
+const { data: agents, status } = useAsyncData('agents', async () => {
+  await dir.refresh()
+  const overviews = await Promise.all(dir.data.value.agents.map(a => api.agentOverview(a.id).catch(() => null)))
+  return dir.data.value.agents.map((agent, i) => ({ agent, overview: overviews[i] }))
+}, { default: () => [] as { agent: Agent, overview: AgentOverview | null }[] })
+const moveOpen = ref(false)
+const moving = ref<Agent | null>(null)
 
 const columns = computed(() => [
   { accessorKey: 'name', header: t('agents.col.agent') },
@@ -19,19 +27,25 @@ const columns = computed(() => [
   { accessorKey: 'last', header: t('agents.col.last') },
 ])
 
-const rows = computed(() => agents.value.map(a => ({
-  id: a.agent.id,
-  name: a.agent.name,
-  description: a.description,
-  zone: a.zone_name,
-  gateway: a.gateway_name ?? '—',
-  kind: t(`kind.${a.agent.kind}`),
-  hermes: a.agent.hermes,
-  mcp: a.agent.mcp_admin,
-  flows: fmt.num(a.flows_24h),
-  denied: a.denied_24h,
-  last: fmt.rel(a.last_flow_at),
+const rows = computed(() => agents.value.map(({ agent, overview }) => ({
+  id: agent.id,
+  agent,
+  name: agent.name,
+  description: agent.addresses.join(', '),
+  zone: dir.zoneName(agent.zone_id) ?? '—',
+  gateway: dir.gatewayName(agent.gateway_id) ?? '—',
+  kind: t(`kind.${agent.kind}`),
+  hermes: agent.hermes,
+  mcp: agent.mcp_admin,
+  flows: overview ? fmt.num(overview.flows_24h) : '—',
+  denied: overview?.denied_24h ?? 0,
+  last: fmt.rel(overview?.last_seen_at),
 })))
+
+function move(a: Agent) {
+  moving.value = a
+  moveOpen.value = true
+}
 
 function open(_e: Event, row: { original: { id: string } }) {
   void navigateTo(`/agents/${row.original.id}`)
@@ -78,7 +92,21 @@ function open(_e: Event, row: { original: { id: string } }) {
             </div>
           </template>
           <template #zone-cell="{ row }">
-            <span class="font-mono text-xs">@{{ row.original.zone }}</span>
+            <span class="flex items-center gap-1.5">
+              <span class="font-mono text-xs">@{{ row.original.zone }}</span>
+              <button
+                type="button"
+                class="afw-ghost flex size-5 items-center justify-center rounded"
+                :aria-label="t('agents.move.button')"
+                :data-testid="`agent-move-${row.original.name}`"
+                @click.stop="move(row.original.agent)"
+              >
+                <UIcon
+                  name="i-lucide-move"
+                  class="size-3"
+                />
+              </button>
+            </span>
           </template>
           <template #gateway-cell="{ row }">
             <span class="font-mono text-xs">{{ row.original.gateway }}</span>
@@ -92,5 +120,10 @@ function open(_e: Event, row: { original: { id: string } }) {
         </UTable>
       </div>
     </div>
+    <FormsAgentZoneForm
+      v-model:open="moveOpen"
+      :agent="moving"
+      @saved="refreshNuxtData('agents')"
+    />
   </div>
 </template>

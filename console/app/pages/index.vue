@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { FlowDetail, FlowQuery, FlowStats, FlowSummary } from '~/api/types'
+import type { FlowDetail, FlowListItem, FlowQuery, FlowStats, FlowStatsQuery, StatsBucket } from '~/api/types'
 import type { Segment } from '~/components/flow/FlowHistogram.vue'
-import { parseQuery, queryTokens, type QueryFilters } from '~/utils/query'
+import { parseQuery, queryTokens, toFlowQuery, type QueryFilters } from '~/utils/query'
 
 const { t } = useI18n()
 const api = useApi()
@@ -22,27 +22,38 @@ const searchEl = ref<HTMLInputElement | null>(null)
 const paletteOpen = useState('afw-palette', () => false)
 
 const PERIOD_MS = { '15m': 15 * 60_000, '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000 }
+const BUCKET: Record<keyof typeof PERIOD_MS, StatsBucket> = { '15m': '1m', '1h': '1m', '24h': '1h', '7d': '1h' }
+const { data: dirData, ensure: ensureDirectory } = useDirectory()
+const ruleNumbers = ref<{ id: string, number: number }[]>([])
 
-const query = computed<FlowQuery>(() => ({
-  ...filters.value,
-  verdict: segment.value === 'allow' ? 'allow' : segment.value === 'deny' ? 'deny' : filters.value.verdict,
-  alert: segment.value === 'alert' ? true : undefined,
+/** Filters of the query bar (names typed by the user are resolved to the ids the API expects). */
+const base = computed<FlowQuery>(() => ({
+  ...toFlowQuery(filters.value, { agents: dirData.value.agents, zones: dirData.value.zones, rules: ruleNumbers.value }),
   from: range.value?.from ?? new Date(Date.now() - PERIOD_MS[period.value]).toISOString(),
   to: range.value?.to,
 }))
+const query = computed<FlowQuery>(() => ({
+  ...base.value,
+  verdict: segment.value === 'allow' || segment.value === 'observed' ? 'allow' : segment.value === 'deny' ? 'deny' : base.value.verdict,
+}))
 
-const flows = ref<FlowSummary[]>([])
+const allFlows = ref<FlowListItem[]>([])
+// "Observed" has no server-side filter: the allowed page is narrowed to the flows allowed only by observation mode.
+const flows = computed(() => (segment.value === 'observed' ? allFlows.value.filter(f => f.observed) : segment.value === 'allow' ? allFlows.value.filter(f => !f.observed) : allFlows.value))
 const stats = ref<FlowStats | null>(null)
 const loading = ref(true)
 
 async function load() {
   loading.value = true
   try {
-    const statsQuery: FlowQuery = { ...query.value, verdict: filters.value.verdict, alert: undefined }
-    const [page, s] = await Promise.all([api.listFlows(query.value), api.flowStats(statsQuery)])
-    flows.value = page.items
+    await ensureDirectory()
+    if (filters.value.rule && !ruleNumbers.value.length) ruleNumbers.value = (await api.listRules()).map(r => ({ id: r.id, number: r.number }))
+    const { cursor: _c, limit: _l, ...rest } = base.value
+    const statsQuery: FlowStatsQuery = { ...rest, bucket: range.value ? undefined : BUCKET[period.value] }
+    const [page, s] = await Promise.all([api.listFlows({ ...query.value, limit: 200 }), api.flowStats(statsQuery)])
+    allFlows.value = page.items
     stats.value = s
-    if (!selectedId.value || !page.items.some(f => f.id === selectedId.value)) selectedId.value = page.items[0]?.id ?? null
+    if (!selectedId.value || !flows.value.some(f => f.id === selectedId.value)) selectedId.value = flows.value[0]?.id ?? null
   }
   finally {
     loading.value = false
@@ -72,13 +83,26 @@ watch(selectedId, async (id) => {
 }, { immediate: true })
 
 watch(query, () => void load(), { deep: true })
+const selectedItem = computed(() => allFlows.value.find(f => f.id === selectedId.value) ?? null)
+/** Flows of the last complete minute, as counted by the API. */
+const perMinute = computed(() => {
+  const p = stats.value?.bucket === '1m' ? stats.value.points.at(-2) : undefined
+  return p ? p.allow + p.deny + p.observed : 0
+})
 onMounted(() => void load())
 
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 let unsubscribe: (() => void) | null = null
 onMounted(() => {
-  unsubscribe = api.streamLogs(() => {
-    if (paused.value || reloadTimer) return
+  unsubscribe = api.streamLogs((e) => {
+    if (paused.value) return
+    if (e.kind === 'lagged') {
+      // Events were skipped by the server: the stream is not trustworthy, reload the page.
+      void load()
+      return
+    }
+    if (e.event.type !== 'flow' && e.event.type !== 'alert') return
+    if (reloadTimer) return
     reloadTimer = setTimeout(() => {
       reloadTimer = null
       void load()
@@ -154,7 +178,7 @@ async function onAdded() {
         <span
           class="size-[7px] rounded-full"
           :class="paused ? 'bg-text3' : 'afw-live-dot bg-ok'"
-        />{{ paused ? t('journal.paused') : t('journal.live', { n: stats?.per_minute ?? 0 }) }}
+        />{{ paused ? t('journal.paused') : t('journal.live', { n: perMinute }) }}
       </span>
       <template #actions>
         <button
@@ -281,6 +305,7 @@ async function onAdded() {
         <FlowHistogram
           v-model:segment="segment"
           :stats="stats"
+          :period="range ? null : period"
           @range="range = $event"
         />
 
@@ -296,6 +321,7 @@ async function onAdded() {
         ref="panel"
         class="flex-[1_1_410px]"
         :detail="detail"
+        :item="selectedItem"
         :loading="detailLoading"
         @added="onAdded"
       />

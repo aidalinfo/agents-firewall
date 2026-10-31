@@ -295,7 +295,7 @@ export function seedLogs(now: number, ruleNumber: (id: Uuid | null) => number | 
   const templates = FLOW_SEEDS.filter(s => s.verdict === 'allow' && !s.observed)
   for (let i = 0; i < 160; i++) {
     const t = templates[i % templates.length]!
-    background.push({ ...t, id: uid('8d000000', i + 1), minutesAgo: (i * 7) % 60 + (i % 3) / 3, tool: undefined, bytesOut: t.bytesOut + (i * 113) % 4000 })
+    background.push({ ...t, id: uid('8d000000', i + 1), minutesAgo: (i * 7) % 57 + 2 + (i % 3) / 3, tool: undefined, bytesOut: t.bytesOut + (i * 113) % 4000 })
   }
   for (let i = 0; i < 14; i++) {
     background.push({ ...FLOW_SEEDS[0]!, id: uid('8e000000', i + 1), minutesAgo: (i * 11) % 58 + 2, tool: undefined, dest: `cdn${i % 3}.fichiers-partage.example` })

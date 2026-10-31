@@ -8,16 +8,19 @@ import { contentSecurityPolicy, inlineScriptHashes, STATIC_SECURITY_HEADERS } fr
 export default defineNitroPlugin((nitroApp) => {
   if (import.meta.dev) return
 
+  const origins = (event: Parameters<typeof useRuntimeConfig>[0]) => {
+    const config = useRuntimeConfig(event)
+    return { apiBase: String(config.public.apiBase ?? ''), oidcOrigin: String(config.oidcConnectSrc ?? '') }
+  }
+
   nitroApp.hooks.hook('request', (event) => {
-    const apiBase = String(useRuntimeConfig(event).public.apiBase ?? '')
     for (const [k, v] of Object.entries(STATIC_SECURITY_HEADERS)) setResponseHeader(event, k, v)
-    setResponseHeader(event, 'content-security-policy', contentSecurityPolicy({ apiBase }))
+    setResponseHeader(event, 'content-security-policy', contentSecurityPolicy(origins(event)))
   })
 
   nitroApp.hooks.hook('render:response', (response, { event }) => {
-    const apiBase = String(useRuntimeConfig(event).public.apiBase ?? '')
     const html = typeof response.body === 'string' ? response.body : ''
-    const csp = contentSecurityPolicy({ apiBase, scriptHashes: inlineScriptHashes(html) })
+    const csp = contentSecurityPolicy({ ...origins(event), scriptHashes: inlineScriptHashes(html) })
     response.headers = { ...response.headers, ...STATIC_SECURITY_HEADERS, 'content-security-policy': csp }
     setResponseHeader(event, 'content-security-policy', csp)
   })

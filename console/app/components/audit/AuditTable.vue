@@ -7,9 +7,9 @@ const fmt = useFmt()
 const cols = 'grid-cols-[80px_150px_92px_70px_170px_minmax(200px,1fr)_100px]'
 
 const kindCls = (k: AuditEntry['actor']['kind']) => (k === 'agent' ? 'bg-obs-bg text-obs' : k === 'system' ? 'bg-sub text-text2' : 'bg-pri-bg text-pri')
-const action = (a: string) => (te(`audit.action.${a}`) ? t(`audit.action.${a}`) : a)
+const action = (a: string) => (te(`audit.action.${a.replace(/\./g, '_')}`) ? t(`audit.action.${a.replace(/\./g, '_')}`) : a)
 const short = (h: string) => (h ? `${h.slice(0, 4)}…${h.slice(-4)}` : '—')
-const refused = (e: AuditEntry) => e.action === 'request_denied'
+const refused = (e: AuditEntry) => e.action.endsWith('denied') || e.action.endsWith('refused')
 </script>
 
 <template>
@@ -36,7 +36,7 @@ const refused = (e: AuditEntry) => e.action === 'request_denied'
         <span class="truncate">{{ e.actor.name }}</span>
       </span>
       <span class="text-text2">{{ t(`audit.iface.${e.interface}`) }}</span>
-      <span class="font-mono text-[11.5px] text-text3">{{ e.session_id ?? '—' }}</span>
+      <span class="font-mono text-[11.5px] text-text3">{{ e.session_id?.slice(0, 8) ?? '—' }}</span>
       <span
         class="font-semibold"
         :class="refused(e) ? 'text-ko' : ''"

@@ -3,7 +3,6 @@ import { NAV } from '~/utils/nav'
 
 const { t } = useI18n()
 const router = useRouter()
-const api = useApi()
 const mobileNav = useState('afw-mobile-nav', () => false)
 const paletteOpen = useState('afw-palette', () => false)
 const shortcutsOpen = ref(false)
@@ -17,7 +16,8 @@ watch(() => router.currentRoute.value.fullPath, () => {
   mobileNav.value = false
 })
 
-const agents = useAsyncData('palette-agents', () => api.listAgents(), { default: () => [], lazy: true })
+const dir = useDirectory()
+onMounted(() => void dir.ensure())
 
 const groups = computed(() => [
   {
@@ -28,7 +28,7 @@ const groups = computed(() => [
   {
     id: 'agents',
     label: t('nav.agents'),
-    items: agents.data.value.map(a => ({ label: a.agent.name, suffix: `@${a.zone_name}`, icon: 'i-lucide-bot', to: `/agents/${a.agent.id}` })),
+    items: dir.data.value.agents.map(a => ({ label: a.name, suffix: `@${dir.zoneName(a.zone_id) ?? ''}`, icon: 'i-lucide-bot', to: `/agents/${a.id}` })),
   },
   {
     id: 'more',
@@ -91,6 +91,7 @@ const shortcutList = computed(() => [
         </template>
       </USlideover>
       <main class="grid-bg flex min-w-0 flex-1 flex-col">
+        <ShellSessionBanner />
         <slot />
       </main>
     </div>

@@ -229,7 +229,7 @@ export function createMockApi(opts: MockOptions = {}): MockApi {
     locks.set(key, { session: s.session.id, owner: s.session.owner })
   }
 
-  function mutate(s: SessionState, k: CollKey, id: Uuid, after: { id: Uuid, name: string } | null) {
+  function mutate<T extends { id: Uuid, name: string }>(s: SessionState, k: CollKey, id: Uuid, after: T | null) {
     const kind = KIND_OF[k]
     lockFor(kind, id, s)
     const list = coll(s.draft, k)
@@ -260,8 +260,9 @@ export function createMockApi(opts: MockOptions = {}): MockApi {
     if (coll(doc, k).some(x => x.id !== v.id && x.name === v.name && k !== 'rules')) throw new ApiError(409, 'Conflict', `a ${KIND_OF[k]} named ${v.name} already exists`)
     if (k === 'rules') {
       const r = v as Rule
-      if (r.layer.type === 'zone' && r.sources.some(z => z !== r.layer.zone_id && r.layer.type === 'zone')) throw new ApiError(400, 'Bad Request', 'a zone rule may only have its own zone as source')
-      if (r.layer.type === 'zone' && !doc.zones.some(z => z.id === (r.layer as { zone_id: Uuid }).zone_id)) throw new ApiError(400, 'Bad Request', 'unknown zone')
+      const layer = r.layer
+      if (layer.type === 'zone' && r.sources.some(z => z !== layer.zone_id)) throw new ApiError(400, 'Bad Request', 'a zone rule may only have its own zone as source')
+      if (layer.type === 'zone' && !doc.zones.some(z => z.id === layer.zone_id)) throw new ApiError(400, 'Bad Request', 'unknown zone')
     }
     if (k === 'agents' && !doc.zones.some(z => z.id === (v as Agent).zone_id)) throw new ApiError(400, 'Bad Request', 'unknown zone')
   }

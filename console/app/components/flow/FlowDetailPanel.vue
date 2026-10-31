@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { DestinationOption, FlowDetail, RuleView, Track, ZoneView } from '~/api/types'
+import type { AllowDestination, FlowDetail, FlowListItem, RuleView, Track } from '~/api/types'
 import { allowRuleCli, curlFor, httpReason } from '~/utils/cli'
-import { shortFlowId, splitSocket, verdictTone } from '~/utils/format'
+import { flowRuleLabel, shortFlowId, splitSocket, verdictTone } from '~/utils/format'
 import { bodyView } from '~/utils/security'
 
 const props = defineProps<{
   detail: FlowDetail | null
+  /** Row of the journal when known (names and labels computed by the API). */
+  item?: FlowListItem | null
   loading?: boolean
   /** Full-page variant (/flows/[id]). */
   standalone?: boolean
@@ -17,18 +19,21 @@ const fmt = useFmt()
 const api = useApi()
 const copy = useCopy()
 const toast = useToast()
+const problem = useProblem()
+const dir = useDirectory()
 const { session, ensureOpen, refresh: refreshSession } = usePolicySession()
+
+onMounted(() => void dir.ensure())
 
 type Mode = 'tabs' | 'allow' | 'added'
 const mode = ref<Mode>('tabs')
 const tab = ref<'http' | 'agent' | 'meta'>('http')
-const destKey = ref<DestinationOption['key']>('exact')
+const destKey = ref<AllowDestination>('exact')
 const expiry = ref<number | null>(30)
 const track = ref<Track>('detailed')
 const busy = ref(false)
 const added = ref<RuleView | null>(null)
 const nextRevision = computed(() => session.value?.next_revision ?? null)
-const zoneGateways = ref<string[]>([])
 
 watch(() => props.detail?.flow.id, () => {
   mode.value = 'tabs'
@@ -39,19 +44,37 @@ watch(() => props.detail?.flow.id, () => {
 })
 
 const flow = computed(() => props.detail?.flow ?? null)
+const item = computed(() => (props.item && props.item.id === flow.value?.id ? props.item : null))
+const agentName = computed(() => item.value?.agent_name ?? dir.agentName(flow.value?.agent_id) ?? flow.value?.src ?? '')
+const zoneName = computed(() => item.value?.zone_name ?? dir.zoneName(flow.value?.zone_id) ?? '—')
+const gatewayName = computed(() => dir.gatewayName(flow.value?.gateway_id) ?? flow.value?.gateway_id ?? '')
+const ruleLabel = computed(() => item.value?.rule_label ?? (flow.value ? flowRuleLabel(flow.value) : ''))
 const fid = computed(() => (flow.value ? shortFlowId(flow.value.id) : ''))
 const tone = computed(() => (flow.value ? verdictTone(flow.value) : 'ok'))
 const vColor = computed(() => (tone.value === 'ok' ? 'var(--ok)' : tone.value === 'obs' ? 'var(--obs)' : 'var(--ko)'))
 const vBg = computed(() => (tone.value === 'ok' ? 'var(--ok-bg)' : tone.value === 'obs' ? 'var(--obs-bg)' : 'var(--ko-bg)'))
 const vKey = computed(() => (tone.value === 'ok' ? 'allow' : tone.value === 'obs' ? 'observed' : 'deny'))
 const denied = computed(() => flow.value?.verdict === 'deny')
+// The baseline applies before every zone: a flow it denies cannot be allowed from the log.
 const baselineLocked = computed(() => denied.value && flow.value?.decision.layer === 'baseline')
+const proposal = computed(() => (baselineLocked.value ? null : props.detail?.allow_proposal ?? null))
+const http = computed(() => props.detail?.http[0] ?? null)
+const httpPath = computed(() => {
+  if (!http.value) return ''
+  try {
+    const u = new URL(http.value.url)
+    return `${u.pathname}${u.search}`
+  }
+  catch {
+    return http.value.url
+  }
+})
 const reqBody = computed(() => (http.value?.request_body ? bodyView(http.value.request_body) : null))
 const respBody = computed(() => (http.value?.response_body ? bodyView(http.value.response_body) : null))
-const proposal = computed(() => props.detail?.allow_proposal ?? null)
-const http = computed(() => props.detail?.http ?? null)
 const dst = computed(() => (flow.value ? splitSocket(flow.value.dst) : { host: '', port: '' }))
 const proto = computed(() => (flow.value?.app ?? flow.value?.protocol ?? '').toString())
+const correlation = computed(() => props.detail?.correlation ?? null)
+const toolCall = computed(() => props.detail?.tool_call ?? null)
 
 const tabs = computed(() => [
   { label: http.value ? t('flow.tab.http') : t('flow.tab.flow'), value: 'http' },
@@ -76,34 +99,42 @@ const duration = computed(() => {
   return new Date(f.ended_at).getTime() - new Date(f.started_at).getTime()
 })
 
+/** EF-21: the exact text received by the agent, given by the API (else a refused connection). */
 const agentMessage = computed(() => {
-  const f = flow.value
-  if (!f || !denied.value) return null
-  return props.detail?.agent_message
-    ? t('flow.agentMessage', { dest: f.domain ?? dst.value.host, agent: f.agent_name ?? '', rule: f.rule_label })
-    : t('flow.connRefused', { rule: f.rule_label })
+  if (!flow.value || !denied.value) return null
+  return props.detail?.agent_message ?? t('flow.connRefused', { rule: ruleLabel.value })
 })
 
 const statusLine = computed(() => {
-  const f = flow.value
-  if (!f) return ''
-  if (http.value?.status != null) {
-    const base = httpReason(http.value.status)
-    return denied.value ? `${base} · X-AFW-Rule: ${f.rule_label}` : base
-  }
+  if (!flow.value) return ''
+  if (http.value?.status != null) return httpReason(http.value.status)
   if (denied.value) return t('flow.rst')
   return t('flow.closed')
 })
 
-const curl = computed(() => (http.value ? curlFor({ method: http.value.method, url: http.value.url, headers: http.value.request_headers }) : null))
+const curl = computed(() => (http.value ? curlFor({ method: http.value.method, url: http.value.url, headers: http.value.request_headers.map(([k, v]) => [k ?? '', v ?? ''] as [string, string]) }) : null))
 
-const options = computed(() => proposal.value?.destination_options ?? [])
+/** Choices offered by the API, plus the zone's "allowed from the log" group (`group`). */
+const options = computed(() => {
+  const p = proposal.value
+  if (!p) return []
+  const out: { key: AllowDestination, label: string, broadening: boolean }[] = p.destinations
+    .filter(d => d.kind !== 'existing')
+    .map(d => ({ key: d.kind as AllowDestination, label: d.label, broadening: d.kind === 'wildcard' }))
+  const exact = p.destinations.find(d => d.kind === 'exact')
+  if (exact) out.push({ key: 'group', label: t('allow.groupName', { zone: p.zone_name ?? '' }), broadening: false })
+  return out
+})
+const existing = computed(() => proposal.value?.destinations.filter(d => d.kind === 'existing') ?? [])
 const chosen = computed(() => options.value.find(o => o.key === destKey.value) ?? options.value[0])
+const zoneAgents = computed(() => dir.zoneAgents(proposal.value?.zone_id).map(a => a.name))
+const zoneGateways = computed(() => [...new Set(dir.zoneAgents(proposal.value?.zone_id).map(a => dir.gatewayName(a.gateway_id)).filter((n): n is string => !!n))])
 const cli = computed(() => {
   const p = proposal.value
   if (!p || !chosen.value) return ''
-  return allowRuleCli({ zone: p.zone.name, dest: chosen.value.value, createObject: chosen.value.object_id === null, service: p.service, before: p.before_rule, expiresInDays: expiry.value, flowId: fid.value })
+  return allowRuleCli({ zone: p.zone_name ?? p.zone_id, dest: chosen.value.label, createObject: true, service: p.service.label, before: String(p.rule_number ?? ''), expiresInDays: expiry.value, flowId: fid.value })
 })
+const addedDestinations = computed(() => added.value?.destinations.map(id => dir.objectName(id) ?? id).join(', ') ?? '')
 
 const expiries: { key: string, days: number | null }[] = [
   { key: 'none', days: null },
@@ -116,10 +147,6 @@ const trackItems = computed(() => (['detailed', 'log', 'capture', 'none'] as Tra
 function openAllow() {
   if (!proposal.value) return
   mode.value = 'allow'
-  void (async () => {
-    const zones = await api.listZones()
-    zoneGateways.value = zones.find((z: ZoneView) => z.id === proposal.value?.zone.id)?.gateways ?? []
-  })()
 }
 
 async function addToSession() {
@@ -128,15 +155,16 @@ async function addToSession() {
   if (!f || !p || busy.value) return
   busy.value = true
   try {
-    const session = await ensureOpen(t('allow.sessionName', { dest: f.domain ?? dst.value.host }))
-    const res = await api.allowFromLog(session.id, { flow_id: f.id, destination: destKey.value, expires_in_days: expiry.value, track: track.value })
+    const s = await ensureOpen(t('allow.sessionName', { dest: f.domain ?? dst.value.host }))
+    const res = await api.allowFromLog(s.id, { flow_id: f.id, destination: chosen.value?.key ?? 'exact', expires_in_days: expiry.value, track: track.value })
     added.value = res.rule
     mode.value = 'added'
     await refreshSession()
+    await dir.refresh()
     emit('added', res.rule)
   }
   catch (e) {
-    toast.add({ title: t('allow.failed'), description: e instanceof Error ? e.message : String(e), color: 'error' })
+    problem.notify(e, t('allow.failed'))
   }
   finally {
     busy.value = false
@@ -146,8 +174,13 @@ async function addToSession() {
 async function capture() {
   const f = flow.value
   if (!f?.agent_id) return
-  await api.startCapture({ agent_id: f.agent_id, duration_secs: 300 })
-  toast.add({ title: t('flow.captureStarted', { agent: f.agent_name ?? '' }), icon: 'i-lucide-radio' })
+  try {
+    await api.startCapture({ agent_id: f.agent_id, duration_secs: 300 })
+    toast.add({ title: t('flow.captureStarted', { agent: agentName.value }), icon: 'i-lucide-radio' })
+  }
+  catch (e) {
+    problem.notify(e)
+  }
 }
 
 function copyCurl() {
@@ -228,7 +261,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
               :to="`/agents/${flow.agent_id}`"
               class="font-semibold no-underline"
               style="color: var(--text)"
-            >{{ flow.agent_name }}</NuxtLink><span class="text-text3">@{{ flow.zone_name }}</span>
+            >{{ agentName }}</NuxtLink><span class="text-text3">@{{ zoneName }}</span>
             → {{ flow.domain ?? dst.host }}:{{ dst.port }} · {{ proto }} · ↑ {{ fmt.bytes(flow.bytes_out) }} ↓ {{ fmt.bytes(flow.bytes_in) }}
           </span>
         </div>
@@ -238,7 +271,11 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
             <span class="text-xs font-semibold">{{ t('flow.why') }}</span>
             <span class="font-mono text-[10.5px] text-text3">{{ t('flow.topDown') }}</span>
           </div>
-          <FlowTrace :steps="detail!.trace" />
+          <FlowTrace
+            :steps="detail!.trace"
+            :verdict="flow.verdict"
+            :observed="flow.observed"
+          />
           <div
             v-if="agentMessage"
             class="border-t border-line px-[10px] py-[7px] font-mono text-[11px] text-text2"
@@ -290,7 +327,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
             class="afw-ghost flex h-[34px] items-center rounded-lg !border-line2 px-3 font-medium no-underline"
             style="color: var(--text)"
           >
-            {{ t('flow.ruleLink', { n: flow.rule_label }) }}
+            {{ t('flow.ruleLink', { n: ruleLabel }) }}
           </NuxtLink>
         </div>
       </div>
@@ -310,7 +347,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
         <div class="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-x-3 gap-y-[10px] text-[12.5px]">
           <span class="text-text3">{{ t('allow.source') }}</span>
           <span class="flex flex-wrap items-center gap-2">
-            <span class="rounded-[5px] bg-sub px-[7px] py-px font-mono font-semibold">@{{ proposal.zone.name }}</span>
+            <span class="rounded-[5px] bg-sub px-[7px] py-px font-mono font-semibold">@{{ proposal.zone_name }}</span>
             <span class="text-[11.5px] text-text3">{{ t('allow.sourceNote') }}</span>
           </span>
           <span class="self-start pt-1.5 text-text3">{{ t('allow.destination') }}</span>
@@ -340,14 +377,19 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
                     :class="destKey === o.key ? 'bg-pri' : 'bg-transparent'"
                   />
                 </span>
-                <span class="font-mono text-xs font-semibold">{{ o.value }}</span>
-                <span class="text-[11.5px] text-text3">{{ t(`allow.option.${o.key}`, { n: o.members ?? 0 }) }}<template v-if="o.key === 'exact' && o.object_id === null"> · {{ t('allow.newObject') }}</template></span>
+                <span class="font-mono text-xs font-semibold">{{ o.label }}</span>
+                <span class="text-[11.5px] text-text3">{{ t(`allow.option.${o.key}`) }}</span>
               </span>
               <span
                 v-if="o.broadening && destKey === o.key"
                 class="pl-5 text-[11px] text-warn"
               >{{ t('allow.broadening') }}</span>
             </button>
+            <span
+              v-for="x in existing"
+              :key="x.object_id ?? x.label"
+              class="text-[11.5px] text-text3"
+            >{{ t('allow.existing', { name: x.label }) }}</span>
           </div>
           <span class="text-text3">{{ t('allow.expiry') }}</span>
           <div
@@ -386,16 +428,8 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
         />
 
         <div class="flex flex-col gap-[3px] rounded-lg border border-dashed border-line2 px-[11px] py-[9px] text-xs">
-          <i18n-t
-            keypath="allow.wouldAllow"
-            scope="global"
-            tag="span"
-          >
-            <template #n>
-              <strong>{{ t('allow.wouldAllowN', { n: proposal.would_allow.flows, agents: proposal.would_allow.agents.join(', ') }) }}</strong>
-            </template>
-          </i18n-t>
-          <span class="text-text2">{{ t('allow.appliesToZone', { zone: proposal.zone.name }) }} {{ proposal.zone_agents.join(', ') }}.</span>
+          <span>{{ t('allow.service', { service: proposal.service.label, port: proposal.service.port }) }}<template v-if="proposal.rule_number"> · {{ t('allow.position', { n: proposal.rule_number }) }}</template></span>
+          <span class="text-text2">{{ t('allow.appliesToZone', { zone: proposal.zone_name ?? '' }) }} {{ zoneAgents.join(', ') || '—' }}.</span>
         </div>
         <div class="flex justify-end gap-2">
           <button
@@ -431,7 +465,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
           </span>
           <div class="flex flex-col">
             <strong class="text-sm">{{ t('allow.added', { n: added.number }) }}</strong>
-            <span class="font-mono text-[11.5px] text-text2">@{{ proposal.zone.name }} → {{ added.destination_names.join(', ') }} · {{ proposal.service }} · {{ expiry === null ? t('allow.noExpiryLong') : t('allow.expiresIn', { n: expiry }) }}</span>
+            <span class="font-mono text-[11.5px] text-text2">@{{ proposal.zone_name }} → {{ addedDestinations }} · {{ proposal.service.label }} · {{ expiry === null ? t('allow.noExpiryLong') : t('allow.expiresIn', { n: expiry }) }}</span>
           </div>
         </div>
         <ol class="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px]">
@@ -451,7 +485,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
         </ol>
         <div class="flex flex-wrap gap-2">
           <NuxtLink
-            :to="{ path: '/rules', query: { zone: proposal.zone.id } }"
+            :to="{ path: '/rules', query: { zone: proposal.zone_id } }"
             class="flex h-[34px] items-center gap-[7px] rounded-lg bg-pri px-[14px] font-[650] text-pri-fg no-underline hover:text-pri-fg"
             data-testid="allow-review"
           >
@@ -492,14 +526,14 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
             </div>
             <template v-if="http">
               <div class="break-all px-[10px] pt-2 pb-0.5">
-                <span class="font-semibold text-pri">{{ http.method }}</span> <span>{{ flow.path }}</span> <span class="text-text3">HTTP/1.1</span>
+                <span class="font-semibold text-pri">{{ http.method }}</span> <span>{{ httpPath }}</span> <span class="text-text3">HTTP/1.1</span>
               </div>
               <div class="flex flex-col px-[10px] pb-2">
                 <span
                   v-for="([k, v], i) in http.request_headers"
                   :key="i"
                   class="break-all"
-                ><span class="text-syn-key">{{ k }}:</span> <span :class="v.startsWith('[secret:') ? 'text-obs' : k.startsWith('X-AFW') ? 'text-text2' : ''">{{ v }}</span></span>
+                ><span class="text-syn-key">{{ k }}:</span> <span :class="v?.startsWith('[secret:') ? 'text-obs' : k?.toLowerCase().startsWith('x-afw') ? 'text-text2' : ''">{{ v }}</span></span>
               </div>
               <pre
                 v-if="reqBody"
@@ -539,7 +573,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
                 v-for="([k, v], i) in http.response_headers"
                 :key="i"
                 class="break-all"
-              ><span class="text-syn-key">{{ k }}:</span> <span :class="v.startsWith('[secret:') ? 'text-obs' : ''">{{ v }}</span></span>
+              ><span class="text-syn-key">{{ k }}:</span> <span :class="v?.startsWith('[secret:') ? 'text-obs' : ''">{{ v }}</span></span>
             </div>
             <pre class="m-0 whitespace-pre-wrap break-all px-[10px] pb-2 font-mono text-text2">{{ respBody ? (respBody.kind === 'text' ? respBody.text : t('flow.binary', { size: fmt.bytes(respBody.size) })) : '' }}</pre>
             <div
@@ -561,33 +595,31 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
           v-else-if="tab === 'agent'"
           class="flex flex-col gap-3 px-4 py-[14px]"
         >
-          <template v-if="flow.correlation">
-            <div class="flex flex-wrap items-center gap-2">
+          <template v-if="correlation || toolCall">
+            <div
+              v-if="correlation"
+              class="flex flex-wrap items-center gap-2"
+            >
               <span
                 class="rounded-[5px] px-[7px] py-px font-mono text-[11px] font-semibold"
-                :class="flow.correlation.confidence === 'certain' ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'"
-              >{{ t(`flow.attrib.${flow.correlation.confidence}`) }}</span>
-              <span class="text-[11.5px] text-text3">{{ t(`flow.attribHow.${flow.correlation.confidence}`) }}</span>
+                :class="correlation.confidence === 'certain' ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'"
+              >{{ t(`flow.attrib.${correlation.confidence}`) }}</span>
+              <span class="text-[11.5px] text-text3">{{ t(`flow.attribHow.${correlation.confidence}`) }}</span>
             </div>
             <div class="flex items-baseline justify-between gap-2">
-              <strong class="text-[13px]">{{ flow.correlation.conversation_title }}</strong>
+              <strong class="font-mono text-[13px]">{{ t('flow.conversation', { id: correlation?.conversation_id ?? toolCall?.conversation_id ?? '' }) }}</strong>
               <NuxtLink
                 :to="`/agents/${flow.agent_id}`"
                 class="whitespace-nowrap text-xs"
               >{{ t('flow.fullConversation') }}</NuxtLink>
             </div>
             <ol class="m-0 flex list-none flex-col p-0 pl-1">
-              <li class="grid grid-cols-[14px_minmax(0,1fr)] gap-[10px]">
-                <span class="flex flex-col items-center"><span class="mt-1 size-[9px] rounded-full border-2 border-warn" /><span class="w-px flex-1 bg-line2" /></span>
-                <span class="flex flex-col gap-0.5 pb-3"><span class="font-mono text-[10.5px] text-warn">{{ t('flow.untrusted', { source: flow.correlation.trigger_source ?? '' }) }}</span><span class="text-[12.5px]">{{ flow.correlation.trigger_text }}</span></span>
-              </li>
-              <li class="grid grid-cols-[14px_minmax(0,1fr)] gap-[10px]">
-                <span class="flex flex-col items-center"><span class="mt-1 size-[9px] rounded-full border-2 border-text3" /><span class="w-px flex-1 bg-line2" /></span>
-                <span class="flex flex-col gap-0.5 pb-3"><span class="font-mono text-[10.5px] text-text3">{{ t('flow.reasoning', { agent: flow.agent_name ?? '' }) }}</span><span class="text-[12.5px] text-text2">{{ flow.correlation.reasoning }}</span></span>
-              </li>
-              <li class="grid grid-cols-[14px_minmax(0,1fr)] gap-[10px]">
+              <li
+                v-if="toolCall"
+                class="grid grid-cols-[14px_minmax(0,1fr)] gap-[10px]"
+              >
                 <span class="flex flex-col items-center"><span class="mt-1 size-[9px] rounded-full border-2 border-pri" /><span class="w-px flex-1 bg-line2" /></span>
-                <span class="flex flex-col gap-1 pb-3"><span class="font-mono text-[10.5px] text-pri">{{ t('flow.toolCall') }}</span><code class="rounded-md border border-line bg-code px-2 py-[5px] font-mono text-xs">{{ detail!.tool_call?.tool ?? flow.tool }}</code></span>
+                <span class="flex flex-col gap-1 pb-3"><span class="font-mono text-[10.5px] text-pri">{{ t('flow.toolCall') }} · {{ fmt.time(toolCall.started_at, true) }}<template v-if="toolCall.status"> · {{ toolCall.status }}</template></span><code class="rounded-md border border-line bg-code px-2 py-[5px] font-mono text-xs">{{ toolCall.tool }}({{ toolCall.args_summary }})</code></span>
               </li>
               <li class="grid grid-cols-[14px_minmax(0,1fr)] gap-[10px]">
                 <span class="flex flex-col items-center"><span
@@ -597,7 +629,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
                 <span class="flex flex-col gap-0.5"><span
                   class="font-mono text-[10.5px]"
                   :style="{ color: vColor }"
-                >{{ t('flow.network', { gw: flow.gateway_name }) }}</span><span class="text-[12.5px] font-semibold">{{ t(denied ? 'flow.effectDenied' : 'flow.effectAllowed', { dest: flow.domain ?? dst.host, size: fmt.bytes(flow.bytes_out), rule: flow.rule_label }) }}</span></span>
+                >{{ t('flow.network', { gw: gatewayName }) }}</span><span class="text-[12.5px] font-semibold">{{ t(denied ? 'flow.effectDenied' : 'flow.effectAllowed', { dest: flow.domain ?? dst.host, size: fmt.bytes(flow.bytes_out), rule: ruleLabel }) }}</span></span>
               </li>
             </ol>
           </template>
@@ -614,7 +646,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
           <dt class="text-text3">
             {{ t('flow.meta.gateway') }}
           </dt><dd class="m-0 font-mono text-xs">
-            {{ flow.gateway_name }}
+            {{ gatewayName }}
           </dd>
           <dt class="text-text3">
             {{ t('flow.meta.addresses') }}
@@ -634,17 +666,17 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
           <dt class="text-text3">
             {{ t('flow.meta.dataClass') }}
           </dt><dd class="m-0">
-            {{ detail!.data_class_label ?? '—' }}
+            {{ flow.data_classes.join(', ') || '—' }}
           </dd>
           <dt class="text-text3">
             {{ t('flow.meta.conversation') }}
           </dt><dd class="m-0">
-            {{ flow.correlation?.conversation_title ?? '—' }}
+            {{ correlation?.conversation_id ?? '—' }}
           </dd>
           <dt class="text-text3">
             {{ t('flow.meta.rule') }}
           </dt><dd class="m-0">
-            #{{ flow.rule_label }} · {{ flow.decision.rule_name }}
+            {{ ruleLabel }}<template v-if="flow.decision.revision != null"> · {{ t('flow.meta.revision', { n: flow.decision.revision }) }}</template>
           </dd>
         </dl>
 

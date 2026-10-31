@@ -99,6 +99,12 @@ export default defineNuxtConfig({
         'lucide:arrow-up',
         'lucide:arrow-down',
         'lucide:arrow-up-down',
+        'lucide:settings',
+        'lucide:pencil',
+        'lucide:trash-2',
+        'lucide:key-round',
+        'lucide:move',
+        'lucide:hourglass',
       ],
     },
   },
@@ -120,6 +126,11 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    // Server only. Origin of afw-api to relay /api/** and /healthz to, so that the browser stays on
+    // one origin (no CORS, CSP connect-src 'self') — NUXT_API_PROXY_TARGET, e.g. http://afw-api:8080.
+    apiProxyTarget: '',
+    // Origin of the OIDC provider's token endpoint, added to the CSP connect-src — NUXT_OIDC_CONNECT_SRC.
+    oidcConnectSrc: '',
     public: {
       // mock | http — NUXT_PUBLIC_API_MODE
       apiMode: 'mock',

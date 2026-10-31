@@ -1,7 +1,17 @@
-import type { FlowQuery, Verdict } from '~/api/types'
+import type { FlowQuery, Uuid, Verdict } from '~/api/types'
 
-/** Filters the journal query bar understands (subset of FlowQuery). */
-export type QueryFilters = Pick<FlowQuery, 'agent' | 'zone' | 'destination' | 'rule' | 'verdict' | 'q'>
+/**
+ * Filters the journal query bar understands, as typed by the user: agent and zone by name, rule
+ * by its displayed number. `toFlowQuery` turns them into the ids of the API's FlowQuery.
+ */
+export interface QueryFilters {
+  agent?: string
+  zone?: string
+  destination?: string
+  rule?: string
+  verdict?: Verdict
+  q?: string
+}
 
 const KEYS: Record<string, keyof QueryFilters> = {
   agent: 'agent',
@@ -72,4 +82,30 @@ const ORDER: (keyof QueryFilters)[] = ['agent', 'zone', 'destination', 'rule', '
 
 export function queryTokens(filters: QueryFilters): QueryToken[] {
   return ORDER.filter(k => filters[k]).map(k => ({ key: k, value: String(filters[k]) }))
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface Named { id: Uuid, name: string }
+
+/**
+ * Resolves names typed in the query bar to the ids expected by `GET /logs/flows` (lists from the
+ * API). An unknown name keeps the filter impossible to satisfy instead of silently dropping it.
+ */
+export function toFlowQuery(f: QueryFilters, dir: { agents: Named[], zones: Named[], rules?: { id: Uuid, number: number }[] }): FlowQuery {
+  const NONE = '00000000-0000-0000-0000-000000000000'
+  const resolve = (v: string | undefined, list: Named[]) => (v === undefined ? undefined : UUID.test(v) ? v : list.find(x => x.name === v)?.id ?? NONE)
+  const wanted = f.rule
+  const rule = wanted === undefined
+    ? undefined
+    : UUID.test(wanted) ? wanted : dir.rules?.find(r => String(r.number) === wanted.replace(/^#/, ''))?.id ?? NONE
+  const out: FlowQuery = {
+    agent: resolve(f.agent, dir.agents),
+    zone: resolve(f.zone, dir.zones),
+    rule,
+    destination: f.destination,
+    verdict: f.verdict,
+    q: f.q,
+  }
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as FlowQuery
 }

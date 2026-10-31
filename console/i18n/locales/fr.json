@@ -4,6 +4,12 @@
     "deny": "Refuser",
     "observe": "Observer"
   },
+  "actorKind": {
+    "agent": "agent",
+    "cli": "CLI",
+    "human": "humain",
+    "system": "système"
+  },
   "agent": {
     "active": "actif · dernier flux {when}",
     "allowEllipsis": "Autoriser…",
@@ -11,6 +17,7 @@
     "baseline": "socle",
     "changeZone": "Changer de zone…",
     "col": {
+      "denied": "Refus",
       "destination": "Destination",
       "flows": "Flux",
       "last": "Dernière fois",
@@ -26,17 +33,20 @@
     "gateway": "Passerelle",
     "identity": "Identité",
     "kpi": {
+      "alerts": "aucune alerte | 1 alerte | {n} alertes",
       "denied": "Refus · 24 h",
       "deniedDest": "{n} destination distincte | {n} destination distincte | {n} destinations distinctes",
-      "destinations": "Destinations · 7 j",
+      "destinations": "Destinations · 24 h",
       "flows": "Flux · 24 h",
       "flowsLlm": "dont {n} vers un fournisseur LLM",
+      "flowsSub": "toutes destinations",
       "newDest": "aucune nouvelle cette semaine | 1 nouvelle cette semaine | {n} nouvelles cette semaine",
       "received": "reçu : {v}",
       "sent": "Envoyé · 24 h"
     },
     "kpis": "Chiffres clés",
     "noDenials": "Aucun refus récent.",
+    "noToolCalls": "Aucun appel d’outil rapporté.",
     "notFound": "Agent introuvable",
     "pcap": "Capture pcap 15 min",
     "plugin": "Plugin Hermes",
@@ -45,7 +55,7 @@
       "global_denylist": "liste de refus globale",
       "no_rule": "aucune règle"
     },
-    "recentDenials": "Refus récents",
+    "recentDenials": "Derniers refus",
     "ruleN": "règle {n}",
     "seeJournal": "Voir son journal",
     "tag": {
@@ -55,10 +65,10 @@
     },
     "toolDenied": "{n} refus | {n} refus | {n} refus",
     "toolStats": "{n} flux · {v}",
-    "topTools": "Outils qui sortent le plus",
-    "volume": "Volume émis par heure",
+    "topTools": "Derniers appels d’outil",
+    "volume": "Flux par heure",
     "volumeAria": "Histogramme du volume émis par heure, accepté et refusé.",
-    "volumeSub": "24 dernières heures · hors fournisseurs LLM",
+    "volumeSub": "24 dernières heures, comptés par l’API",
     "zone": "Zone"
   },
   "agents": {
@@ -72,6 +82,14 @@
       "zone": "Zone"
     },
     "mcpAgent": "agent agréé",
+    "move": {
+      "button": "Changer de zone",
+      "description": "L’agent suit les règles de sa nouvelle zone après publication et installation.",
+      "submit": "Déplacer dans ma session",
+      "title": "Changer la zone de {name}",
+      "zone": "Nouvelle zone"
+    },
+    "open": "Vue agent",
     "subtitle": "Un agent = un conteneur enrôlé, placé dans une zone",
     "tabs": "Agent"
   },
@@ -104,6 +122,7 @@
       "volume_spike": "Pic de volume sortant"
     },
     "kindsNote": "Nouvelle destination, pic de volume, rafale de refus, métadonnées cloud, secret détecté, mouvement latéral (balayage, port sensible, nouvel hôte), action d’administration inhabituelle.",
+    "manageChannels": "Gérer les canaux",
     "none": "Aucune alerte.",
     "pcap": "Capture pcap",
     "seeFlows": "Voir les flux",
@@ -124,19 +143,23 @@
     "cliLabel": "équivalent cli · même chose via l’api ou le mcp",
     "days": "{n} j",
     "destination": "Destination",
+    "existing": "déjà couvert par l’objet « {name} »",
     "expiresIn": "expire dans {n} j",
     "expiry": "Expiration",
     "failed": "Impossible d’ajouter la règle",
+    "groupName": "Autorisés depuis le journal — {zone}",
     "newObject": "nouvel objet",
     "noExpiry": "aucune",
     "noExpiryLong": "sans expiration",
     "notApplied": "rien n’est appliqué avant installation",
     "option": {
-      "exact": "domaine exact",
-      "group": "groupe existant · {n} domaines",
+      "exact": "domaine exact · nouvel objet",
+      "group": "groupe de la zone (créé au besoin)",
       "wildcard": "joker"
     },
+    "position": "insérée en tête de zone, n° {n}",
     "review": "Relire, publier et installer",
+    "service": "Service {service} (port {port})",
     "sessionName": "Ouverture {dest}",
     "source": "Source",
     "sourceNote": "zone de l’agent, pas d’exception par agent",
@@ -144,6 +167,16 @@
     "track": "Trace",
     "wouldAllow": "Aurait autorisé {n} sur la dernière heure.",
     "wouldAllowN": "{n} flux refusé(s) ({agents})"
+  },
+  "approval": {
+    "check": "Actualiser",
+    "decided": "décision de {who}",
+    "detail": "demandée par {who} {when} · {summary}",
+    "status": {
+      "approved": "Publication approuvée : vous pouvez publier",
+      "pending": "Publication en attente d’approbation humaine (EF-52)",
+      "rejected": "Publication refusée"
+    }
   },
   "audit": {
     "action": {
@@ -153,18 +186,20 @@
       "enroll": "Enrôlement",
       "gateway_command": "Commande passerelle",
       "install": "Installation",
+      "install_request": "Demande d’installation",
       "object_create": "Création d’objet",
       "publish": "Publication",
       "request_denied": "Demande refusée",
       "rule_create": "Création de règle",
       "session_discard": "Abandon de session",
-      "session_open": "Ouverture de session"
+      "session_open": "Ouverture de session",
+      "session_publish": "Publication"
     },
     "allAuthors": "Tous les auteurs",
     "allInterfaces": "Toutes les interfaces",
     "chainChecked": "Chaîne intègre · {n} entrées vérifiées · ancre {at}",
-    "chainKo": "Chaîne rompue : vérifiez l’export",
-    "chainOk": "Chaîne intègre · ancre exportée à {at}",
+    "chainKo": "Chaîne rompue à l’entrée {seq}",
+    "chainOk": "Chaîne intègre · {n} entrées vérifiées · ancres : {sources}",
     "col": {
       "action": "Action",
       "author": "Auteur",
@@ -194,16 +229,57 @@
     "title": "Journal d’audit",
     "verify": "Vérifier la chaîne"
   },
+  "channels": {
+    "enabled": "Actif",
+    "form": {
+      "create": "Nouveau canal",
+      "edit": "Modifier le canal {name}"
+    },
+    "kindLabel": "Type",
+    "minSeverity": "Gravité minimale",
+    "url": "URL",
+    "urlMasked": "Les parties secrètes de l’URL sont masquées à la lecture : saisissez l’URL complète pour la changer."
+  },
   "common": {
     "cancel": "Annuler",
     "clone": "Cloner",
+    "close": "Fermer",
     "copied": "Copié",
     "copy": "copier",
     "copyFailed": "Copie impossible",
+    "delete": "Supprimer",
     "edit": "Modifier",
     "loadMore": "Charger plus",
     "loading": "Chargement…",
     "seeAll": "Tout voir"
+  },
+  "dataClasses": {
+    "badDetectors": "Un détecteur par ligne : builtin:identifiant ou regex:nom=motif.",
+    "category": {
+      "commercial": "commercial",
+      "custom": "personnalisée",
+      "infra": "infrastructure",
+      "personal": "données personnelles",
+      "secret": "secret"
+    },
+    "categoryLabel": "Catégorie",
+    "detectors": "Détecteurs",
+    "detectorsHint": "Un par ligne : builtin:aws_access_key ou regex:nom=motif",
+    "form": {
+      "create": "Nouvelle classe de données",
+      "edit": "Modifier la classe {name}"
+    }
+  },
+  "errors": {
+    "conflict": "Conflit",
+    "forbidden": "Action non autorisée pour votre rôle",
+    "invalid": "Refusé par l’API",
+    "locked": "Modifié par {by} dans une autre session (verrouillé)",
+    "network": "API injoignable",
+    "notFound": "Introuvable",
+    "server": "Erreur de l’API ({status})",
+    "unauthorized": "Session expirée : reconnectez-vous",
+    "unexpected": "Erreur inattendue"
   },
   "flow": {
     "agentMessage": "403 · bloqué par agents-firewall : {dest} non autorisé pour {agent} (règle {rule})",
@@ -211,10 +287,12 @@
     "aria": "Détail du flux",
     "attrib": {
       "certain": "rattachement certain",
+      "probable": "rattachement probable",
       "uncertain": "rattachement incertain"
     },
     "attribHow": {
       "certain": "identifiant d’appel transmis par le plugin Hermes",
+      "probable": "fenêtre de temps : un seul appel d’outil en cours",
       "uncertain": "fenêtre ± 2 s : plusieurs appels d’outil en cours"
     },
     "backToJournal": "retour au journal",
@@ -223,6 +301,7 @@
     "captureStarted": "Capture demandée pour {agent}",
     "closed": "connexion terminée",
     "connRefused": "connexion refusée · règle {rule}",
+    "conversation": "Conversation {id}",
     "copyId": "Copier l’identifiant du flux",
     "decrypted": "déchiffré",
     "effectAllowed": "1 requête vers {dest} · {size} · acceptée par la règle {rule}",
@@ -240,6 +319,7 @@
       "dataClass": "Classe de données",
       "gateway": "Passerelle",
       "protocol": "Protocole",
+      "revision": "révision {n}",
       "rule": "Règle",
       "volumes": "Volumes"
     },
@@ -271,6 +351,12 @@
     "untrusted": "entrée non fiable · {source}",
     "why": "Pourquoi ce verdict"
   },
+  "form": {
+    "comment": "Commentaire",
+    "inSession": "La modification va dans votre session : rien n’est appliqué avant publication et installation.",
+    "name": "Nom",
+    "save": "Enregistrer"
+  },
   "gateways": {
     "add": "Ajouter",
     "addAgent": "Un agent (réseau, proxy, certificat, plugin Hermes)",
@@ -278,6 +364,10 @@
     "addNote": "Docker compose, Coolify (via son API) ou Kubernetes (NetworkPolicy). Un nouvel agent démarre en mode observation si sa zone l’est.",
     "agents": "Agents",
     "available": "{v} disponible",
+    "behind": "rév. {n} active",
+    "buffer": "Tampon d’événements",
+    "bufferValue": "{q} en attente · {d} perdus",
+    "ca": "CA d’inspection",
     "cmdSent": {
       "reinstall": "Réinstallation demandée sur {gw}",
       "self_test": "Test de contournement lancé sur {gw}",
@@ -290,9 +380,12 @@
       "result": "Résultat",
       "rev": "Rév."
     },
+    "desired": "rév. {n} demandée",
     "detail": {
       "console_unreachable": "console injoignable"
     },
+    "flows": "Flux",
+    "flowsValue": "{n} au total · {d} refusés · {a} en cours",
     "isolation": "Isolement réseau",
     "lastInstalls": "Dernières installations",
     "latency": "Latence ajoutée",
@@ -300,28 +393,61 @@
     "linkLost": "perdu depuis {at} · nouvelle tentative 10 s",
     "linkOk": "mTLS · dernier contact {when}",
     "logs": "Journaux",
+    "namePh": "nom attendu (facultatif)",
+    "neverSeen": "jamais connectée",
     "policy": "Politique installée",
     "rate": "Débit",
     "rateValue": "{n} flux/min · ↑ {v}/min",
     "register": "Enregistrer une passerelle",
     "reinstall": "Réinstaller",
+    "remove": "Retirer",
+    "removeText": "Son certificat est révoqué : elle ne pourra plus se connecter sans nouvel enregistrement.",
+    "removeTitle": "Retirer {gw} ?",
+    "rev": "rév. {n}",
     "revAt": "Révision {n} · {at}",
+    "seen": "dernier contact {when}",
     "selfTest": "Tester le contournement",
+    "state": {
+      "failed": "échec",
+      "installed": "installée",
+      "pending": "en attente"
+    },
     "status": {
       "degraded": "dégradée",
       "offline": "hors ligne",
-      "online": "en ligne"
+      "online": "en ligne",
+      "pending": "enregistrée"
     },
     "subtitle": "Une par hôte d’agents · fermeture par défaut si indisponible",
     "success": "succès",
     "tls": "Inspection TLS",
+    "token": "Jeton d’enregistrement",
     "tokenText": "À usage unique, valable jusqu’à {at}. Lancez cette commande sur l’hôte de la passerelle.",
     "tokenTitle": "Jeton d’enregistrement",
+    "uptime": "En service depuis",
     "version": "Version",
+    "volume": "Volume",
     "warn": {
-      "console_unreachable": "Console injoignable depuis {since} : la passerelle continue d’appliquer la révision {n}."
+      "behind": "Révision {d} demandée, la passerelle applique encore la révision {n}.",
+      "console_unreachable": "Console injoignable depuis {since} : la passerelle continue d’appliquer la révision {n}.",
+      "offline": "Hors ligne depuis {since} : elle continue d’appliquer la révision {n}.",
+      "pending": "Enregistrée, en attente du premier contact."
     },
     "warnGeneric": "État signalé par la passerelle : {detail}"
+  },
+  "inspection": {
+    "action": {
+      "bypass": "ne pas déchiffrer",
+      "inspect": "déchiffrer"
+    },
+    "default": "Défaut",
+    "form": {
+      "create": "Nouvelle règle d’inspection",
+      "edit": "Modifier la règle d’inspection {name}"
+    },
+    "new": "Règle d’inspection",
+    "subtitle": "Déchiffrement TLS par zone et destination · la première règle qui correspond s’applique, sinon déchiffrement",
+    "zones": "Zones"
   },
   "internal": {
     "admin": "Appels aux API d’administration",
@@ -333,13 +459,22 @@
       "action": "Action",
       "agent": "Agent",
       "api": "API",
+      "flows": "Flux",
+      "last": "Dernier",
+      "port": "Port",
       "resource": "Ressource",
       "signal": "Signal",
-      "time": "Heure"
+      "target": "Hôte interne",
+      "time": "Heure",
+      "volume": "Volume"
     },
+    "connections": "Connexions internes",
+    "connectionsSub": "surveillance seulement, aucun blocage par défaut",
+    "internalHost": "hôte interne",
     "map": "Carte des flux internes",
     "mapSub": "Qui parle à quel système interne · épaisseur = volume",
     "new": "nouveau",
+    "none": "Aucune connexion interne sur la période.",
     "p": {
       "1h": "1 h",
       "24h": "24 h",
@@ -367,7 +502,7 @@
     "empty": "Aucun flux pour ces filtres.",
     "flows": "Flux",
     "histAria": "Flux par minute sur la période : acceptés et refusés.",
-    "histTip": "{time} · {ok} acceptés · {ko} refusés",
+    "histTip": "{time} · {ok} acceptés · {ko} refusés · {obs} observés",
     "kbd": {
       "allow": "autoriser",
       "curl": "copier en curl",
@@ -392,13 +527,15 @@
       "alert": "Alertes",
       "all": "Tous",
       "allow": "Acceptés",
-      "deny": "Refusés"
+      "deny": "Refusés",
+      "observed": "Observés"
     },
     "segmentToken": {
       "alert": "alerte",
       "all": "tous",
       "allow": "accepté",
-      "deny": "refusé"
+      "deny": "refusé",
+      "observed": "observé"
     },
     "shown": "{n} flux · plus récents en haut"
   },
@@ -435,17 +572,25 @@
       "policy": "politique",
       "watch": "surveiller"
     },
+    "inspection": "Inspection TLS",
     "internal": "Flux internes",
     "journal": "Journal",
     "logout": "Se déconnecter",
     "objects": "Objets et zones",
     "open": "Ouvrir la navigation",
     "revisions": "Révisions et audit",
-    "rules": "Base de règles"
+    "rules": "Base de règles",
+    "settings": "Paramètres"
   },
   "objects": {
     "agentNote": "Les règles ne citent jamais un agent : elles portent sur sa zone.",
     "builtin": "Fourni par défaut · non supprimable.",
+    "category": {
+      "cloud_metadata": "métadonnées cloud",
+      "internal": "interne",
+      "llm_provider": "fournisseur LLM (exempté des classes de données)",
+      "none": "aucune"
+    },
     "changedIn": "Modifié en révision {n} par {by}",
     "col": {
       "name": "Nom",
@@ -462,6 +607,17 @@
     "deleteUnused": "Supprimer (inutilisé)",
     "detailAria": "Détail de l’objet",
     "expired": "{n} expirée | {n} expirée | {n} expirées",
+    "form": {
+      "category": "Catégorie",
+      "categoryHint": "« fournisseur LLM » exempte la destination du blocage par classe de données (EF-25).",
+      "create": "Nouvel objet",
+      "edit": "Modifier l’objet {name}",
+      "end": "Fin",
+      "kind": "Type",
+      "members": "Membres",
+      "start": "Début",
+      "value": "Valeur"
+    },
     "gateway": "Passerelle",
     "inSession": "{n} en session | {n} en session | {n} en session",
     "kind": {
@@ -477,6 +633,8 @@
     },
     "lockedBySession": "Verrouillé par votre session · invisible des autres administrateurs jusqu’à publication.",
     "members": "Membres",
+    "membersCount": "aucun membre | 1 membre | {n} membres",
+    "new": "Créer…",
     "newObject": "Nouvel objet",
     "newZone": "Nouvelle zone",
     "noLongerUsed": "Plus référencé depuis la révision {n}.",
@@ -497,6 +655,7 @@
       "group": "Groupes",
       "host": "Hôtes",
       "network": "Réseaux",
+      "range": "Plages",
       "service": "Services"
     },
     "typeLabel": "Type d’objet",
@@ -534,6 +693,16 @@
       "zone": "zone"
     }
   },
+  "resource": {
+    "agent": "agent",
+    "data_class": "classe de données",
+    "inspection_rule": "règle d’inspection",
+    "object": "objet",
+    "rule": "règle",
+    "service": "service",
+    "settings": "paramètres",
+    "zone": "zone"
+  },
   "revisions": {
     "changes": "{n} modification | {n} modification | {n} modifications",
     "col": {
@@ -547,11 +716,15 @@
     "installation": "Installation",
     "installed": "installée",
     "installedAt": "installée {at}",
+    "noChange": "Aucune différence avec la révision précédente.",
+    "noComment": "sans commentaire",
     "notInstalled": "pas encore installée",
     "older": "… révisions plus anciennes · révision 1 : import de la politique egress-guard",
     "pending": "Session en cours · non publiée",
     "replacedAt": "remplacée, installée {at}",
+    "requestedAt": "demandée {at} par {who}",
     "revTitle": "Révision {n} · {title}",
+    "revert": "Revenir à cette révision…",
     "rollback": "Installer cette révision (retour arrière)",
     "rollbackConfirm": "Installer",
     "rolledBack": "Révision {n} réinstallée",
@@ -563,15 +736,19 @@
   },
   "role": {
     "admin": "admin",
+    "agent_plugin": "plugin Hermes",
     "auditor": "auditeur",
     "mcp_agent": "agent MCP",
     "viewer": "lecteur"
   },
   "rules": {
+    "actionsFor": "Actions sur la règle {name}",
     "all": "Toutes",
     "any": "Tout",
     "anyDest": "Toute destination",
     "bar": {
+      "approval": "Publication en attente d’approbation",
+      "approvalSub": "Une modification élargit l’accès : un autre administrateur doit l’approuver (EF-52).",
       "draft": "Session « {name} » · {n}",
       "draftSub": "{who} · ouverte {when} · {locks} objet(s) verrouillé(s) pour les autres sessions",
       "idle": "Aucune session ouverte",
@@ -609,44 +786,104 @@
     "defaultSessionName": "Modifications",
     "diffWith": "Différences avec la révision {n}",
     "discard": "Abandonner",
+    "form": {
+      "create": "Nouvelle règle",
+      "dataClasses": "Classes de données",
+      "edit": "Modifier la règle {name}",
+      "enabled": "Active",
+      "layer": "Couche",
+      "noDataClass": "aucune condition de contenu",
+      "position": "Position",
+      "positionHint": "Rang dans la couche, 1 = en haut ; l’API renumérote.",
+      "sourcesHint": "Zones sources ; vide = toutes (socle uniquement).",
+      "zoneLayer": "Zone {zone}"
+    },
+    "installAll": "Installer la rév. {n} sur toutes les passerelles ({count})",
+    "installFailed": "Installation impossible",
     "installSummary": "Installer la rév. {n} sur {gws} | Installer la rév. {n} sur {gws} | Installer la rév. {n} sur {count} passerelles : {gws}",
+    "moveDown": "Descendre",
+    "moveUp": "Monter",
+    "noGateway": "Aucune passerelle enregistrée.",
+    "noSection": "Sans section",
     "noShadow": "Aucune règle masquée par une règle plus haute",
+    "noZone": "Aucune zone : créez-en une pour y placer des agents et des règles.",
     "nonBlocking": "Avertissements non bloquants.",
     "notInstalled": "pas encore installée",
-    "observeText": "Depuis le {since} · tout est journalisé, rien n’est refusé (sauf le socle commun). {n} destinations distinctes observées, dont {u} non couvertes par une règle.",
+    "observeText": "Tout est journalisé, rien n’est refusé (sauf le socle commun). Le nettoyage de la zone journalise ce qu’il refuserait.",
+    "observedFlows": "Voir les flux observés",
     "openSession": "Ouvrir une session",
     "proposeFromTraffic": "Proposer des règles depuis le trafic",
+    "publishAgain": "Publier (après approbation)",
     "publishAria": "Publier la session",
     "publishFailed": "Publication impossible",
     "publishRev": "Publier la révision {n}",
     "resultPerGw": "Résultat par passerelle",
-    "revActive": "rév. {n} active · {d}",
+    "revActive": "rév. {n} active · {at}",
     "revComment": "Commentaire de révision",
     "revCommentPh": "Pourquoi ce changement ?",
     "rule": "Règle",
     "search": "Nom, objet, domaine, n°…",
     "searchLabel": "Rechercher une règle",
     "section": "Section",
+    "sectionForm": {
+      "create": "Nouvelle section",
+      "edit": "Section « {name} »",
+      "editAria": "Modifier la section",
+      "rules": "Règles",
+      "rulesHint": "Les règles choisies prennent ce nom de section ; les autres le perdent."
+    },
     "seeJournal": "Voir dans le journal",
     "sessionAria": "Session de modification",
     "steps": "Étapes",
     "subtitle": "Évaluée de haut en bas · première règle correspondante appliquée",
     "tag": {
+      "create": "ajoutée",
+      "delete": "supprimée",
+      "disabled": "désactivée",
       "expired": "expirée",
+      "locked": "modifiée par {by}",
       "session": "session",
-      "unused": "inutilisée"
+      "unused": "inutilisée",
+      "update": "modifiée"
     },
     "toEnforce": "Passer en refus par défaut",
     "useCli": "Création à venir dans la console : utilisez la CLI ou le MCP",
     "verifyPublish": "Vérifier et publier…",
+    "waitingAck": "rév. {n} demandée · en attente de la passerelle",
     "wasRule": "Était la règle {n}",
     "zone": "Zone",
     "zoneSub": "· zone {zone}"
+  },
+  "services": {
+    "anyPort": "tout port",
+    "app": "Application",
+    "appMatch": "Méthodes et chemins",
+    "badPorts": "Ports : nombres ou plages séparés par des virgules (443, 8000-8100).",
+    "form": {
+      "create": "Nouveau service",
+      "edit": "Modifier le service {name}"
+    },
+    "methods": "Méthodes",
+    "noApp": "aucune (L4 seulement)",
+    "paths": "Préfixes de chemin",
+    "ports": "Ports",
+    "portsHint": "vide = tout port",
+    "protocol": "Protocole"
   },
   "session": {
     "changes": "{n} modif. | {n} modif. | {n} modif.",
     "empty": "vide",
     "pill": "session · {label}"
+  },
+  "settings": {
+    "channelsSub": "envoi des alertes (webhook, Teams, Pulse Chat)",
+    "noChannel": "Aucun canal : les alertes restent dans la console.",
+    "subtitle": "Canaux d’alerte et jetons d’API"
+  },
+  "severity": {
+    "critical": "haute",
+    "info": "info",
+    "warning": "moyenne"
   },
   "shortcuts": {
     "allow": "Autoriser le flux sélectionné",
@@ -672,14 +909,33 @@
   "theme": {
     "toggle": "Basculer clair / sombre"
   },
+  "tokens": {
+    "agent": "Agent",
+    "created": "Créé",
+    "expires": "Expiration",
+    "form": {
+      "create": "Nouveau jeton",
+      "submit": "Créer le jeton"
+    },
+    "lastUsed": "Dernier usage",
+    "revoke": "Révoquer",
+    "role": "Rôle",
+    "secret": "Jeton d’API",
+    "secretOnce": "Copiez ce secret maintenant : il ne sera plus jamais affiché.",
+    "subtitle": "CLI, MCP, intégrations ; le secret n’est montré qu’à la création",
+    "title": "Jetons d’API"
+  },
   "trace": {
     "baseline": "Socle commun",
+    "baselineRange": "{n} règles du socle",
     "result": {
       "accept": "accepter",
       "deny": "refuser",
       "no_match": "ne correspond pas",
-      "observe": "observer"
+      "observe": "observer",
+      "skipped": "ignorée"
     },
+    "zoneRange": "{n} règles de la zone",
     "zoneRules": "{n} règles de {zone}"
   },
   "track": {
@@ -701,12 +957,28 @@
     "observedUpper": "◐ OBSERVÉ"
   },
   "verify": {
+    "expired": "Règle expirée encore en place : {rule}",
     "expired_rule": "Règle expirée encore en place : {rule} « {name} » (zone {zone})",
+    "shadowed": "Règle {rule} masquée par la règle {by}",
     "shadowed_rule": "Règle {rule} masquée par la règle {by}",
-    "unused_object": "Objet inutilisé : {object}"
+    "unused_object": "Objet inutilisé : {name}"
   },
   "zone": {
+    "edit": "Modifier la zone",
     "enforce": "refus par défaut",
+    "form": {
+      "create": "Nouvelle zone",
+      "delegated": "Déléguée au MCP",
+      "delegatedHint": "L’agent agréé peut modifier cette zone, jamais celle qui le contient (EF-51).",
+      "edit": "Modifier la zone {name}",
+      "mode": "Mode",
+      "modeHint": "Observation : rien n’est refusé, tout est journalisé (EF-12)."
+    },
+    "mode": {
+      "enforce": "refus par défaut",
+      "observe": "observation"
+    },
+    "new": "Zone",
     "observation": "observation",
     "observeMode": "Mode observation"
   }

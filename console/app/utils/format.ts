@@ -1,4 +1,4 @@
-import type { DecisionRef, FlowEvent } from '~/api/types'
+import type { FlowEvent } from '~/api/types'
 
 /** UI locales supported by the console. */
 export type UiLocale = 'fr' | 'en'
@@ -104,10 +104,18 @@ export function formatRelative(iso: string | null | undefined, locale: UiLocale,
   return locale === 'fr' ? `il y a ${label}` : `${label} ago`
 }
 
-/** Display number of a matched rule: baseline rules are "S<n>", zone rules plain numbers. */
-export function ruleLabel(decision: Pick<DecisionRef, 'layer' | 'rule_number'>): string {
-  if (decision.rule_number == null) return DASH
-  return decision.layer === 'baseline' ? `S${decision.rule_number}` : String(decision.rule_number)
+/**
+ * Label of the rule that decided a flow, in the API's convention (`FlowListItem.rule_label`):
+ * `12 · name`, `socle · name` (baseline rule without number), `default-deny`. Used where the
+ * contract gives the decision only (flow detail, agent view).
+ */
+export function flowRuleLabel(flow: Pick<FlowEvent, 'decision' | 'verdict'>): string {
+  const d = flow.decision
+  if (d.rule_number != null) return `${d.rule_number} · ${d.rule_name}`
+  if (d.layer === 'baseline') return `socle · ${d.rule_name}`
+  if (d.layer === 'implicit' && flow.verdict === 'deny') return 'default-deny'
+  if (d.rule_name) return d.rule_name
+  return flow.verdict === 'deny' ? 'default-deny' : 'implicit'
 }
 
 /** Short flow identifier shown in the journal: "f-8c21e4". */

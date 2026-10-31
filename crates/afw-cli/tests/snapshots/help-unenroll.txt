@@ -1,0 +1,22 @@
+Undo an enrollment and delete the agent
+
+Usage: afw unenroll [OPTIONS] <AGENT>
+
+Arguments:
+  <AGENT>  Agent name
+
+Options:
+      --compose <FILE>             Docker Compose file to restore
+      --json                       Print JSON instead of tables
+      --config <FILE>              Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --coolify <UUID>             Coolify application (or service, with --coolify-service) UUID
+      --coolify-service            
+      --url <URL>                  Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>             Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --coolify-url <COOLIFY_URL>  [env: AFW_COOLIFY_URL=]
+      --apply                      Docker Compose: run `docker compose up -d` afterwards
+      --session <ID>               Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --keep-agent                 Keep the agent in the policy (only undo the network changes)
+      --publish <COMMENT>          Publish the session right away with this comment
+  -h, --help                       Print help
+  -V, --version                    Print version

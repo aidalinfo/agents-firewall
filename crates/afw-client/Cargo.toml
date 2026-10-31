@@ -7,12 +7,23 @@ repository.workspace = true
 rust-version.workspace = true
 description = "agents-firewall REST API client (used by the CLI and the MCP server)"
 
+[features]
+# In-process fake API server (axum) used by the tests of the client, the CLI and the MCP server.
+fake = ["dep:axum", "dep:tokio"]
+
 [dependencies]
 afw-core = { workspace = true }
-anyhow = { workspace = true }
 thiserror = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+afw-client = { workspace = true, features = ["fake"] }
+tokio = { workspace = true }

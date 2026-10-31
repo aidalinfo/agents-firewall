@@ -187,6 +187,7 @@ pub async fn serve_conn<IO>(hf: Arc<HttpFlow>, io: IO)
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    hf.flow.content_inspected.store(true, Ordering::Relaxed);
     let svc = hyper::service::service_fn(move |req| handle_request(hf.clone(), req));
     let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
     let _ = builder

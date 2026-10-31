@@ -139,6 +139,8 @@ async fn proxy_request(
     );
     flow.set_app(AppProto::Http);
     let (_, dst) = decide_and_resolve(&flow, Some(AppProto::Http)).await;
+    flow.content_inspected
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     let hf = HttpFlow::new(flow, false, dst);
     handle_request(hf, req).await
 }

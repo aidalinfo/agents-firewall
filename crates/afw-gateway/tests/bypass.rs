@@ -863,3 +863,101 @@ async fn h2_authority_and_host_must_agree() {
     }
     assert!(h.log.all().iter().all(|s| !s.host.starts_with("denied")));
 }
+
+async fn resolve_via_gateway(h: &Harness, name: &str) {
+    use hickory_proto::op::{Message, MessageType, OpCode, Query};
+    use hickory_proto::rr::{Name, RecordType};
+    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0"))
+        .await
+        .unwrap();
+    let mut m = Message::new();
+    m.set_id(11)
+        .set_message_type(MessageType::Query)
+        .set_op_code(OpCode::Query);
+    m.add_query(Query::query(Name::from_ascii(name).unwrap(), RecordType::A));
+    sock.send_to(&m.to_vec().unwrap(), h.dns()).await.unwrap();
+    let mut buf = [0u8; 512];
+    let (n, _) = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        Message::from_vec(&buf[..n]).unwrap().answers().len(),
+        1,
+        "{name} must resolve"
+    );
+}
+
+#[tokio::test]
+async fn raw_tcp_relay_rules_internal_ssh_and_https_only() {
+    let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    // (1) Internal destination: relayed despite the baseline "secrets to any" rule.
+    let mut t = h.transparent(AGENT_IP, h.internal_addr).await;
+    t.write_all(b"SSH-2.0-OpenSSH_9.6\r\n").await.unwrap();
+    let mut buf = [0u8; 21];
+    tokio::time::timeout(Duration::from_secs(5), t.read_exact(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    drop(t);
+    let ev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.internal && f.verdict == Verdict::Allow))
+        .await;
+    assert!(!flow(&ev).unwrap().content_inspected);
+
+    // (2) git over SSH to a host accepted by an SSH rule: relayed, content not inspected.
+    let ssh_server = spawn_echo(format!("{UPSTREAM_IP}:0").parse().unwrap()).await;
+    resolve_via_gateway(&h, "git.test.").await;
+    let mut t = h.transparent(AGENT_IP, ssh_server).await;
+    t.write_all(b"SSH-2.0-OpenSSH_9.6\r\n").await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), t.read_exact(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&buf, b"SSH-2.0-OpenSSH_9.6\r\n");
+    drop(t);
+    let ev = h
+        .wait_event(|e| {
+            flow(e).is_some_and(|f| {
+                f.domain.as_deref() == Some("git.test") && f.verdict == Verdict::Allow
+            })
+        })
+        .await;
+    assert!(!flow(&ev).unwrap().content_inspected);
+
+    // (3) Raw bytes to port 443 of a host allowed only for HTTPS: refused (content rules apply).
+    resolve_via_gateway(&h, "web.test.").await;
+    let dst: SocketAddr = format!("{UPSTREAM_IP}:443").parse().unwrap();
+    let mut t = h.transparent(AGENT_IP, dst).await;
+    let _ = t.write_all(b"\x00\x01raw").await;
+    let mut b = [0u8; 8];
+    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut b))
+        .await
+        .unwrap();
+    assert!(matches!(r, Ok(0) | Err(_)), "{r:?}");
+    let ev = h
+        .wait_event(|e| {
+            flow(e).is_some_and(|f| {
+                f.domain.as_deref() == Some("web.test") && f.verdict == Verdict::Deny
+            })
+        })
+        .await;
+    assert_eq!(
+        flow(&ev).unwrap().decision.rule_name,
+        "content-not-inspectable"
+    );
+}
+
+#[tokio::test]
+async fn inspected_http_flows_are_marked_content_inspected() {
+    let mut h = harness(Some(installed(1, ZoneMode::Enforce))).await;
+    let s = h.transparent(AGENT_IP, h.upstream_addr).await;
+    let mut tls = h.tls(s, "allowed.test").await.unwrap();
+    let resp = http_raw(&mut tls, &get("allowed.test", "/i")).await;
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+    drop(tls);
+    let ev = h
+        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Allow && f.tls_inspected))
+        .await;
+    assert!(flow(&ev).unwrap().content_inspected);
+}

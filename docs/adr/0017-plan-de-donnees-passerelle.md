@@ -38,13 +38,18 @@ imperceptible en latence (ENF-01).
    (HTTP/1.1 si l'agent parle HTTP/1.1, h2 sinon) : pas de traduction de protocole inutile ni de coût
    d'établissement h2 par connexion. En-têtes « hop-by-hop » retirés.
 7. **L4.** Décision sur adresse/port (+ nom attribué par le cache DNS), puis copie bidirectionnelle comptée ;
-   refus = RST (`SO_LINGER 0`) + événement. **Relais brut seulement si la décision accepte ET
-   `Decision::content_rules_apply` est faux** (aucune règle Deny à classes de données, plus haute que la règle
-   décisive, ne pourrait viser ce flux ; les Deny par chemin s'appliquent déjà à toute la connexion quand les
-   requêtes ne seront jamais vues, ADR 0016 §17) ; sinon refus `content-not-inspectable` : un contenu non
-   inspectable n'est pas autorisé là où une règle de contenu s'applique. Conséquence pour les politiques : une
-   règle de socle « secrets sortants » vers « any » interdit tout TCP brut ; la cibler sur les destinations
-   externes pour laisser passer les flux internes non HTTP (SSH, bases). UDP autre que 53 : rejeté par nftables.
+   refus = RST (`SO_LINGER 0`) + événement. UDP autre que 53 : rejeté par nftables. Un flux qui ressemble à TLS ou
+   HTTP n'arrive jamais ici (§2). Pour un flux TCP brut accepté, dont le contenu ne sera jamais analysé :
+   1. destination interne (interne surveillé, `internal_networks`, objet `internal` ou agent) : relayé —
+      [Killian] les flux internes (SSH, bases…) sont surveillés et autorisés par défaut ;
+   2. Accept explicite par une règle dont tous les services sont non HTTP (`Decision::explicit_non_http` : application
+      SSH/Other, ou protocole et ports donnés sans 80/443/8080/8443) : relayé (ex. `git` en SSH) ;
+   3. sinon, si une règle Deny à classes de données plus haute que la règle décisive pourrait viser ce flux
+      (`Decision::content_rules_apply`, ADR 0016 §19) : refus `content-not-inspectable` (ex. octets bruts vers 443
+      d'un hôte autorisé seulement en HTTPS) ;
+   4. sinon relayé.
+   Le `FlowEvent` porte `content_inspected` (vrai pour le pipeline HTTP, faux pour un relais brut ou un TLS non
+   inspecté).
 8. **Événements.** Un `FlowEvent` par connexion acceptée (émis à la fin, compteurs d'octets), un par refus (au
    moment du refus), un `HttpEvent` par requête (corps masqués par `afw_dlp::mask_bytes`, tronqués à
    `max_stored_body` sans couper une valeur détectée, SHA-256 du contenu complet ; valeurs d'en-têtes

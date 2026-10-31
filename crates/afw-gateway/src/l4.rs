@@ -21,9 +21,14 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
         ),
         None => decide_and_resolve(&flow, app).await,
     };
-    // Raw TCP content is never analysed: if a deny-by-content rule could apply to this
-    // destination, the flow is refused rather than relayed uninspected (ADR 0017).
-    if d.verdict == afw_core::events::Verdict::Allow && d.content_rules_apply {
+    // Raw TCP content is never analysed (ADR 0017 §7). Relayed when the destination is
+    // internal (monitored by default, [Killian]) or when the deciding rule explicitly accepts
+    // a non-HTTP service; otherwise refused if a deny-by-content rule could apply.
+    if d.verdict == afw_core::events::Verdict::Allow
+        && !d.internal
+        && !d.explicit_non_http
+        && d.content_rules_apply
+    {
         d.verdict = afw_core::events::Verdict::Deny;
         d.rule_id = None;
         d.rule_number = None;

@@ -450,6 +450,7 @@ fn implicit(kind: Implicit, revision: Option<u64>, trace: Vec<TraceStep>) -> Dec
         internal: false,
         needs_l7: false,
         content_rules_apply: false,
+        explicit_non_http: false,
         revision,
         trace,
     }
@@ -546,6 +547,12 @@ impl Inner {
                 internal: false,
                 needs_l7: false,
                 content_rules_apply: false,
+                explicit_non_http: rule.action == Action::Accept
+                    && !rule.services.is_empty()
+                    && rule
+                        .services
+                        .iter()
+                        .all(|&i| non_http_service(&self.services[i])),
                 revision: Some(self.revision),
                 trace,
             },
@@ -667,6 +674,22 @@ impl Inner {
                         .is_none_or(|d| d.matches(&flow.host, flow.trusted_ip()) == M::Yes)
             })
             .is_none_or(|r| r.action == InspectionAction::Inspect)
+    }
+}
+
+/// Explicitly non-HTTP service (ADR 0017 §7).
+fn non_http_service(s: &CService) -> bool {
+    const WEB: [u16; 4] = [80, 443, 8080, 8443];
+    match &s.app {
+        Some(app) => matches!(app.proto, AppProto::Ssh | AppProto::Other),
+        None => {
+            !s.ports.is_empty()
+                && s.protocol != L4Proto::Any
+                && !s
+                    .ports
+                    .iter()
+                    .any(|&(a, b)| WEB.iter().any(|p| a <= *p && *p <= b))
+        }
     }
 }
 

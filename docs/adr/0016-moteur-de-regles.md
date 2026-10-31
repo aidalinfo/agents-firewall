@@ -71,7 +71,8 @@ correspondances (noms, chemins, informations manquantes) et quelques cas que les
 19. **`Decision::content_rules_apply`** (ajout, revue de la PR #15) : au stade connexion sans contenu analysé, vrai si
     une règle Deny à classes de données, plus haute que la règle décisive, correspondrait à ce flux si l'une de ses
     classes était détectée. Un flux dont le contenu ne sera jamais analysé (TCP brut) doit alors être refusé par la
-    passerelle (ADR 0017).
+    passerelle (ADR 0017), sauf destination interne ou `Decision::explicit_non_http` (la règle décisive est un Accept dont
+    tous les services sont non HTTP : SSH/Other, ou protocole et ports explicites sans 80/443/8080/8443).
 
 ## Limites
 - Chemins sensibles à la casse : `/ADMIN` ne correspond pas à un préfixe `/admin` (un serveur insensible à la casse

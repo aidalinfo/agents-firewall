@@ -892,3 +892,60 @@ fn content_rules_apply_flags_uninspectable_flows() {
             .content_rules_apply
     );
 }
+
+#[test]
+fn explicit_non_http_accept_rules() {
+    let (mut b, z) = base();
+    let git = b.domain("git.example.com");
+    let web = b.domain("web.example.com");
+    let any = b.domain("any.example.com");
+    let ssh = b.svc(
+        L4Proto::Tcp,
+        &[],
+        Some(AppMatch {
+            proto: AppProto::Ssh,
+            methods: vec![],
+            path_prefixes: vec![],
+        }),
+    );
+    let pg = b.svc(L4Proto::Tcp, &[(5432, 5432)], None);
+    let https = b.svc(L4Proto::Tcp, &[(443, 443)], None);
+    let secrets = b.class("secrets");
+    b.rule("no secrets", Layer::Baseline, 1, &[], Action::Deny)
+        .data_classes = vec![secrets];
+    b.rule(
+        "git ssh",
+        Layer::Zone { zone_id: z },
+        1,
+        &[git],
+        Action::Accept,
+    )
+    .services = vec![ssh, pg];
+    b.rule(
+        "web https",
+        Layer::Zone { zone_id: z },
+        2,
+        &[web],
+        Action::Accept,
+    )
+    .services = vec![https];
+    b.rule("any", Layer::Zone { zone_id: z }, 3, &[any], Action::Accept);
+    let p = b.compile();
+
+    let mut c = ctx(A, Some("git.example.com"), None, 22);
+    c.app = Some(AppProto::Ssh);
+    let d = p.evaluate(&c);
+    assert_eq!(d.verdict, Verdict::Allow);
+    assert!(d.explicit_non_http && d.content_rules_apply);
+
+    let d = p.evaluate(&ctx(A, Some("web.example.com"), None, 443));
+    assert_eq!(d.verdict, Verdict::Allow);
+    assert!(!d.explicit_non_http, "443 is an HTTP port");
+    assert!(d.content_rules_apply);
+
+    let d = p.evaluate(&ctx(A, Some("any.example.com"), None, 9000));
+    assert!(
+        !d.explicit_non_http,
+        "any service is not explicitly non-HTTP"
+    );
+}

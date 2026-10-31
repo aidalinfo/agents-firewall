@@ -4001,6 +4001,10 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        content_inspected:
+          default: false
+          description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+          type: boolean
         data_classes:
           default: []
           description: Names of the data classes detected in the flow.
@@ -4092,6 +4096,10 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        content_inspected:
+          default: false
+          description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+          type: boolean
         conversation_id:
           type:
           - string
@@ -4410,6 +4418,10 @@ components:
             format: uint64
             minimum: 0.0
             type: integer
+          content_inspected:
+            default: false
+            description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+            type: boolean
           data_classes:
             default: []
             description: Names of the data classes detected in the flow.

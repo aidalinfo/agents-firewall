@@ -83,6 +83,8 @@ pub struct Flow {
     pub started_at: DateTime<Utc>,
     pub counters: Arc<Counters>,
     pub tls_inspected: AtomicBool,
+    /// Content analysed (HTTP pipeline); `false` for raw relays and uninspected TLS.
+    pub content_inspected: AtomicBool,
     /// Decision of the forwarded traffic; `Some` = emit a flow event on drop.
     pub allowed: Mutex<Option<Decision>>,
     pub data_classes: Mutex<BTreeSet<String>>,
@@ -108,6 +110,7 @@ impl Flow {
             started_at: Utc::now(),
             counters: Arc::new(Counters::default()),
             tls_inspected: AtomicBool::new(false),
+            content_inspected: AtomicBool::new(false),
             allowed: Mutex::new(None),
             data_classes: Mutex::new(BTreeSet::new()),
         })
@@ -193,6 +196,7 @@ impl Flow {
                 .cloned()
                 .collect(),
             observed: d.observed,
+            content_inspected: self.content_inspected.load(Ordering::Relaxed),
         }
     }
 

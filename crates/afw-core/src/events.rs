@@ -50,6 +50,10 @@ pub struct FlowEvent {
     #[serde(default)]
     pub data_classes: Vec<String>,
     pub observed: bool,
+    /// The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays
+    /// (internal flows, explicitly non-HTTP services) and TLS not inspected.
+    #[serde(default)]
+    pub content_inspected: bool,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]

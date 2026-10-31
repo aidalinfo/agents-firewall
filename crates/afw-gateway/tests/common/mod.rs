@@ -45,6 +45,12 @@ pub const OBJ_META: u128 = 0x303;
 pub const OBJ_K8S: u128 = 0x304;
 pub const OBJ_IP: u128 = 0x305;
 pub const OBJ_PATH: u128 = 0x306;
+pub const OBJ_GIT: u128 = 0x307;
+pub const OBJ_HTTPS_ONLY: u128 = 0x308;
+pub const SVC_SSH: u128 = 0x603;
+pub const SVC_HTTPS: u128 = 0x604;
+pub const RULE_GIT: u128 = 0x509;
+pub const RULE_HTTPS_ONLY: u128 = 0x50a;
 pub const SVC_ADMIN: u128 = 0x601;
 pub const SVC_V1: u128 = 0x602;
 pub const CLASS_SECRETS: u128 = 0x401;
@@ -188,8 +194,47 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
                     pattern: "path.test".into(),
                 },
             ),
+            obj(
+                OBJ_GIT,
+                "git.test",
+                None,
+                NetObjectSpec::Domain {
+                    pattern: "git.test".into(),
+                },
+            ),
+            obj(
+                OBJ_HTTPS_ONLY,
+                "web.test",
+                None,
+                NetObjectSpec::Domain {
+                    pattern: "web.test".into(),
+                },
+            ),
         ],
         services: vec![
+            Service {
+                id: id(SVC_SSH),
+                name: "ssh".into(),
+                comment: String::new(),
+                protocol: L4Proto::Tcp,
+                ports: vec![],
+                app: Some(AppMatch {
+                    proto: AppProto::Ssh,
+                    methods: vec![],
+                    path_prefixes: vec![],
+                }),
+            },
+            Service {
+                id: id(SVC_HTTPS),
+                name: "https".into(),
+                comment: String::new(),
+                protocol: L4Proto::Tcp,
+                ports: vec![PortRange {
+                    start: 443,
+                    end: 443,
+                }],
+                app: None,
+            },
             path_service(SVC_ADMIN, "admin paths", "/admin"),
             path_service(SVC_V1, "v1 api", "/v1/"),
         ],
@@ -235,9 +280,7 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
                 "outbound secrets",
                 Layer::Baseline,
                 2,
-                // External destinations only: internal raw TCP flows stay relayable (a
-                // content rule that could apply forbids uninspectable L4 flows, ADR 0017).
-                &[OBJ_ALLOWED, OBJ_LLM, OBJ_K8S, OBJ_PATH],
+                &[],
                 &[CLASS_SECRETS],
                 Action::Deny,
             ),
@@ -293,6 +336,24 @@ pub fn document(mode: ZoneMode) -> PolicyDocument {
                 4,
                 &[OBJ_PATH],
                 SVC_V1,
+                Action::Accept,
+            ),
+            rule_svc(
+                RULE_GIT,
+                "git over ssh",
+                zone,
+                5,
+                &[OBJ_GIT],
+                SVC_SSH,
+                Action::Accept,
+            ),
+            rule_svc(
+                RULE_HTTPS_ONLY,
+                "web over https",
+                zone,
+                6,
+                &[OBJ_HTTPS_ONLY],
+                SVC_HTTPS,
                 Action::Accept,
             ),
         ],
@@ -396,6 +457,8 @@ pub async fn harness_in(
         "k8s.test",
         "other.test",
         "path.test",
+        "git.test",
+        "web.test",
     ] {
         hosts.insert(h.into(), vec![UPSTREAM_IP.parse().unwrap()]);
     }

@@ -50,6 +50,11 @@
           "format": "uint64",
           "minimum": 0.0
         },
+        "content_inspected": {
+          "description": "The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.",
+          "default": false,
+          "type": "boolean"
+        },
         "data_classes": {
           "description": "Names of the data classes detected in the flow.",
           "default": [],

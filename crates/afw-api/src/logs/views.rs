@@ -555,6 +555,7 @@ mod tests {
             tls_inspected: true,
             data_classes: vec![],
             observed: false,
+            content_inspected: true,
         }
     }
 

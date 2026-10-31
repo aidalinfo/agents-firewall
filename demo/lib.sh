@@ -69,8 +69,11 @@ die() { printf '%serror:%s %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 now_ms() { python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+# rand_chars <tr set> <n>: n random characters. `head` closes the pipe early, so `tr` dies of SIGPIPE: with
+# `set -o pipefail` that status must not abort the caller.
+rand_chars() { { LC_ALL=C tr -dc "$1" </dev/urandom 2>/dev/null || true; } | head -c "$2"; }
 # shellcheck disable=SC2120 # optional length argument
-rand_hex() { LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c "${1:-12}"; }
+rand_hex() { rand_chars 'a-f0-9' "${1:-12}"; }
 
 # ---------------------------------------------------------------------------------------------------
 # Docker / compose
@@ -146,9 +149,11 @@ wait_api() {
 # afw CLI (lot L8) with curl fallback
 # ---------------------------------------------------------------------------------------------------
 # afw <args...>: runs the CLI in its image, on the demo control network.
+# The open policy session, if any, is passed as AFW_SESSION (docs/cli.md).
 afw() {
   docker run --rm -i --network "${DEMO_PROJECT}_control" \
     -e "$AFW_CLI_URL_ENV=$AFW_API_URL_IN_DOCKER" -e "$AFW_CLI_TOKEN_ENV=$AFW_TOKEN" \
+    ${AFW_SESSION_ID:+-e "AFW_SESSION=$AFW_SESSION_ID"} \
     "$AFW_CLI_IMAGE" "$@"
 }
 # cli_has <subcommand...>: the CLI image exists and implements this subcommand (non-empty help).
@@ -182,8 +187,8 @@ session_discard() {
 # publish <comment>: publishes the open session, prints the new revision number.
 publish() {
   local comment="$1" rev
-  if cli_has publish; then
-    rev="$(afw publish --comment "$comment" --json | jqx -r '.number // .revision.number')"
+  if cli_has session publish; then
+    rev="$(afw session publish -m "$comment" --json | jqx -r '.number // .revision.number')"
   else
     rev="$(api_post "/sessions/$AFW_SESSION_ID/publish" "$(jqx -nc --arg c "$comment" '{comment: $c}')" | jqx -r '.number')"
   fi
@@ -193,7 +198,7 @@ publish() {
 }
 # install <revision>: installs a revision on every gateway.
 install() {
-  if cli_has install; then afw install --revision "$1" --json >/dev/null
+  if cli_has install; then afw install "$1" --all --no-wait --json >/dev/null
   else api_post /installs "$(jqx -nc --argjson r "$1" '{revision: $r, gateways: []}')" >/dev/null; fi
 }
 gateways_json() { api_get /gateways | items; }
@@ -277,6 +282,8 @@ load_policy() {
       if [ "$coll" = agents ] && [ -n "$gw" ] && printf '%s' "$line" | jqx -e '.hermes' >/dev/null; then
         enroll_hermes_agent "$line" "$gw" || die "cannot enroll $(printf '%s' "$line" | jqx -r .name)"
       else
+        # Every demo agent sits behind the demo gateway (shown on the gateway page).
+        if [ "$coll" = agents ] && [ -n "$gw" ]; then line="$(printf '%s' "$line" | jqx -c --arg g "$gw" '.gateway_id = $g')"; fi
         create_resource "$coll" "$line" || die "cannot create $coll $(printf '%s' "$line" | jqx -r .name)"
       fi
     done
@@ -299,7 +306,7 @@ zone_id() { api_get /zones | items | jqx -r --arg n "$1" 'select(.name == $n) | 
 # Gateways, tokens, logs, alerts, audit
 # ---------------------------------------------------------------------------------------------------
 gateway_registration_token() {
-  if cli_has gateways token create; then afw gateways token create --name "$1" --json | jqx -r '.token'
+  if cli_has gateways token; then afw gateways token --name "$1" --json | jqx -r '.token'
   else api_post /gateways/registration-tokens "$(jqx -nc --arg n "$1" '{name: $n}')" | jqx -r '.token'; fi
 }
 # api_token_create <name> <role> [agent id]: prints the secret.
@@ -322,7 +329,7 @@ find_flow() {
   return 1
 }
 allow_from_log() { # allow_from_log <flow id> : prints the created rule (JSON)
-  if cli_has logs allow; then afw logs allow "$1" --json
+  if cli_has allow; then afw allow "$1" --json
   else api_post "/sessions/$AFW_SESSION_ID/allow-from-log" "$(jqx -nc --arg f "$1" '{flow_id: $f}')"; fi
 }
 alerts_since() { api_get "/alerts?from=$1&limit=200" | items; }
@@ -368,6 +375,12 @@ attempt() {
   out="$(agent_sh "$1" "$3" 2>&1)" || rc=$?
   evidence "$2: exit $rc, $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
   return 0
+}
+# http_code_cmd <curl args...>: shell command (run in an agent) printing the HTTP status of a request. Through
+# the explicit proxy an HTTPS denial happens on CONNECT (curl's http_code is then 000): the CONNECT status is
+# printed instead.
+http_code_cmd() {
+  printf '%s' "curl -s -o /dev/null -w '%{http_code} %{http_connect}' --max-time 10 $* | awk '{print (\$1 == \"000\" && \$2 != \"000\") ? \$2 : \$1}'"
 }
 # positive_control <agent>: an allowed destination must work, otherwise a "blocked" result means nothing.
 positive_control() {

@@ -12,7 +12,7 @@ for a in "$@"; do
 done
 # Agents enrolled by scenario 11 live in their own compose project.
 if [ -f "$STATE_DIR/s11/docker-compose.yml" ]; then
-  docker compose -p afw-demo-s11 -f "$STATE_DIR/s11/docker-compose.yml" down --remove-orphans >&2 || true
+  docker compose -p afw-demo-s11 -f "$STATE_DIR/s11/docker-compose.yml" down -v --remove-orphans >&2 || true
 fi
 if [ "$purge" = 1 ]; then
   dc --profile tools down -v --remove-orphans >&2

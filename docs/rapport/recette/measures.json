@@ -1,0 +1,14 @@
+{
+  "runs": 5,
+  "denial_to_flow_opened_ms": {
+    "median": 948,
+    "max": 1076
+  },
+  "tool_call_to_full_trace_ms": {
+    "median": 831,
+    "max": 837
+  },
+  "api_calls_ms": {
+    "median": 61
+  }
+}

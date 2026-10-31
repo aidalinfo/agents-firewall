@@ -32,7 +32,7 @@ if [ ! -s "$SECRETS_FILE" ]; then
   fi
   step "generate the demo admin token and content key ($SECRETS_FILE)"
   (umask 077; printf 'AFW_DEMO_ADMIN_TOKEN=afw-demo-%s\nAFW_DEMO_DATA_KEY=%s\n' \
-    "$(LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 40)" \
+    "$(rand_hex 40)" \
     "$(head -c 32 /dev/urandom | base64 | tr -d '\n')" >"$SECRETS_FILE")
 fi
 chmod 600 "$SECRETS_FILE"
@@ -62,6 +62,8 @@ fi
 if [ "$build" = 1 ] && [ -e "$ROOT/crates/afw-cli/src/main.rs" ]; then
   step "build $AFW_CLI_IMAGE"
   docker build -q -t "$AFW_CLI_IMAGE" -f "$ROOT/deploy/docker/Dockerfile.cli" "$ROOT" >/dev/null || warn "CLI image build failed (scenarios fall back to curl)"
+  # afw + docker client, for `afw enroll --apply` from a container (scenario 11).
+  docker build -q -t afw-cli-docker:local -f "$DEMO_DIR/tools/Dockerfile.cli-docker" "$DEMO_DIR/tools" >/dev/null || warn "afw-cli-docker image build failed"
 fi
 if [ -n "$missing" ]; then
   warn "images that cannot be built yet (lots not merged):$missing"
@@ -126,6 +128,10 @@ if api_healthy && [ ! -f "$STATE_DIR/policy-installed" ]; then
 fi
 
 # --- 5. agents ---------------------------------------------------------------------------------------
+# The plugin token of daniel-bot is written to demo.env by load_policy, in a subshell (pipeline): reload it.
+# shellcheck source=/dev/null
+if [ -f "$STATE_DIR/demo.env" ]; then set -a; . "$STATE_DIR/demo.env"; set +a; fi
+[ -n "$AFW_DEMO_DANIEL_TOKEN" ] || warn "no plugin token for daniel-bot ($STATE_DIR/demo.env): tool calls will not be ingested"
 agents="afw-net-laurent-bot laurent-bot afw-net-acme-bot acme-bot"
 have afw-hermes-demo:local && agents="afw-net-daniel-bot daniel-bot $agents"
 step "start the agents: $agents"

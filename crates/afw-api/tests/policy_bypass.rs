@@ -73,6 +73,7 @@ fn flow(id: Uuid, agent: Uuid, zone: Uuid, domain: &str) -> FlowEvent {
         tls_inspected: true,
         data_classes: vec![],
         observed: false,
+        content_inspected: true,
     }
 }
 

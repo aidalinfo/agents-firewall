@@ -755,6 +755,7 @@ async fn allow_from_log_prefills_a_rule_at_the_top_of_the_zone() {
         tls_inspected: true,
         data_classes: vec![],
         observed: false,
+        content_inspected: true,
     };
     let flows = Flows(HashMap::from([
         (flow_id, make(flow_id)),
@@ -1102,6 +1103,7 @@ async fn allow_from_log_options_and_changes() {
         tls_inspected: true,
         data_classes: vec![],
         observed: false,
+        content_inspected: true,
     };
     let flows = Flows(HashMap::from([
         (f1, make(f1, "api.github.com")),
@@ -1555,6 +1557,7 @@ async fn allow_from_log_public_suffixes_and_group_by_id() {
         tls_inspected: true,
         data_classes: vec![],
         observed: false,
+        content_inspected: true,
     };
     let flows = Flows(HashMap::from([
         (f1, make(f1, "example.co.uk")),
@@ -1665,6 +1668,7 @@ async fn logs_end_to_end_allow_from_log_hits_and_status() {
         tls_inspected: true,
         data_classes: vec![],
         observed: false,
+        content_inspected: true,
     };
     afw_api::logs::ingest_gateway_events(&env.state, gw, vec![GatewayEvent::Flow(flow)])
         .await

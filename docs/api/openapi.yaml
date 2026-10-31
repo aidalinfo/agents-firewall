@@ -4001,6 +4001,10 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        content_inspected:
+          default: false
+          description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+          type: boolean
         data_classes:
           default: []
           description: Names of the data classes detected in the flow.
@@ -4092,6 +4096,10 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        content_inspected:
+          default: false
+          description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+          type: boolean
         conversation_id:
           type:
           - string
@@ -4410,6 +4418,10 @@ components:
             format: uint64
             minimum: 0.0
             type: integer
+          content_inspected:
+            default: false
+            description: The content of the flow was analysed (inspected HTTP/HTTPS). `false` for raw TCP relays (internal flows, explicitly non-HTTP services) and TLS not inspected.
+            type: boolean
           data_classes:
             default: []
             description: Names of the data classes detected in the flow.
@@ -4691,6 +4703,16 @@ components:
           format: uint64
           minimum: 0.0
           type: integer
+        p50_ms:
+          default: 0.0
+          description: Latency added by the gateway (decision, inspection, analysis; upstream time excluded) over recent requests and connections, median, in milliseconds. Absent from older gateways.
+          format: double
+          type: number
+        p95_ms:
+          default: 0.0
+          description: Same, 95th percentile, in milliseconds.
+          format: double
+          type: number
         uptime_secs:
           format: uint64
           minimum: 0.0

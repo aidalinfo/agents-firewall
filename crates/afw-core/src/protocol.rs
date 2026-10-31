@@ -86,6 +86,13 @@ pub struct GatewayStats {
     pub events_queued: u64,
     /// Events dropped because the buffer was full.
     pub events_dropped: u64,
+    /// Latency added by the gateway (decision, inspection, analysis; upstream time excluded)
+    /// over recent requests and connections, median, in milliseconds. Absent from older gateways.
+    #[serde(default)]
+    pub p50_ms: f64,
+    /// Same, 95th percentile, in milliseconds.
+    #[serde(default)]
+    pub p95_ms: f64,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Default)]

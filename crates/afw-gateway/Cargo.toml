@@ -7,15 +7,51 @@ repository.workspace = true
 rust-version.workspace = true
 description = "agents-firewall gateway (data plane)"
 
+[lib]
+name = "afw_gateway"
+path = "src/lib.rs"
+
+[[bin]]
+name = "afw-gateway"
+path = "src/main.rs"
+
 [dependencies]
 afw-core = { workspace = true }
-afw-engine = { workspace = true }
-afw-dlp = { workspace = true }
 afw-tls = { workspace = true }
+afw-dlp = { workspace = true }
+afw-engine = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+ipnet = { workspace = true }
+regex = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+hickory-proto = { workspace = true }
+clap = { workspace = true }
+tower = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+flate2 = { workspace = true }
+# End-to-end test against the real control plane (tests/console_e2e.rs).
+afw-api = { path = "../afw-api" }
+axum = { workspace = true }
+sqlx = { workspace = true }

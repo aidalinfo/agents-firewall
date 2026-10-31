@@ -827,3 +827,125 @@ fn verify_empty_group_is_not_shadowed() {
             .any(|f| matches!(f, VerifyFinding::Shadowed { .. }))
     );
 }
+
+#[test]
+fn content_rules_apply_flags_uninspectable_flows() {
+    let (mut b, z) = base();
+    let api = b.domain("api.example.com");
+    let other = b.domain("other.example.com");
+    let llm = b.obj_cat(
+        "llm",
+        NetObjectSpec::Domain {
+            pattern: "llm.example.com".into(),
+        },
+        Some(DestCategory::LlmProvider),
+    );
+    let secrets = b.class("secrets");
+    b.rule(
+        "no secrets to api",
+        Layer::Baseline,
+        1,
+        &[api],
+        Action::Deny,
+    )
+    .data_classes = vec![secrets];
+    b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
+    let p = b.compile();
+
+    // Raw TCP to api: accepted, but a deny-by-content rule above could apply and the content
+    // will never be seen.
+    let dec = p.evaluate(&ctx(A, Some("api.example.com"), None, 22));
+    assert_eq!(dec.verdict, Verdict::Allow);
+    assert!(dec.content_rules_apply);
+    // Other destination: the content rule cannot target it.
+    let dec = p.evaluate(&ctx(A, Some("other.example.com"), None, 22));
+    assert!(!dec.content_rules_apply);
+    let _ = other;
+    // LLM provider: data-class rules are skipped (EF-25).
+    b.rule("no secrets anywhere", Layer::Baseline, 2, &[], Action::Deny)
+        .data_classes = vec![secrets];
+    let p = b.compile();
+    let dec = p.evaluate(&ctx(A, Some("llm.example.com"), None, 22));
+    assert!(!dec.content_rules_apply);
+    let _ = llm;
+    // Request stage with content already analysed: not set.
+    let mut c = http(A, "other.example.com", "POST", "/x");
+    c.data_classes = vec![];
+    let dec = p.evaluate(&c);
+    assert!(!dec.content_rules_apply);
+    // A deny-by-content rule BELOW the deciding rule does not count.
+    let (mut b, z) = base();
+    let api = b.domain("api.example.com");
+    let secrets = b.class("secrets");
+    b.rule("allow api", Layer::Baseline, 1, &[api], Action::Accept);
+    b.rule(
+        "no secrets",
+        Layer::Zone { zone_id: z },
+        1,
+        &[],
+        Action::Deny,
+    )
+    .data_classes = vec![secrets];
+    let p = b.compile();
+    assert!(
+        !p.evaluate(&ctx(A, Some("api.example.com"), None, 22))
+            .content_rules_apply
+    );
+}
+
+#[test]
+fn explicit_non_http_accept_rules() {
+    let (mut b, z) = base();
+    let git = b.domain("git.example.com");
+    let web = b.domain("web.example.com");
+    let any = b.domain("any.example.com");
+    let ssh = b.svc(
+        L4Proto::Tcp,
+        &[],
+        Some(AppMatch {
+            proto: AppProto::Ssh,
+            methods: vec![],
+            path_prefixes: vec![],
+        }),
+    );
+    let pg = b.svc(L4Proto::Tcp, &[(5432, 5432)], None);
+    let https = b.svc(L4Proto::Tcp, &[(443, 443)], None);
+    let secrets = b.class("secrets");
+    b.rule("no secrets", Layer::Baseline, 1, &[], Action::Deny)
+        .data_classes = vec![secrets];
+    b.rule(
+        "git ssh",
+        Layer::Zone { zone_id: z },
+        1,
+        &[git],
+        Action::Accept,
+    )
+    .services = vec![ssh, pg];
+    b.rule(
+        "web https",
+        Layer::Zone { zone_id: z },
+        2,
+        &[web],
+        Action::Accept,
+    )
+    .services = vec![https];
+    b.rule("any", Layer::Zone { zone_id: z }, 3, &[any], Action::Accept);
+    let p = b.compile();
+
+    let mut c = ctx(A, Some("git.example.com"), None, 22);
+    c.app = Some(AppProto::Ssh);
+    let d = p.evaluate(&c);
+    assert_eq!(d.verdict, Verdict::Allow);
+    assert!(d.explicit_non_http && d.content_rules_apply);
+
+    let d = p.evaluate(&ctx(A, Some("web.example.com"), None, 443));
+    assert_eq!(d.verdict, Verdict::Allow);
+    assert!(!d.explicit_non_http, "443 is an HTTP port");
+    assert!(d.content_rules_apply);
+
+    let d = p.evaluate(&ctx(A, Some("any.example.com"), None, 9000));
+    assert!(
+        !d.explicit_non_http,
+        "any service is not explicitly non-HTTP"
+    );
+}

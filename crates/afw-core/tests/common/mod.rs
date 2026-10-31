@@ -205,6 +205,7 @@ pub fn flow() -> FlowEvent {
         tls_inspected: true,
         data_classes: vec!["secrets".into()],
         observed: false,
+        content_inspected: true,
     }
 }
 

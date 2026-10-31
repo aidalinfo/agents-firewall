@@ -18,6 +18,7 @@ Commands:
   inspection-rules  TLS inspection rules
   where-used        Rules, groups and inspection rules referencing an object
   session           Editing sessions: open, show, discard, publish
+  status            Published and installed revisions, gateways up to date
   verify            Pre-install verification: shadowed rules, unused objects, expired rules
   allow             Prepare an accept rule in your session from a denied flow of the log
   revisions         Published revisions: history, detail, differences, rollback

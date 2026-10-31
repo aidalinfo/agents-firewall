@@ -1,17 +1,21 @@
-Import an egress-guard policy into your session (objects, rules, data classes)
+Import an egress-guard policy (objects, services, data classes, zone, rules, intent policy). Without --apply, only prints the import report
 
 Usage: afw import egress-guard [OPTIONS] --zone <ZONE> <FILE>
 
 Arguments:
-  <FILE>  egress-guard YAML file
+  <FILE>  egress-guard YAML file (`-` = stdin)
 
 Options:
       --json            Print JSON instead of tables
-      --zone <ZONE>     Target zone name
+      --zone <ZONE>     Zone receiving the imported rules (created when missing)
       --config <FILE>   Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
-      --dry-run         Print the import plan without changing anything
+      --mode <MODE>     Mode of a created zone [default: observe] [possible values: observe, enforce]
+      --downgrade       Allow changing the mode of an existing zone
       --url <URL>       Console URL (overrides the configuration) [env: AFW_URL=]
+      --apply           Merge the plan into your editing session
       --ca-cert <FILE>  Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --force           Apply even when a deny/gate of the source is not enforced by the plan
       --session <ID>    Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --intent-policy   Also replace the whole Hermes intent policy with the imported one
   -h, --help            Print help
   -V, --version         Print version

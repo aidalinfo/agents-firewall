@@ -72,6 +72,8 @@ pub enum Command {
     /// Editing sessions: open, show, discard, publish.
     #[command(subcommand)]
     Session(SessionCmd),
+    /// Published and installed revisions, gateways up to date.
+    Status,
     /// Pre-install verification: shadowed rules, unused objects, expired rules.
     Verify {
         /// Revision to verify (default: your session draft).
@@ -652,6 +654,9 @@ pub enum AuditCmd {
         /// Action (e.g. `session.publish`).
         #[arg(long)]
         action: Option<String>,
+        /// Interface the change was made from.
+        #[arg(long, value_parser = ["ui", "cli", "mcp", "api", "system"])]
+        interface: Option<String>,
         #[command(flatten)]
         period: Period,
         #[command(flatten)]
@@ -845,16 +850,29 @@ pub struct UnenrollArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum ImportCmd {
-    /// Import an egress-guard policy into your session (objects, rules, data classes).
+    /// Import an egress-guard policy (objects, services, data classes, zone, rules, intent
+    /// policy). Without --apply, only prints the import report.
     #[command(name = "egress-guard")]
     EgressGuard {
-        /// egress-guard YAML file.
+        /// egress-guard YAML file (`-` = stdin).
         file: PathBuf,
-        /// Target zone name.
+        /// Zone receiving the imported rules (created when missing).
         #[arg(long)]
         zone: String,
-        /// Print the import plan without changing anything.
-        #[arg(long = "dry-run")]
-        dry_run: bool,
+        /// Mode of a created zone.
+        #[arg(long, value_parser = ["observe", "enforce"], default_value = "observe")]
+        mode: String,
+        /// Allow changing the mode of an existing zone.
+        #[arg(long)]
+        downgrade: bool,
+        /// Merge the plan into your editing session.
+        #[arg(long)]
+        apply: bool,
+        /// Apply even when a deny/gate of the source is not enforced by the plan.
+        #[arg(long, requires = "apply")]
+        force: bool,
+        /// Also replace the whole Hermes intent policy with the imported one.
+        #[arg(long = "intent-policy", requires = "apply")]
+        intent_policy: bool,
     },
 }

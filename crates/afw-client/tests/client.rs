@@ -31,6 +31,10 @@ fn session(id: Uuid) -> Session {
         locks: vec![],
         changes: 0,
         approval_id: None,
+        name: None,
+        pending_install: None,
+        base_revision: None,
+        next_revision: None,
     }
 }
 
@@ -292,9 +296,19 @@ async fn allow_from_log_posts_flow_and_decodes_rule() {
             pattern: "api.github.com".into(),
         },
     };
+    let r = rule(zone);
     let resp = afw_core::api::AllowFromLogResponse {
-        rule: rule(zone),
+        rule: afw_core::api::RuleView {
+            rule: r.clone(),
+            number: 3,
+            hits: 0,
+            last_hit_at: None,
+            expired: false,
+            locked_by: None,
+            pending_change: Some(afw_core::api::ChangeOp::Create),
+        },
         created_object: Some(obj.clone()),
+        changes: vec![],
     };
     fake.on_json(
         "POST",
@@ -314,7 +328,8 @@ async fn allow_from_log_posts_flow_and_decodes_rule() {
         )
         .await
         .unwrap();
-    assert_eq!(out.rule.rule, resp.rule);
+    assert_eq!(out.rule.rule, r);
+    assert_eq!(out.rule.number, Some(3));
     assert_eq!(out.created_object, Some(obj));
     assert_eq!(
         fake.requests()[0].json(),

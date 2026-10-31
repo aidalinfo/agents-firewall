@@ -272,6 +272,7 @@ async fn dispatch(ctx: &mut Ctx<'_>, cmd: Command, stdin: &mut dyn Read) -> Resu
         },
         Command::WhereUsed { object } => resources::where_used(ctx, &object).await,
         Command::Session(c) => commands::session(ctx, c).await,
+        Command::Status => commands::status(ctx).await,
         Command::Verify { revision } => return commands::verify(ctx, revision).await,
         Command::Allow(a) => commands::allow(ctx, a).await,
         Command::Revisions(c) => commands::revisions(ctx, c).await,
@@ -286,7 +287,7 @@ async fn dispatch(ctx: &mut Ctx<'_>, cmd: Command, stdin: &mut dyn Read) -> Resu
         Command::Tokens(c) => commands::tokens(ctx, c).await,
         Command::Enroll(a) => enroll::enroll(ctx, *a).await,
         Command::Unenroll(a) => enroll::unenroll(ctx, a).await,
-        Command::Import(c) => commands::import(ctx, c).await,
+        Command::Import(c) => return commands::import(ctx, c).await,
     };
     r.map(|()| 0)
 }

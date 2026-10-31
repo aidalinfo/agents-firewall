@@ -16,7 +16,7 @@ use afw_core::api::{
 use afw_core::events::{AuditEntry, GatewayEvent, Severity, Verdict};
 use afw_core::policy::Track;
 use afw_core::protocol::GatewayCommand;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -297,6 +297,29 @@ pub async fn session(ctx: &mut Ctx<'_>, cmd: SessionCmd) -> Result<()> {
             }
         }
     }
+}
+
+pub async fn status(ctx: &mut Ctx<'_>) -> Result<()> {
+    let c = ctx.client()?;
+    let st = c.policy_status().await?;
+    if ctx.json {
+        return ctx.print_json(&st);
+    }
+    let v = serde_json::to_value(&st)?;
+    kv(
+        ctx.out,
+        &[
+            ("latest revision", scalar(v.get("latest_revision"))),
+            ("installed revision", scalar(v.get("installed_revision"))),
+            (
+                "gateways on it",
+                format!("{}/{}", st.gateways_on_revision, st.gateways_total),
+            ),
+            ("pending installs", st.pending_installs.to_string()),
+            ("p95 latency (ms)", scalar(v.get("p95_ms"))),
+        ],
+    )?;
+    Ok(())
 }
 
 pub async fn verify(ctx: &mut Ctx<'_>, revision: Option<u64>) -> Result<i32> {
@@ -1133,11 +1156,16 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
             from_seq,
             actor,
             action,
+            interface,
             period,
             paging,
         } => {
             let page = c
                 .list_audit(&AuditQuery {
+                    interface: interface
+                        .as_deref()
+                        .map(|i| parse_enum("interface", i))
+                        .transpose()?,
                     from_seq,
                     actor,
                     action,
@@ -1432,53 +1460,68 @@ pub async fn intent_policy(ctx: &mut Ctx<'_>, cmd: IntentPolicyCmd) -> Result<()
 // ---------------------------------------------------------------------------------------------
 // Import
 
-pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<()> {
-    match cmd {
-        ImportCmd::EgressGuard {
-            file,
-            zone,
-            dry_run,
-        } => import_egress_guard(ctx, &file, &zone, dry_run).await,
-    }
-}
-
-#[cfg(feature = "import")]
-async fn import_egress_guard(
-    ctx: &mut Ctx<'_>,
-    file: &std::path::Path,
-    zone: &str,
-    dry_run: bool,
-) -> Result<()> {
-    let yaml = crate::resources::read_input(file)?;
-    let plan = afw_import::egress_guard::import(&yaml, zone)
-        .map_err(|e| anyhow!("egress-guard import failed: {e}"))?;
-    let plan = serde_json::to_value(&plan)?;
-    if dry_run {
-        return ctx.print_json(&plan);
-    }
-    let document = plan
-        .get("document")
-        .cloned()
-        .ok_or_else(|| anyhow!("the import plan has no `document`"))?;
+pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<i32> {
+    let ImportCmd::EgressGuard {
+        file,
+        zone,
+        mode,
+        downgrade,
+        apply,
+        force,
+        intent_policy,
+    } = cmd;
+    let yaml = crate::resources::read_input(&file)?;
     let c = ctx.client()?;
-    let session = ctx.session().await?;
-    let s = c.import_document(session, &document).await?;
-    if ctx.json {
-        return ctx.print_json(&json!({ "plan": plan, "session": s }));
+    // The plan reuses what already exists: read the policy as your session sees it.
+    if c.session().is_none()
+        && let Some(s) = c.current_session().await?
+    {
+        c.set_session(Some(s.id));
     }
-    ctx.print_json(&plan)?;
+    let existing = c.draft_document().await?;
+    let mut opts = afw_import::ImportOptions::new(zone);
+    opts.zone_mode = parse_enum("zone mode", &mode)?;
+    opts.existing = Some(&existing);
+    opts.downgrade = downgrade;
+    let plan = afw_import::import(&yaml, &opts).map_err(|e| anyhow!("egress-guard import failed: {e}"))?;
+    if ctx.json && !apply {
+        ctx.print_json(&plan)?;
+        return Ok(0);
+    }
+    if !ctx.json {
+        write!(ctx.out, "{}", plan.report.to_markdown())?;
+    }
+    if !apply {
+        writeln!(ctx.err, "Report only: rerun with --apply to merge the plan into your session.")?;
+        return Ok(0);
+    }
+    if !plan.is_safe() && !force {
+        writeln!(
+            ctx.err,
+            "error: the plan does not enforce every deny/gate of the source (see the blocking items of the report); \
+             review it, then rerun with --force to apply anyway"
+        )?;
+        return Ok(1);
+    }
+    let session = ctx.session().await?;
+    let s = c
+        .import_document(session, &serde_json::to_value(plan.to_policy_fragment())?)
+        .await?;
+    let intent = if intent_policy {
+        Some(c.update_intent_policy(&plan.intent_policy).await?)
+    } else {
+        None
+    };
+    if ctx.json {
+        ctx.print_json(&json!({ "plan": plan, "session": s, "intent_policy": intent }))?;
+        return Ok(0);
+    }
     ctx.say(&format!(
         "Imported into session {} ({} pending changes). Review, then: afw session publish -m <comment>",
         s.id, s.changes
-    ))
-}
-
-#[cfg(not(feature = "import"))]
-async fn import_egress_guard(
-    _ctx: &mut Ctx<'_>,
-    _file: &std::path::Path,
-    _zone: &str,
-    _dry_run: bool,
-) -> Result<()> {
-    bail!("this afw build has no egress-guard import (rebuild with `--features import`)")
+    ))?;
+    if let Some(p) = intent {
+        ctx.say(&format!("Intent policy replaced (version {}).", p.version))?;
+    }
+    Ok(0)
 }

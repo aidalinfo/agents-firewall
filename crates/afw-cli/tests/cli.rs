@@ -94,6 +94,10 @@ fn session(id: Uuid) -> Session {
         locks: vec![],
         changes: 0,
         approval_id: None,
+        name: None,
+        pending_install: None,
+        base_revision: None,
+        next_revision: None,
     }
 }
 
@@ -620,6 +624,7 @@ async fn logs_flows_sends_ef41_filters_and_prints_rows() {
         internal: false,
         llm_provider: false,
         tls_inspected: false,
+        content_inspected: false,
         data_classes: vec![],
         observed: false,
     };
@@ -790,16 +795,59 @@ async fn enroll_api_refusal_leaves_compose_untouched() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
 }
 
+fn empty_policy(fake: &FakeApi) {
+    for p in ["/objects", "/services", "/data-classes", "/zones", "/agents", "/rules", "/inspection-rules"] {
+        fake.on_json("GET", p, 200, &json!([]));
+    }
+    fake.on_json("GET", "/settings", 200, &afw_core::policy::PolicySettings::default());
+}
+
+fn example() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/egress-guard/guardrails.example.yaml")
+        .display()
+        .to_string()
+}
+
 #[tokio::test]
-async fn import_without_feature_is_explained() {
+async fn import_report_only_changes_nothing() {
     let env = Env::new();
     let fake = FakeApi::start().await;
-    let f = env.path("eg.yaml");
-    std::fs::write(&f, "allow: []\n").unwrap();
-    let out = afw(&env, &fake, &["import", "egress-guard", f.to_str().unwrap(), "--zone", "clients"]).await;
-    if cfg!(feature = "import") {
-        return;
-    }
-    assert_eq!(out.code, 1);
-    assert!(out.err.contains("--features import"), "{}", out.err);
+    fake.on("GET", "/sessions/current", Reply::problem(404, "Not Found", "none"));
+    empty_policy(&fake);
+    let out = afw(&env, &fake, &["import", "egress-guard", &example(), "--zone", "assistant"]).await;
+    assert_eq!(out.code, 0, "{}", out.err);
+    assert!(out.out.contains("assistant"), "{}", out.out);
+    assert!(out.err.contains("--apply"));
+    assert!(fake.requests().iter().all(|r| r.method == "GET"));
+}
+
+#[tokio::test]
+async fn import_apply_merges_fragment_and_optionally_intent_policy() {
+    let env = Env::new();
+    let fake = FakeApi::start().await;
+    let sid = Uuid::new_v4();
+    fake.on_json("GET", "/sessions/current", 200, &session(sid));
+    empty_policy(&fake);
+    fake.on_json("POST", &format!("/sessions/{sid}/import"), 200, &session(sid));
+    fake.on_json(
+        "PUT",
+        "/intent-policy",
+        200,
+        &afw_core::api::IntentPolicy { version: 4, action_classes: vec![] },
+    );
+    let out = afw(
+        &env,
+        &fake,
+        &["import", "egress-guard", &example(), "--zone", "assistant", "--apply", "--force", "--intent-policy"],
+    )
+    .await;
+    assert_eq!(out.code, 0, "{}", out.err);
+    let r = &fake.requests_to("POST", &format!("/sessions/{sid}/import"))[0];
+    assert_eq!(r.header("x-afw-session"), Some(sid.to_string().as_str()));
+    let doc: afw_core::policy::PolicyDocument = serde_json::from_value(r.json()).unwrap();
+    assert!(doc.zones.iter().any(|z| z.name == "assistant"));
+    assert!(!doc.rules.is_empty());
+    assert_eq!(fake.requests_to("PUT", "/intent-policy").len(), 1);
+    assert!(out.out.contains("version 4"));
 }

@@ -194,6 +194,8 @@ pub struct AlertQuery {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct AuditQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface: Option<Interface>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_seq: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actor: Option<String>,
@@ -651,6 +653,26 @@ impl AfwClient {
     /// `GET /rulebase`: the whole rule base by layer and section, with rule views.
     pub async fn get_rulebase(&self) -> Result<Value> {
         self.get("/rulebase").await
+    }
+
+    /// The policy as seen by the caller: the active session's draft, else the last published
+    /// revision (built from the resource listings; rule views are reduced to rules).
+    pub async fn draft_document(&self) -> Result<afw_core::policy::PolicyDocument> {
+        Ok(afw_core::policy::PolicyDocument {
+            objects: self.list_objects().await?,
+            services: self.list_services().await?,
+            data_classes: self.list_data_classes().await?,
+            zones: self.list_zones().await?,
+            agents: self.list_agents().await?,
+            rules: self.list_rules().await?.into_iter().map(|r| r.rule).collect(),
+            inspection_rules: self.list_inspection_rules().await?,
+            settings: self.get_settings().await?,
+        })
+    }
+
+    /// `GET /policy/status`: published and installed revisions, gateways up to date.
+    pub async fn policy_status(&self) -> Result<afw_core::api::PolicyStatus> {
+        self.get("/policy/status").await
     }
 
     pub async fn get_settings(&self) -> Result<PolicySettings> {

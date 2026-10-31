@@ -280,6 +280,8 @@ load_policy() {
       if [ "$coll" = agents ] && [ -n "$gw" ] && printf '%s' "$line" | jqx -e '.hermes' >/dev/null; then
         enroll_hermes_agent "$line" "$gw" || die "cannot enroll $(printf '%s' "$line" | jqx -r .name)"
       else
+        # Every demo agent sits behind the demo gateway (shown on the gateway page).
+        if [ "$coll" = agents ] && [ -n "$gw" ]; then line="$(printf '%s' "$line" | jqx -c --arg g "$gw" '.gateway_id = $g')"; fi
         create_resource "$coll" "$line" || die "cannot create $coll $(printf '%s' "$line" | jqx -r .name)"
       fi
     done

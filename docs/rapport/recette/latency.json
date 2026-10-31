@@ -1,0 +1,33 @@
+{
+  "requests_per_pass": 50,
+  "passes": 5,
+  "statistic": "median over passes of per-pass percentiles",
+  "new": {
+    "gateway": {
+      "p50_ms": 51.0,
+      "p95_ms": 60.9
+    },
+    "direct": {
+      "p50_ms": 43.8,
+      "p95_ms": 48.6
+    },
+    "overhead": {
+      "p50_ms": 7.2,
+      "p95_ms": 12.3
+    }
+  },
+  "reuse": {
+    "gateway": {
+      "p50_ms": 41.3,
+      "p95_ms": 44.6
+    },
+    "direct": {
+      "p50_ms": 41.0,
+      "p95_ms": 43.2
+    },
+    "overhead": {
+      "p50_ms": 0.3,
+      "p95_ms": 1.4
+    }
+  }
+}

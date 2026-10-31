@@ -146,7 +146,8 @@ pub fn export_console_ca(pki: &ConsolePki, path: &std::path::Path) -> anyhow::Re
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, pki.ca_cert_pem()).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::write(&tmp, pki.ca_cert_pem())
+        .with_context(|| format!("writing {}", tmp.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;

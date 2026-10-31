@@ -300,6 +300,11 @@
     "binary": "[binary content · {size}]",
     "captureStarted": "Capture requested for {agent}",
     "closed": "connection closed",
+    "deny": {
+      "http403": "refused by the gateway (explicit 403)",
+      "rst": "connection refused (RST)",
+      "dnsRefused": "resolution refused (DNS REFUSED)"
+    },
     "connRefused": "connection refused · rule {rule}",
     "conversation": "Conversation {id}",
     "copyId": "Copy the flow id",
@@ -336,7 +341,6 @@
     "receivedByAgent": "received by the agent:",
     "request": "request",
     "response": "response",
-    "rst": "connection refused (RST)",
     "ruleLink": "Rule #{n}",
     "tab": {
       "agent": "Agent and conversation",

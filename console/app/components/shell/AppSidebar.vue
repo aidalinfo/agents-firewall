@@ -109,7 +109,7 @@ const userMenu = computed(() => [
       <div class="flex flex-col gap-[5px] rounded-lg border border-line bg-code p-[10px]">
         <span class="font-mono text-[10.5px] text-text3">{{ t('nav.alsoBy') }}</span>
         <code class="font-mono text-[11.5px]"><span class="text-text3">cli</span> afw login</code>
-        <code class="font-mono text-[11.5px]"><span class="text-text3">mcp</span> afw-admin</code>
+        <code class="font-mono text-[11.5px]"><span class="text-text3">mcp</span> afw-mcp</code>
         <code class="font-mono text-[11.5px]"><span class="text-text3">api</span> /v1 · openapi</code>
       </div>
       <UDropdownMenu

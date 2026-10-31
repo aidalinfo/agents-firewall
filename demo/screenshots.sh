@@ -30,7 +30,10 @@ if cli_has logs show; then
   for old in $(api_get /tokens | items | jqx -r 'select(.role == "mcp_agent" and .revoked_at == null) | .id'); do afw tokens revoke "$old" >/dev/null; done
   mcp_token="$(afw tokens create --name "recette-mcp-$(rand_hex 4)" --role mcp_agent --agent daniel-bot --json | jqx -r '.secret')"
   afw logs show "$denied" >/dev/null
-  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"recette","version":"1"}}}' \
+  # One message per second, like an MCP client waiting for each answer: afw-mcp handles requests concurrently,
+  # so discard_session sent at once could run before open_session/create_resource.
+  slow_lines() { for l in "$@"; do printf '%s\n' "$l"; sleep 1; done; }
+  slow_lines '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"recette","version":"1"}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
     "$(jqx -nc --arg f "$denied" '{jsonrpc: "2.0", id: 2, method: "tools/call", params: {name: "get_flow", arguments: {flow_id: $f}}}')" \
     "$(jqx -nc '{jsonrpc: "2.0", id: 3, method: "tools/call", params: {name: "open_session", arguments: {name: "Recette : préparation par l agent agréé"}}}')" \

@@ -66,6 +66,18 @@
         "decision": {
           "$ref": "#/definitions/DecisionRef"
         },
+        "deny_mode": {
+          "description": "How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DenyMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "domain": {
           "type": [
             "string",
@@ -548,6 +560,32 @@
           "minimum": 0.0
         }
       }
+    },
+    "DenyMode": {
+      "description": "How the gateway refused a denied flow.",
+      "oneOf": [
+        {
+          "description": "Explicit HTTP 403 with the EF-21 message (plain HTTP, inspected HTTPS, proxy CONNECT).",
+          "type": "string",
+          "enum": [
+            "http_403"
+          ]
+        },
+        {
+          "description": "Connection reset (raw TCP, TLS refused before inspection).",
+          "type": "string",
+          "enum": [
+            "tcp_reset"
+          ]
+        },
+        {
+          "description": "DNS answer `REFUSED`.",
+          "type": "string",
+          "enum": [
+            "dns_refused"
+          ]
+        }
+      ]
     },
     "Finding": {
       "description": "A data-class detection. Never contains the secret itself.",

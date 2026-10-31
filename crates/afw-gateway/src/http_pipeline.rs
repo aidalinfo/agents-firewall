@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll, ready};
 
-use afw_core::events::{Body, BodyEncoding, GatewayEvent, HttpEvent, Verdict};
+use afw_core::events::{Body, BodyEncoding, DenyMode, GatewayEvent, HttpEvent, Verdict};
 use afw_core::policy::{AppProto, Track};
 use base64::Engine;
 use bytes::{Bytes, BytesMut};
@@ -68,14 +68,32 @@ pub fn full(b: impl Into<Bytes>) -> GwBody {
 }
 
 /// EF-21 denial response.
+/// Explicit EF-21 denial: 403, the message as body and in `X-Agents-Firewall-Reason` (HTTPS
+/// clients answered on a CONNECT often show only the status line and the headers).
 pub fn deny_response(text: String) -> Response<GwBody> {
     Response::builder()
         .status(StatusCode::FORBIDDEN)
         .header("x-agents-firewall", "denied")
+        .header("x-agents-firewall-reason", reason_header(&text))
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .header(header::CACHE_CONTROL, "no-store")
         .body(full(text))
         .expect("static response")
+}
+
+/// Header-safe copy of a denial message: visible ASCII and spaces only (others become `?`).
+fn reason_header(text: &str) -> HeaderValue {
+    let safe: String = text
+        .chars()
+        .map(|c| {
+            if c == ' ' || c.is_ascii_graphic() {
+                c
+            } else {
+                '?'
+            }
+        })
+        .collect();
+    HeaderValue::from_str(&safe).unwrap_or_else(|_| HeaderValue::from_static("denied"))
 }
 
 fn error_response(status: StatusCode, text: &str) -> Response<GwBody> {
@@ -501,7 +519,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             let (mut d, _) = state.decide(&base_ctx());
             d.verdict = Verdict::Deny;
             ev.agent_id = d.agent_id;
-            flow.emit_deny(&d);
+            flow.emit_deny(&d, DenyMode::Http403);
             emit_denied_http(&state, ev);
             let agent = d
                 .agent_name
@@ -524,7 +542,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
     if d1.verdict == Verdict::Deny || meta {
         let mut d = d1.clone();
         d.verdict = Verdict::Deny;
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, DenyMode::Http403);
         emit_denied_http(&state, ev);
         return deny_response(d1.deny_message(&host));
     }
@@ -544,7 +562,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
     if !findings.is_empty() {
         let (d2, blocked) = judge.judge(&findings);
         if blocked {
-            flow.emit_deny(&d2);
+            flow.emit_deny(&d2, DenyMode::Http403);
             emit_denied_http_findings(&state, ev, &findings);
             return deny_response(d2.deny_message(&host));
         }
@@ -615,7 +633,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
     }));
     let blocked_by: Arc<Mutex<Option<Decision>>> = Arc::new(Mutex::new(None));
     let content_denied = |d: Decision, findings: &[DlpFinding], ev: HttpEvent| {
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, DenyMode::Http403);
         emit_denied_http_findings(&state, ev, findings);
         deny_response(d.deny_message(&host))
     };
@@ -628,7 +646,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
                     tracing::info!(error = %e, "undecodable request body: denied");
                     let mut d = decision.clone();
                     d.verdict = Verdict::Deny;
-                    flow.emit_deny(&d);
+                    flow.emit_deny(&d, DenyMode::Http403);
                     emit_denied_http(&state, ev);
                     return deny_response(content_failure_message(&d, &host));
                 }
@@ -657,7 +675,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
             // A compressed stream cannot be analysed incrementally: fail closed.
             let mut d = decision.clone();
             d.verdict = Verdict::Deny;
-            flow.emit_deny(&d);
+            flow.emit_deny(&d, DenyMode::Http403);
             emit_denied_http(&state, ev);
             return deny_response(content_failure_message(&d, &host));
         }
@@ -738,7 +756,7 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
                         .unwrap_or_else(|e| e.into_inner())
                         .findings
                         .clone();
-                    flow.emit_deny(&d);
+                    flow.emit_deny(&d, DenyMode::Http403);
                     emit_denied_http_findings(&state, log.ev, &f);
                     deny_response(d.deny_message(&host))
                 }

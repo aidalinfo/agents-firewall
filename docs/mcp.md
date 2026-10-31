@@ -50,12 +50,12 @@ Le serveur s'authentifie auprès de l'API avec un jeton de rôle `mcp_agent`, do
 | `allow_from_log` | règle préremplie depuis un flux refusé (EF-42) |
 | `verify_policy`, `list_revisions`, `diff_revision`, `revert_revision` | vérification, révisions, retour arrière (session à publier) |
 | `install_revision`, `list_installs`, `list_gateways`, `policy_status` | installation et passerelles |
-| `search_flows`, `get_flow`, `search_dns` | journal (filtres agent, zone, destination, verdict, règle, période, texte) |
+| `search_flows`, `get_flow`, `search_dns` | journal (filtres agent, zone, destination, verdict, règle, période, texte) ; le rôle `mcp_agent` ne voit jamais les contenus (corps HTTP), seulement les métadonnées : son `get_flow` n'écrit donc pas d'entrée `flow.content_access` dans l'audit (écrite, quelle que soit l'interface, seulement quand des contenus sont renvoyés à un administrateur ou un auditeur) |
 | `agent_overview`, `internal_map` | vue agent, carte des flux internes |
 | `list_alerts`, `ack_alert`, `list_alert_channels` | alertes, canaux d'alerte (lecture) |
 | `list_captures`, `start_capture` | captures de paquets (le téléchargement reste humain) |
 | `get_intent_policy`, `update_intent_policy` | politique d'intention du plugin Hermes (l'API peut refuser la modification au MCP) |
-| `list_audit`, `verify_audit`, `list_approvals` | audit et approbations |
+| `list_audit`, `verify_audit`, `list_approvals` | audit (plus récentes d'abord ; `order: "asc"` pour l'ordre croissant) et approbations |
 
 Les écritures utilisent la session ouverte de l'agent, ou en ouvrent une.
 

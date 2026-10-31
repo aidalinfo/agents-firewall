@@ -2,7 +2,7 @@
 
 Ce guide décrit le passage d'un agent Hermes protégé par l'**egress-guard** (le hook `pre_tool_call` qui inspecte les arguments des outils) à agents-firewall. Il prend l'exemple de **Daniel**, le premier bot qui en était équipé ; la démarche est la même pour les autres agents (Laurent, Vulcain…).
 
-> **État d'avancement.** La conversion (crate `afw-import`, [ADR 0026](adr/0026-import-egress-guard.md)) est disponible ; la commande `afw import egress-guard` qui l'applique dans une session est livrée avec la CLI.
+> La conversion est faite par la crate `afw-import` ([ADR 0026](adr/0026-import-egress-guard.md)) et appliquée par la commande `afw import egress-guard` ([cli.md](cli.md#import-egress-guard-ef-70)).
 
 ## Pourquoi migrer
 
@@ -43,21 +43,26 @@ Le format accepté est décrit et illustré par le fichier d'exemple anonymisé 
 ### 2. Importer la politique dans une zone en observation
 
 ```sh
-afw import egress-guard pulse-mcp-guardrails.yaml --zone daniel
+afw import egress-guard pulse-mcp-guardrails.yaml --zone daniel            # rapport seul, rien n'est modifié
+afw import egress-guard pulse-mcp-guardrails.yaml --zone daniel --apply    # fusion dans votre session
+afw session publish -m "Import egress-guard de Daniel"
+afw install <révision> --all
 ```
 
-L'import ouvre une session, crée les objets, classes de données et règles, prépare la politique d'intention, puis affiche un **rapport d'import** en trois parties : converti, avertissements (à relire : approximations, jokers, motifs retirés, champs inconnus) et non converti. Relisez la session avant de la publier. Un second import du même fichier ne crée rien de plus (objets, classes et règles existants sont réutilisés).
+Sans `--apply`, la commande affiche seulement le **rapport d'import** (Markdown) : converti, avertissements (à relire : approximations, jokers, motifs retirés, champs inconnus), non converti, et une section **Bloquant** pour un refus de l'egress-guard que le plan n'applique pas. Avec `--apply`, les objets, classes de données et règles sont créés dans votre session d'édition (ouverte au besoin) ; relisez-la avant de la publier. Un plan qui contient une section **Bloquant** est refusé, sauf `--force` : corrigez plutôt. Un second import du même fichier ne crée rien de plus (objets, classes et règles existants sont réutilisés).
 
-La zone `daniel` est créée en **mode observation** par défaut ; une zone existante garde son mode (l'import ne la fait jamais repasser en observation sans demande explicite). Si le rapport contient une section **Bloquant** (un refus de l'egress-guard que l'import n'a pas pu traduire), corrigez avant de publier. Publiez et installez.
+La zone `daniel` est créée en **mode observation** par défaut (`--mode observe|enforce`) ; une zone existante garde son mode, sauf `--downgrade` explicite.
 
-La politique d'intention (classes d'actions) est appliquée séparément : elle **remplace** toute la politique d'intention servie aux plugins.
+La politique d'intention (classes d'actions) n'est appliquée qu'avec `--apply --intent-policy` : elle **remplace** alors toute la politique d'intention servie aux plugins (elle n'est pas soumise à la session).
 
 > Pourquoi une zone dédiée ? Il n'y a pas d'exception par agent : un bot aux besoins particuliers reçoit sa propre zone. Si plusieurs bots ont les mêmes besoins, ils peuvent la partager.
 
 ### 3. Enrôler Daniel (réseau + plugin)
 
 ```sh
-afw enroll daniel-bot      # zone daniel ; options exactes : afw enroll --help
+afw enroll daniel-bot --hermes --zone daniel --ip <adresse sur le réseau interne> \
+    --compose docker-compose.yml --env-file .env --apply --publish "Enrôle daniel-bot"
+afw install <révision> --all
 ```
 
 Une seule commande pose l'enrôlement réseau et le plugin Hermes ([enrolement.md](enrolement.md#agents-hermes)). **L'egress-guard reste actif** pendant cette période : les deux protections se cumulent.

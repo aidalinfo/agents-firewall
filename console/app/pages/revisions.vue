@@ -26,8 +26,8 @@ async function load() {
   try {
     const [revs, a, v] = await Promise.all([api.listRevisions(), api.listAudit({ limit: 9 }), api.verifyAudit(), dir.ensure(), policy.refresh()])
     revisions.value = revs.items
-    // Most recent entries of the chain (the API lists it in ascending order).
-    audit.value = a.items.slice(-9).reverse()
+    // Most recent entries of the chain (the API lists them most recent first).
+    audit.value = a.items
     chain.value = v
     if (selected.value == null) selected.value = revs.items.find(r => r.number === installed.value)?.number ?? revs.items[0]?.number ?? null
   }

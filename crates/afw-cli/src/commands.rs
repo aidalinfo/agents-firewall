@@ -1373,11 +1373,16 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
             actor,
             action,
             interface,
+            order,
             period,
             paging,
         } => {
             let page = c
                 .list_audit(&AuditQuery {
+                    order: order
+                        .as_deref()
+                        .map(|o| parse_enum("order", o))
+                        .transpose()?,
                     interface: interface
                         .as_deref()
                         .map(|i| parse_enum("interface", i))

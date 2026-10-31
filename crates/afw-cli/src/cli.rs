@@ -701,7 +701,7 @@ pub enum CapturesCmd {
 
 #[derive(Subcommand, Debug)]
 pub enum AuditCmd {
-    /// List audit entries (ascending sequence).
+    /// List audit entries, most recent first (`--order asc` for oldest first).
     List {
         #[arg(long = "from-seq")]
         from_seq: Option<i64>,
@@ -714,6 +714,9 @@ pub enum AuditCmd {
         /// Interface the change was made from.
         #[arg(long, value_parser = ["ui", "cli", "mcp", "api", "system"])]
         interface: Option<String>,
+        /// Listing order (default: `desc`, most recent first).
+        #[arg(long, value_parser = ["desc", "asc"])]
+        order: Option<String>,
         #[command(flatten)]
         period: Period,
         #[command(flatten)]

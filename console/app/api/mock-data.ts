@@ -285,6 +285,7 @@ function flowOf(s: FlowSeed, now: number, ruleNumber: (id: Uuid | null) => numbe
     // Raw TCP relays (internal SSH, metadata-only flows) carry no analysed content.
     content_inspected: s.app === 'http' || (s.app === 'https' && !s.llm),
     data_classes: [],
+    deny_mode: s.verdict !== 'deny' ? null : (s.app === 'http' || s.app === 'https') ? 'http_403' : s.app === 'dns' ? 'dns_refused' : 'tcp_reset',
   }
 }
 

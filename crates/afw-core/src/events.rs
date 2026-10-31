@@ -54,6 +54,24 @@ pub struct FlowEvent {
     /// (internal flows, explicitly non-HTTP services) and TLS not inspected.
     #[serde(default)]
     pub content_inspected: bool,
+    /// How a denied flow was refused, as seen by the agent (`None` for allowed flows and for
+    /// events of gateways older than this field).
+    #[serde(default)]
+    pub deny_mode: Option<DenyMode>,
+}
+
+/// How the gateway refused a denied flow.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DenyMode {
+    /// Explicit HTTP 403 with the EF-21 message (plain HTTP, inspected HTTPS, proxy CONNECT).
+    #[serde(rename = "http_403")]
+    Http403,
+    /// Connection reset (raw TCP, TLS refused before inspection).
+    #[serde(rename = "tcp_reset")]
+    TcpReset,
+    /// DNS answer `REFUSED`.
+    #[serde(rename = "dns_refused")]
+    DnsRefused,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]

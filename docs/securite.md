@@ -38,8 +38,9 @@ La passerelle **ne laisse jamais tout passer** :
 | Agent inconnu (adresse non enrôlée) | refus |
 | Passerelle arrêtée | les agents n'ont plus de route : aucun réseau |
 | Console injoignable | la passerelle continue d'appliquer la dernière politique installée |
+| Tampon d'événements plein (console longtemps injoignable) | les nouveaux flux sont refusés plutôt que de passer sans être journalisés ; une alerte est levée |
 
-Le refus est **immédiat et explicite**, pour que l'agent puisse expliquer ce qui s'est passé au lieu de réessayer sans fin : en HTTP(S), réponse `403` avec la destination, l'agent et la règle ; en TCP brut, réinitialisation de la connexion (RST) ; en DNS, réponse `REFUSED`. Tous ces refus sont journalisés.
+Le refus est **immédiat et explicite**, pour que l'agent puisse expliquer ce qui s'est passé au lieu de réessayer sans fin : en HTTP(S), réponse `403` avec la destination, l'agent et la règle, dans le corps et dans l'en-tête `X-Agents-Firewall-Reason` (y compris pour un `CONNECT` refusé par le proxy explicite) ; en TCP brut, réinitialisation de la connexion (RST) ; en DNS, réponse `REFUSED`. Tous ces refus sont journalisés, avec leur forme (`deny_mode`).
 
 ## Isolement des agents
 
@@ -76,6 +77,7 @@ La passerelle se connecte toujours vers le **nom contrôlé par la politique** (
 | `auditor` | tout lire, **y compris les contenus** (corps HTTP, captures), et l'audit ; aucune modification |
 | `viewer` | lire la politique et les journaux, **sans les contenus** |
 | `mcp_agent` | rôle de l'agent d'administration agréé, restreint (voir ci-dessous) |
+| `agent_plugin` | jeton du plugin Hermes d'un agent : seulement `POST /ingest/tool-calls` et `GET /intent-policy` |
 
 - Humains : OIDC générique (n'importe quel fournisseur conforme).
 - Scripts et CLI : jetons d'API, révocables, rattachés à un rôle.
@@ -95,8 +97,9 @@ Un seul agent peut administrer le pare-feu par le serveur MCP ([mcp.md](mcp.md))
 
 - Chaque modification (politique, session, publication, installation, jetons, enrôlement, consultation de contenu) produit une entrée d'audit : **qui** (humain, CLI, agent, système), **quoi** (différence), **quand**, **depuis quelle interface** (`ui`, `cli`, `mcp`, `api`, `system`), **dans quelle session**.
 - Le journal est en **ajout seul** et **chaîné par empreinte** : chaque entrée contient l'empreinte de la précédente, `hash = sha256(prev_hash || json_canonique(entrée sans hash))`. Modifier ou supprimer une entrée casse la chaîne.
-- `GET /api/v1/audit/verify` recalcule la chaîne et signale la première rupture.
-- Pour résister à un accès direct à la base, les empreintes sont **exportées périodiquement** vers un stockage externe : un fichier en ajout seul, et en option un stockage objet S3 avec verrouillage (*Object Lock*) en rétention immuable. `GET /api/v1/audit/export` permet aussi un export à la demande.
+- `GET /api/v1/audit` liste les entrées, **les plus récentes d'abord** par défaut (`order=asc` pour l'ordre croissant des numéros ; `afw audit list --order asc`, outil MCP `list_audit` avec `order`). Voir [ADR 0028](adr/0028-mode-de-refus-et-ordre-de-l-audit.md).
+- `GET /api/v1/audit/verify` (`afw audit verify`) recalcule la chaîne, la compare aux têtes exportées et signale la première rupture.
+- Pour résister à un accès direct à la base, la tête de chaîne est **exportée périodiquement** (toutes les heures par défaut, `AFW_AUDIT_EXPORT_INTERVAL`) vers un stockage externe : un fichier en ajout seul (`AFW_AUDIT_EXPORT_DIR`), et en option un stockage objet S3 avec verrouillage (*Object Lock*) en rétention immuable (`AFW_AUDIT_S3_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_REGION`, `_PREFIX`, `_RETENTION_DAYS` ; ces variables ne figurent pas dans `deploy/compose/.env.example` : ajoutez-les à l'environnement d'`afw-api`, ou à `api.extraEnv` avec Helm). `POST /api/v1/audit/export` (`afw audit anchor`) force cet export ; `GET /api/v1/audit/export` (`afw audit export`) exporte tout le journal en lignes JSON.
 
 ## Limites connues
 
@@ -110,7 +113,7 @@ Choix de la V1 :
 
 - **pas de blocage** de ces accès ni de filtrage action par action des API d'administration ;
 - **surveillance** : les appels aux API d'administration passent par la passerelle et sont journalisés avec l'action et la ressource (création de pod, `exec`, redéploiement) ; une action inhabituelle déclenche une alerte ;
-- à l'enrôlement, un conteneur **privilégié** ou ayant le **socket Docker** reçoit seulement un **avertissement**, pas un refus. Seul `network_mode: host` est refusé : dans ce mode, l'isolement réseau est impossible et l'enrôlement mentirait sur la protection (choix du constructeur, ADR 0023 (lot L11, à venir)).
+- à l'enrôlement, un conteneur **privilégié** ou ayant le **socket Docker** reçoit seulement un **avertissement**, pas un refus. Seul `network_mode: host` est refusé : dans ce mode, l'isolement réseau est impossible et l'enrôlement mentirait sur la protection (choix du constructeur, [ADR 0023](adr/0023-enrolement-des-agents.md)).
 
 Recommandations : réservez ces accès à des agents dédiés, placés dans une zone dédiée ; limitez leurs droits côté Kubernetes ou Coolify (comptes de service restreints) ; enrôlez aussi les charges qu'ils lancent quand c'est possible ; suivez les alertes « action d'administration inhabituelle ».
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AllowDestination, FlowDetail, FlowListItem, RuleView, Track } from '~/api/types'
 import { allowRuleCli, curlFor, httpReason } from '~/utils/cli'
-import { flowRuleLabel, shortFlowId, splitSocket, verdictTone } from '~/utils/format'
+import { denyKind, flowRuleLabel, flowTarget, shortFlowId, splitSocket, verdictTone } from '~/utils/format'
 import { bodyView } from '~/utils/security'
 
 const props = defineProps<{
@@ -72,6 +72,7 @@ const httpPath = computed(() => {
 const reqBody = computed(() => (http.value?.request_body ? bodyView(http.value.request_body) : null))
 const respBody = computed(() => (http.value?.response_body ? bodyView(http.value.response_body) : null))
 const dst = computed(() => (flow.value ? splitSocket(flow.value.dst) : { host: '', port: '' }))
+const target = computed(() => (flow.value ? flowTarget(flow.value) : ''))
 const proto = computed(() => (flow.value?.app ?? flow.value?.protocol ?? '').toString())
 const correlation = computed(() => props.detail?.correlation ?? null)
 const toolCall = computed(() => props.detail?.tool_call ?? null)
@@ -109,7 +110,8 @@ const agentMessage = computed(() => {
 const statusLine = computed(() => {
   if (!flow.value) return ''
   if (http.value?.status != null) return httpReason(http.value.status)
-  if (denied.value) return t('flow.rst')
+  const kind = denyKind(flow.value)
+  if (kind) return t(`flow.deny.${kind}`)
   return t('flow.closed')
 })
 
@@ -555,7 +557,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
             </template>
             <template v-else>
               <div class="flex flex-col px-[10px] py-2">
-                <span class="break-all"><span class="text-syn-key">{{ t('flow.flowKey') }}:</span> {{ flow.src }} → {{ flow.dst }}</span>
+                <span class="break-all"><span class="text-syn-key">{{ t('flow.flowKey') }}:</span> {{ flow.src }} → {{ target }}</span>
                 <span><span class="text-syn-key">{{ t('flow.inspectionKey') }}:</span> <span class="text-text2">{{ t('flow.inspectionImpossible', { proto: proto.toUpperCase() }) }}</span></span>
               </div>
               <pre class="m-0 whitespace-pre-wrap border-t border-dashed border-line2 px-[10px] py-2 font-mono text-syn-str">{{ t('flow.metadataOnly', { proto: proto.toUpperCase() }) }}</pre>
@@ -657,7 +659,7 @@ const rulesLink = computed(() => ({ path: '/rules', query: flow.value?.zone_id ?
           <dt class="text-text3">
             {{ t('flow.meta.addresses') }}
           </dt><dd class="m-0 break-all font-mono text-xs">
-            {{ flow.src }} → {{ flow.dst }}
+            {{ flow.src }} → {{ target }}
           </dd>
           <dt class="text-text3">
             {{ t('flow.meta.protocol') }}

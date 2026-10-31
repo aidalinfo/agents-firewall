@@ -2397,8 +2397,17 @@ paths:
       operationId: listAudit
       tags:
       - audit
-      summary: Audit entries (ascending seq)
+      summary: Audit entries, most recent first by default (`order=asc` for ascending seq)
       parameters:
+      - name: order
+        in: query
+        description: '`desc` (default, most recent first) or `asc`. The cursor continues in the same order.'
+        schema:
+          type: string
+          enum:
+          - desc
+          - asc
+          default: desc
       - name: from_seq
         in: query
         schema:
@@ -3769,6 +3778,21 @@ components:
       - reason
       - rule_name
       type: object
+    DenyMode:
+      description: How the gateway refused a denied flow.
+      oneOf:
+      - description: Explicit HTTP 403 with the EF-21 message (plain HTTP, inspected HTTPS, proxy CONNECT).
+        enum:
+        - http_403
+        type: string
+      - description: Connection reset (raw TCP, TLS refused before inspection).
+        enum:
+        - tcp_reset
+        type: string
+      - description: DNS answer `REFUSED`.
+        enum:
+        - dns_refused
+        type: string
     DestCategory:
       description: Destination category. `LlmProvider` carries the data-class exemption (EF-25).
       enum:
@@ -4013,6 +4037,12 @@ components:
           type: array
         decision:
           $ref: '#/components/schemas/DecisionRef'
+        deny_mode:
+          anyOf:
+          - $ref: '#/components/schemas/DenyMode'
+          - type: 'null'
+          default: null
+          description: How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
         domain:
           type:
           - string
@@ -4116,6 +4146,12 @@ components:
           type: array
         decision:
           $ref: '#/components/schemas/DecisionRef'
+        deny_mode:
+          anyOf:
+          - $ref: '#/components/schemas/DenyMode'
+          - type: 'null'
+          default: null
+          description: How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
         domain:
           type:
           - string
@@ -4430,6 +4466,12 @@ components:
             type: array
           decision:
             $ref: '#/components/schemas/DecisionRef'
+          deny_mode:
+            anyOf:
+            - $ref: '#/components/schemas/DenyMode'
+            - type: 'null'
+            default: null
+            description: How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
           domain:
             type:
             - string

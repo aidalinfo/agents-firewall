@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use afw_core::events::{FlowEvent, GatewayEvent, Verdict};
+use afw_core::events::{DenyMode, FlowEvent, GatewayEvent, Verdict};
 use afw_core::policy::{AppProto, L4Proto, Track};
 use chrono::{DateTime, Utc};
 use hyper::upgrade::Upgraded;
@@ -197,11 +197,13 @@ impl Flow {
                 .collect(),
             observed: d.observed,
             content_inspected: self.content_inspected.load(Ordering::Relaxed),
+            deny_mode: None,
         }
     }
 
-    /// Emits a denial for this flow now (connection or single request). Returns its id.
-    pub fn emit_deny(&self, d: &Decision) -> Uuid {
+    /// Emits a denial for this flow now (connection or single request), refused as `mode`.
+    /// Returns its id.
+    pub fn emit_deny(&self, d: &Decision, mode: DenyMode) -> Uuid {
         let id = if self
             .allowed
             .lock()
@@ -214,6 +216,7 @@ impl Flow {
         };
         let mut ev = self.event(id, d, true);
         ev.verdict = Verdict::Deny;
+        ev.deny_mode = Some(mode);
         emit_flow(&self.state, ev, Track::Detailed);
         id
     }
@@ -342,7 +345,7 @@ pub async fn handle<S: AgentStream>(
             d.rule_id = None;
             d.rule_number = None;
             d.rule_name = "unclassified-protocol".into();
-            flow.emit_deny(&d);
+            flow.emit_deny(&d, DenyMode::TcpReset);
             stream.reset();
         }
         Sniff::NeedMore => unreachable!("read_initial never returns NeedMore"),

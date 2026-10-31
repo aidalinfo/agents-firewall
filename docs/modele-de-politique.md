@@ -122,11 +122,12 @@ En HTTP(S), la réponse est immédiate et explicite :
 ```
 HTTP/1.1 403 Forbidden
 X-Agents-Firewall: denied
+X-Agents-Firewall-Reason: blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule default-deny)
 
 blocked by agents-firewall: exfil.exemple.com not allowed for mon-agent (rule default-deny)
 ```
 
-Le texte est en anglais car il s'adresse aux programmes et aux modèles ; la console le traduit. Quand c'est une règle explicite qui refuse, son numéro est indiqué (`rule 7`) ; quand c'est le nettoyage implicite, la réponse indique `rule default-deny`. En TCP brut, la connexion est réinitialisée (RST) ; en DNS, la requête reçoit une réponse `REFUSED`. Dans tous les cas, le refus est journalisé avec la règle appliquée.
+Le texte est en anglais car il s'adresse aux programmes et aux modèles ; la console le traduit. Quand c'est une règle explicite qui refuse, son numéro est indiqué (`rule 7`) ; quand c'est le nettoyage implicite, la réponse indique `rule default-deny` (`unknown-agent` pour une adresse non enrôlée, `no-policy` sans politique valide). Le message est aussi dans l'en-tête `X-Agents-Firewall-Reason` de chaque refus `403`, car un client HTTPS dont le `CONNECT` est refusé par le proxy explicite n'affiche souvent que l'état et les en-têtes : un `CONNECT` refusé reçoit lui aussi ce `403` explicite. En TCP brut (et en TLS refusé avant inspection), la connexion est réinitialisée (RST) ; en DNS, la requête reçoit une réponse `REFUSED`. Dans tous les cas, le refus est journalisé avec la règle appliquée et, pour un flux, la forme du refus (`deny_mode` : `http_403` ou `tcp_reset`, [ADR 0028](adr/0028-mode-de-refus-et-ordre-de-l-audit.md)).
 
 ## Contenu et classes de données
 
@@ -249,4 +250,4 @@ Ce que cela donne :
 - Une fois `clients` passée en `enforce`, la même tentative est **refusée** (nettoyage), et l'accès à la base `192.168.10.5` aussi (règle 9).
 - Quel que soit le mode, une tentative vers `169.254.169.254` est **refusée** (règle 1) et lève une alerte.
 
-Une politique d'exemple complète, générique, est fournie avec la démo (`demo/policy/demo-policy.json`, à venir).
+Une politique d'exemple complète, générique, est fournie avec la démo ([`demo/policy/demo-policy.json`](../demo/policy/demo-policy.json)).

@@ -60,12 +60,19 @@ async fn list_filters_and_paginates() {
     let app = afw_api::router(state(&pool));
     let viewer = token(&pool, "viewer", None).await;
 
+    let seqs = |v: &serde_json::Value| -> Vec<i64> {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["seq"].as_i64().unwrap())
+            .collect()
+    };
+    // Default: most recent first.
     let page = call(&app, "GET", "/api/v1/audit?limit=3", Some(&viewer), None).await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.text());
     let body = page.json();
-    let items = body["items"].as_array().unwrap();
-    assert_eq!(items.len(), 3);
-    assert_eq!(items[0]["seq"], 1);
+    assert_eq!(seqs(&body), vec![7, 6, 5]);
     let cursor = body["next_cursor"].as_str().unwrap().to_owned();
     let next = call(
         &app,
@@ -76,7 +83,56 @@ async fn list_filters_and_paginates() {
     )
     .await
     .json();
-    assert_eq!(next["items"][0]["seq"], 4);
+    assert_eq!(seqs(&next), vec![4, 3, 2]);
+    let last = call(
+        &app,
+        "GET",
+        &format!(
+            "/api/v1/audit?limit=3&cursor={}",
+            next["next_cursor"].as_str().unwrap()
+        ),
+        Some(&viewer),
+        None,
+    )
+    .await
+    .json();
+    assert_eq!(seqs(&last), vec![1]);
+    assert!(last["next_cursor"].is_null());
+
+    // order=asc: oldest first, the cursor continues forward.
+    let page = call(
+        &app,
+        "GET",
+        "/api/v1/audit?limit=3&order=asc",
+        Some(&viewer),
+        None,
+    )
+    .await
+    .json();
+    assert_eq!(seqs(&page), vec![1, 2, 3]);
+    let cursor = page["next_cursor"].as_str().unwrap().to_owned();
+    let next = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit?limit=3&order=asc&cursor={cursor}"),
+        Some(&viewer),
+        None,
+    )
+    .await
+    .json();
+    assert_eq!(seqs(&next), vec![4, 5, 6]);
+    let desc = call(
+        &app,
+        "GET",
+        "/api/v1/audit?limit=2&order=desc&from_seq=4",
+        Some(&viewer),
+        None,
+    )
+    .await
+    .json();
+    assert_eq!(seqs(&desc), vec![7, 6]);
+    let bad = call(&app, "GET", "/api/v1/audit?order=up", Some(&viewer), None).await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
 
     let all = |q: &str| {
         let app = app.clone();

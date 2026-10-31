@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use afw_core::api::{AuditVerifyResult, Page, Role};
+use afw_core::api::{AuditVerifyResult, Page, Role, SortOrder};
 use afw_core::audit::{GENESIS_HASH, audit_hash};
 use afw_core::events::{AuditEntry, Interface};
 use axum::Json;
@@ -39,6 +39,8 @@ pub struct AuditQuery {
     pub to: Option<DateTime<Utc>>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
+    /// `desc` (default: most recent first) or `asc`.
+    pub order: Option<SortOrder>,
 }
 
 fn like_escape(s: &str) -> String {
@@ -47,7 +49,8 @@ fn like_escape(s: &str) -> String {
         .replace('_', "\\_")
 }
 
-/// `GET /audit` (viewer): ascending `seq`, cursor = last returned `seq`.
+/// `GET /audit` (viewer): descending `seq` by default (most recent first), ascending with
+/// `order=asc`; cursor = last returned `seq` (the next page continues in the same order).
 pub async fn list(
     State(state): State<AppState>,
     principal: Principal,
@@ -56,16 +59,22 @@ pub async fn list(
     principal.require(Role::Viewer)?;
     let Query(q) = q.map_err(|e| ApiError::BadRequest(e.body_text()))?;
     let limit = i64::from(q.limit.unwrap_or(DEFAULT_LIMIT as u32)).clamp(1, MAX_LIMIT);
-    let after: i64 = match &q.cursor {
-        None => 0,
-        Some(c) => c
-            .parse()
-            .map_err(|_| ApiError::BadRequest("invalid cursor".into()))?,
+    let order = q.order.unwrap_or_default();
+    let cursor: Option<i64> = match &q.cursor {
+        None => None,
+        Some(c) => Some(
+            c.parse()
+                .map_err(|_| ApiError::BadRequest("invalid cursor".into()))?,
+        ),
     };
-    let mut b: QueryBuilder<Postgres> = QueryBuilder::new(format!(
-        "SELECT {AUDIT_COLUMNS} FROM audit_log WHERE seq > "
-    ));
-    b.push_bind(after);
+    let mut b: QueryBuilder<Postgres> =
+        QueryBuilder::new(format!("SELECT {AUDIT_COLUMNS} FROM audit_log WHERE true"));
+    if let Some(c) = cursor {
+        match order {
+            SortOrder::Asc => b.push(" AND seq > ").push_bind(c),
+            SortOrder::Desc => b.push(" AND seq < ").push_bind(c),
+        };
+    }
     if let Some(from_seq) = q.from_seq {
         b.push(" AND seq >= ").push_bind(from_seq);
     }
@@ -97,7 +106,11 @@ pub async fn list(
     if let Some(to) = q.to {
         b.push(" AND at < ").push_bind(to);
     }
-    b.push(" ORDER BY seq LIMIT ").push_bind(limit);
+    b.push(match order {
+        SortOrder::Asc => " ORDER BY seq LIMIT ",
+        SortOrder::Desc => " ORDER BY seq DESC LIMIT ",
+    })
+    .push_bind(limit);
     let rows: Vec<AuditRow> = b.build_query_as().fetch_all(pool(&state)?).await?;
     let items = rows
         .into_iter()

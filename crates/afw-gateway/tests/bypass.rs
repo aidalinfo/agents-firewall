@@ -9,7 +9,8 @@ mod common;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use afw_core::events::{AdminSystem, AlertKind, GatewayEvent, Verdict};
+use afw_core::events::{AdminSystem, AlertKind, DenyMode, GatewayEvent, Verdict};
+use afw_core::policy::AppProto;
 use afw_core::policy::ZoneMode;
 use common::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -128,6 +129,13 @@ async fn denied_https_gets_explicit_403_message() {
     let f = flow(&ev).unwrap();
     assert_eq!(f.sni.as_deref(), Some("denied.test"));
     assert_eq!(f.agent_id, Some(id(AGENT)));
+    assert_eq!(f.deny_mode, Some(DenyMode::Http403), "{f:?}");
+    assert!(
+        resp.to_ascii_lowercase().contains(
+            "x-agents-firewall-reason: blocked by agents-firewall: denied.test not allowed for daniel-bot (rule default-deny)"
+        ),
+        "{resp}"
+    );
     assert!(h.log.all().is_empty());
 }
 
@@ -152,6 +160,7 @@ async fn denied_tcp_is_reset_and_logged() {
     let f = flow(&ev).unwrap();
     assert_eq!(f.dst, dst);
     assert_eq!(f.decision.rule_name, "default-deny");
+    assert_eq!(f.deny_mode, Some(DenyMode::TcpReset), "{f:?}");
 }
 
 #[tokio::test]
@@ -168,12 +177,25 @@ async fn connect_to_denied_host_refused() {
         ),
         "{resp}"
     );
-    h.wait_event(|e| {
-        flow(e).is_some_and(|f| {
-            f.verdict == Verdict::Deny && f.domain.as_deref() == Some("denied.test")
+    // The reason is also in a header (HTTPS clients often show only the status and headers).
+    assert!(
+        resp.to_ascii_lowercase().contains(
+            "x-agents-firewall-reason: blocked by agents-firewall: denied.test not allowed for daniel-bot (rule default-deny)"
+        ),
+        "{resp}"
+    );
+    let ev = h
+        .wait_event(|e| {
+            flow(e).is_some_and(|f| {
+                f.verdict == Verdict::Deny && f.domain.as_deref() == Some("denied.test")
+            })
         })
-    })
-    .await;
+        .await;
+    // Logged as the requested destination and the real refusal (403), not a TCP reset.
+    let f = flow(&ev).unwrap();
+    assert_eq!(f.dst.port(), port, "{f:?}");
+    assert_eq!(f.app, Some(AppProto::Https), "{f:?}");
+    assert_eq!(f.deny_mode, Some(DenyMode::Http403), "{f:?}");
     assert!(h.log.all().is_empty());
 }
 

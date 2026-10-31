@@ -95,6 +95,16 @@ pub enum SessionState {
     Discarded,
 }
 
+/// Listing order (`GET /audit?order=`).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    Asc,
+    /// Most recent first (default).
+    #[default]
+    Desc,
+}
+
 /// Editing session: changes are visible and applicable only once published; resources
 /// modified in a session are locked for other sessions.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]

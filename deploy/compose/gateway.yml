@@ -1,7 +1,7 @@
 # agents-firewall — gateway of one agents host (ADR 0003). Run on every host whose agents are enrolled.
 #   cp gateway.env.example gateway.env   # set AFW_CONSOLE_URL and a one-time registration token
 #   docker compose --env-file gateway.env -f gateway.yml up -d
-# Agents are then enrolled with `afw enroll compose …`, which attaches them to the `afw-internal` network
+# Agents are then enrolled with `afw enroll <service> --compose <file> …`, which attaches them to the `afw-internal` network
 # through an afw-net-<agent> container routing everything to this gateway.
 
 name: afw-gateway

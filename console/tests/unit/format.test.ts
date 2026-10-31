@@ -6,6 +6,8 @@ import {
   formatRelative,
   formatTime,
   flowRuleLabel,
+  denyKind,
+  flowTarget,
   shortFlowId,
   verdictTone,
 } from '../../app/utils/format'
@@ -105,5 +107,34 @@ describe('verdictTone', () => {
     expect(verdictTone({ verdict: 'allow', observed: false })).toBe('ok')
     expect(verdictTone({ verdict: 'deny', observed: false })).toBe('ko')
     expect(verdictTone({ verdict: 'allow', observed: true })).toBe('obs')
+  })
+})
+
+describe('denyKind', () => {
+  it('follows the deny_mode given by the gateway', () => {
+    expect(denyKind({ verdict: 'deny', deny_mode: 'http_403', app: null, tls_inspected: false })).toBe('http403')
+    expect(denyKind({ verdict: 'deny', deny_mode: 'tcp_reset', app: 'http', tls_inspected: false })).toBe('rst')
+    expect(denyKind({ verdict: 'deny', deny_mode: 'dns_refused', app: null, tls_inspected: false })).toBe('dnsRefused')
+  })
+  it('falls back on the application for older events', () => {
+    expect(denyKind({ verdict: 'deny', app: 'http', tls_inspected: false })).toBe('http403')
+    expect(denyKind({ verdict: 'deny', app: 'https', tls_inspected: true })).toBe('http403')
+    expect(denyKind({ verdict: 'deny', app: 'https', tls_inspected: false })).toBe('rst')
+    expect(denyKind({ verdict: 'deny', app: 'dns', tls_inspected: false })).toBe('dnsRefused')
+    expect(denyKind({ verdict: 'deny', app: null, tls_inspected: false })).toBe('rst')
+  })
+  it('is null for an allowed flow', () => {
+    expect(denyKind({ verdict: 'allow', deny_mode: null, app: 'http', tls_inspected: false })).toBeNull()
+  })
+})
+
+describe('flowTarget', () => {
+  it('shows the requested name when the address was never resolved', () => {
+    expect(flowTarget({ dst: '0.0.0.0:443', domain: 'denied.test' })).toBe('denied.test:443')
+    expect(flowTarget({ dst: '[::]:8443', domain: 'x.test' })).toBe('x.test:8443')
+  })
+  it('keeps the resolved address', () => {
+    expect(flowTarget({ dst: '93.184.216.34:443', domain: 'api.exemple.com' })).toBe('93.184.216.34:443')
+    expect(flowTarget({ dst: '0.0.0.0:443', domain: null })).toBe('0.0.0.0:443')
   })
 })

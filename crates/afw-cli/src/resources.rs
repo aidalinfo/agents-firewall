@@ -9,9 +9,7 @@ use std::rc::Rc;
 
 use afw_client::{AfwClient, PolicyKind, RuleEntry};
 use afw_core::api::AlertChannel;
-use afw_core::policy::{
-    Agent, DataClass, InspectionRule, Layer, NetObject, Rule, Service, Zone,
-};
+use afw_core::policy::{Agent, DataClass, InspectionRule, Layer, NetObject, Rule, Service, Zone};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -39,7 +37,7 @@ pub enum KindArgs {
 // Commands
 
 pub async fn list(ctx: &mut Ctx<'_>, kind: PolicyKind) -> Result<()> {
-    let c = ctx.client()?;
+    let c = ctx.attach_session().await?;
     let items = match kind {
         PolicyKind::Rules => c
             .list_rules()
@@ -59,7 +57,7 @@ pub async fn list(ctx: &mut Ctx<'_>, kind: PolicyKind) -> Result<()> {
 }
 
 pub async fn show(ctx: &mut Ctx<'_>, kind: PolicyKind, id: &str) -> Result<()> {
-    let c = ctx.client()?;
+    let c = ctx.attach_session().await?;
     let id = c.resolve(kind, id).await?;
     let v = c.get_raw(kind, id).await?;
     ctx.print_json(&v)
@@ -67,8 +65,8 @@ pub async fn show(ctx: &mut Ctx<'_>, kind: PolicyKind, id: &str) -> Result<()> {
 
 pub async fn delete(ctx: &mut Ctx<'_>, kind: PolicyKind, id: &str) -> Result<()> {
     let c = ctx.client()?;
-    let id = c.resolve(kind, id).await?;
     let session = ctx.session().await?;
+    let id = c.resolve(kind, id).await?;
     c.delete_resource(kind, id).await?;
     if ctx.json {
         return ctx.print_json(&json!({ "deleted": id, "session": session }));
@@ -79,14 +77,27 @@ pub async fn delete(ctx: &mut Ctx<'_>, kind: PolicyKind, id: &str) -> Result<()>
     ))
 }
 
-pub async fn create(ctx: &mut Ctx<'_>, kind: PolicyKind, file: &FileArg, args: KindArgs) -> Result<()> {
+pub async fn create(
+    ctx: &mut Ctx<'_>,
+    kind: PolicyKind,
+    file: &FileArg,
+    args: KindArgs,
+) -> Result<()> {
     let c = ctx.client()?;
     let mut v = defaults(kind);
     merge_file(&mut v, file)?;
+    // Validate what can be checked offline before opening a session.
+    if let KindArgs::Object(a) = &args
+        && a.group.is_none()
+    {
+        let mut probe = v.clone();
+        apply(&c, kind, &args, &mut probe, true).await?;
+        validate(kind, probe)?;
+    }
+    let session = ctx.session().await?;
     apply(&c, kind, &args, &mut v, true).await?;
     finish_defaults(&c, kind, &mut v).await?;
     let body = validate(kind, v)?;
-    let session = ctx.session().await?;
     let created = c.create_raw(kind, &body).await?;
     report(ctx, kind, "Created", &created, session)
 }
@@ -99,8 +110,8 @@ pub async fn update(
     args: KindArgs,
 ) -> Result<()> {
     let c = ctx.client()?;
-    let id = c.resolve(kind, id).await?;
     let session = ctx.session().await?;
+    let id = c.resolve(kind, id).await?;
     let current = c.get_raw(kind, id).await?;
     let mut v = match kind {
         PolicyKind::Rules => serde_json::to_value(RuleEntry::from_value(current)?.rule)?,
@@ -138,6 +149,7 @@ pub async fn move_rule(
     section: Option<String>,
 ) -> Result<()> {
     let c = ctx.client()?;
+    let session = ctx.session().await?;
     let id = c.resolve(PolicyKind::Rules, rule).await?;
     let layer = if baseline {
         Some(Layer::Baseline)
@@ -148,7 +160,6 @@ pub async fn move_rule(
     } else {
         None
     };
-    let session = ctx.session().await?;
     let moved = c
         .move_rule(
             id,
@@ -164,7 +175,7 @@ pub async fn move_rule(
 
 /// `afw where-used <object>`.
 pub async fn where_used(ctx: &mut Ctx<'_>, object: &str) -> Result<()> {
-    let c = ctx.client()?;
+    let c = ctx.attach_session().await?;
     let id = c.resolve(PolicyKind::Objects, object).await?;
     let w = c.object_where_used(id).await?;
     if ctx.json {
@@ -195,7 +206,10 @@ pub async fn channels_list(ctx: &mut Ctx<'_>) -> Result<()> {
     if ctx.json {
         return ctx.print_json(&items);
     }
-    let items: Vec<Value> = items.iter().map(serde_json::to_value).collect::<Result<_, _>>()?;
+    let items: Vec<Value> = items
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<_, _>>()?;
     table(
         ctx.out,
         &items,
@@ -253,7 +267,10 @@ pub async fn channels_save(
     let (existing, mut v) = match id {
         Some(id) => {
             let id = channel_id(&c, id).await?;
-            (Some(id), serde_json::to_value(c.get_alert_channel(id).await?)?)
+            (
+                Some(id),
+                serde_json::to_value(c.get_alert_channel(id).await?)?,
+            )
         }
         None => (
             None,
@@ -280,7 +297,11 @@ pub async fn channels_save(
     }
     ctx.say(&format!(
         "{} alert channel {} ({}).",
-        if existing.is_some() { "Updated" } else { "Created" },
+        if existing.is_some() {
+            "Updated"
+        } else {
+            "Created"
+        },
         saved.name,
         saved.id
     ))
@@ -361,7 +382,13 @@ async fn ids(c: &AfwClient, kind: PolicyKind, names: &[String]) -> Result<Value>
     Ok(Value::Array(out))
 }
 
-async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, creating: bool) -> Result<()> {
+async fn apply(
+    c: &AfwClient,
+    kind: PolicyKind,
+    args: &KindArgs,
+    v: &mut Value,
+    creating: bool,
+) -> Result<()> {
     let o = obj(v)?;
     match args {
         KindArgs::Object(a) => {
@@ -397,7 +424,9 @@ async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, 
             if let Some(s) = spec {
                 o.insert("spec".into(), s);
             } else if creating && !o.contains_key("spec") {
-                bail!("an object needs one of --domain, --host, --network, --range, --group, --any");
+                bail!(
+                    "an object needs one of --domain, --host, --network, --range, --group, --any"
+                );
             }
         }
         KindArgs::Service(a) => {
@@ -422,7 +451,12 @@ async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, 
                     app["proto"] = json!(p);
                 }
                 if !a.methods.is_empty() {
-                    app["methods"] = json!(a.methods.iter().map(|m| m.to_uppercase()).collect::<Vec<_>>());
+                    app["methods"] = json!(
+                        a.methods
+                            .iter()
+                            .map(|m| m.to_uppercase())
+                            .collect::<Vec<_>>()
+                    );
                 }
                 if !a.path_prefixes.is_empty() {
                     app["path_prefixes"] = json!(a.path_prefixes);
@@ -462,7 +496,10 @@ async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, 
             set_opt(o, "name", &a.name);
             set_opt(o, "kind", &a.kind);
             if let Some(z) = &a.zone {
-                o.insert("zone_id".into(), json!(c.resolve(PolicyKind::Zones, z).await?));
+                o.insert(
+                    "zone_id".into(),
+                    json!(c.resolve(PolicyKind::Zones, z).await?),
+                );
             }
             if let Some(g) = &a.gateway {
                 o.insert("gateway_id".into(), json!(c.resolve_gateway(g).await?));
@@ -506,16 +543,28 @@ async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, 
                 }
             }
             if !a.sources.is_empty() {
-                o.insert("sources".into(), ids(c, PolicyKind::Zones, &a.sources).await?);
+                o.insert(
+                    "sources".into(),
+                    ids(c, PolicyKind::Zones, &a.sources).await?,
+                );
             }
             if !a.destinations.is_empty() {
-                o.insert("destinations".into(), ids(c, PolicyKind::Objects, &a.destinations).await?);
+                o.insert(
+                    "destinations".into(),
+                    ids(c, PolicyKind::Objects, &a.destinations).await?,
+                );
             }
             if !a.services.is_empty() {
-                o.insert("services".into(), ids(c, PolicyKind::Services, &a.services).await?);
+                o.insert(
+                    "services".into(),
+                    ids(c, PolicyKind::Services, &a.services).await?,
+                );
             }
             if !a.data_classes.is_empty() {
-                o.insert("data_classes".into(), ids(c, PolicyKind::DataClasses, &a.data_classes).await?);
+                o.insert(
+                    "data_classes".into(),
+                    ids(c, PolicyKind::DataClasses, &a.data_classes).await?,
+                );
             }
             if let Some(e) = &a.expires {
                 let val = if e == "never" {
@@ -545,7 +594,10 @@ async fn apply(c: &AfwClient, kind: PolicyKind, args: &KindArgs, v: &mut Value, 
                 o.insert("zones".into(), ids(c, PolicyKind::Zones, &a.zones).await?);
             }
             if !a.destinations.is_empty() {
-                o.insert("destinations".into(), ids(c, PolicyKind::Objects, &a.destinations).await?);
+                o.insert(
+                    "destinations".into(),
+                    ids(c, PolicyKind::Objects, &a.destinations).await?,
+                );
             }
         }
     }
@@ -584,8 +636,14 @@ async fn finish_defaults(c: &AfwClient, kind: PolicyKind, v: &mut Value) -> Resu
 
 fn port_range(p: &str) -> Result<Value> {
     let (s, e) = p.split_once('-').unwrap_or((p, p));
-    let s: u16 = s.trim().parse().map_err(|_| anyhow!("invalid port `{p}`"))?;
-    let e: u16 = e.trim().parse().map_err(|_| anyhow!("invalid port `{p}`"))?;
+    let s: u16 = s
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("invalid port `{p}`"))?;
+    let e: u16 = e
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("invalid port `{p}`"))?;
     if s > e {
         bail!("invalid port range `{p}`");
     }
@@ -594,7 +652,10 @@ fn port_range(p: &str) -> Result<Value> {
 
 /// Checks the body against the `afw-core` type and returns its canonical JSON.
 fn validate(kind: PolicyKind, v: Value) -> Result<Value> {
-    fn check<T: serde::de::DeserializeOwned + serde::Serialize>(what: &str, v: Value) -> Result<Value> {
+    fn check<T: serde::de::DeserializeOwned + serde::Serialize>(
+        what: &str,
+        v: Value,
+    ) -> Result<Value> {
         let t: T = serde_json::from_value(v).map_err(|e| anyhow!("invalid {what}: {e}"))?;
         Ok(serde_json::to_value(t)?)
     }
@@ -658,7 +719,9 @@ impl Names {
 
     pub fn list(&self, ids: Option<&Value>, empty: &str) -> String {
         match ids.and_then(Value::as_array) {
-            Some(a) if !a.is_empty() => a.iter().map(|i| self.name(i)).collect::<Vec<_>>().join(","),
+            Some(a) if !a.is_empty() => {
+                a.iter().map(|i| self.name(i)).collect::<Vec<_>>().join(",")
+            }
             _ => empty.into(),
         }
     }
@@ -755,7 +818,9 @@ fn columns(kind: PolicyKind, names: Rc<Names>) -> Vec<Col> {
                 }),
                 col("POS", "/position"),
                 colf("SOURCES", move |v| n2.list(v.get("sources"), "all zones")),
-                colf("DESTINATIONS", move |v| n3.list(v.get("destinations"), "any")),
+                colf("DESTINATIONS", move |v| {
+                    n3.list(v.get("destinations"), "any")
+                }),
                 colf("SERVICES", move |v| n4.list(v.get("services"), "any")),
                 col("ACTION", "/action"),
                 col("TRACK", "/track"),
@@ -770,7 +835,9 @@ fn columns(kind: PolicyKind, names: Rc<Names>) -> Vec<Col> {
                 col("POS", "/position"),
                 col("NAME", "/name"),
                 colf("ZONES", move |v| n1.list(v.get("zones"), "all zones")),
-                colf("DESTINATIONS", move |v| n2.list(v.get("destinations"), "any")),
+                colf("DESTINATIONS", move |v| {
+                    n2.list(v.get("destinations"), "any")
+                }),
                 col("ACTION", "/action"),
                 col("ID", "/id"),
             ]

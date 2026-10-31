@@ -82,7 +82,10 @@ async fn sends_bearer_interface_and_session_headers() {
     assert_eq!(reqs[0].header("authorization"), Some("Bearer s3cr3t-token"));
     assert_eq!(reqs[0].header("x-afw-interface"), Some("mcp"));
     assert_eq!(reqs[0].header("x-afw-session"), None);
-    assert_eq!(reqs[1].header("x-afw-session"), Some(sid.to_string().as_str()));
+    assert_eq!(
+        reqs[1].header("x-afw-session"),
+        Some(sid.to_string().as_str())
+    );
 }
 
 #[tokio::test]
@@ -145,7 +148,10 @@ async fn non_problem_error_body_is_still_an_api_error() {
     let c = client(&fake, Interface::Cli).await;
     let err = c.me().await.unwrap_err();
     assert_eq!(err.status(), Some(502));
-    assert_eq!(err.problem().unwrap().detail.as_deref(), Some("bad gateway"));
+    assert_eq!(
+        err.problem().unwrap().detail.as_deref(),
+        Some("bad gateway")
+    );
 }
 
 #[tokio::test]
@@ -409,7 +415,11 @@ async fn binary_and_ndjson_downloads() {
     fake.on(
         "GET",
         &format!("/captures/{id}/download"),
-        Reply::raw(200, "application/vnd.tcpdump.pcap", vec![0xd4, 0xc3, 0xb2, 0xa1]),
+        Reply::raw(
+            200,
+            "application/vnd.tcpdump.pcap",
+            vec![0xd4, 0xc3, 0xb2, 0xa1],
+        ),
     );
     fake.on(
         "GET",
@@ -421,7 +431,10 @@ async fn binary_and_ndjson_downloads() {
         c.download_capture(id).await.unwrap().as_ref(),
         &[0xd4, 0xc3, 0xb2, 0xa1]
     );
-    assert_eq!(c.export_audit(Some(10)).await.unwrap().as_ref(), b"{}\n{}\n");
+    assert_eq!(
+        c.export_audit(Some(10)).await.unwrap().as_ref(),
+        b"{}\n{}\n"
+    );
     assert_eq!(
         fake.requests_to("GET", "/audit/export")[0].query_param("from_seq"),
         Some("10")

@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use afw_client::{
-    AfwClient, AlertQuery, AllowFromLog, AuditQuery, InstallQuery, MapQuery, PageQuery,
-    PolicyKind, PublishOutcome, StreamQuery,
+    AfwClient, AlertQuery, AllowFromLog, AuditQuery, InstallQuery, MapQuery, PageQuery, PolicyKind,
+    PublishOutcome, StreamQuery,
 };
 use afw_core::api::{
     ApprovalDecision, ApprovalStatus, CaptureRequest, CreateApiToken, CreateRegistrationToken,
@@ -21,16 +21,16 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::Ctx;
 use crate::cli::{
-    AlertsCmd, AllowArgs, ApprovalsCmd, AuditCmd, CapturesCmd, GatewaysCmd, ImportCmd, IntentPolicyCmd,
-    InstallArgs, LogFilter, LogsCmd, LoginArgs, MapArgs, Paging, Period, RevisionsCmd,
+    AlertsCmd, AllowArgs, ApprovalsCmd, AuditCmd, CapturesCmd, GatewaysCmd, ImportCmd, InstallArgs,
+    IntentPolicyCmd, LogFilter, LoginArgs, LogsCmd, MapArgs, Paging, Period, RevisionsCmd,
     SessionCmd, TokensCmd,
 };
 use crate::config::{self, Config};
 use crate::output::{col, colf, kv, scalar, table, time_cell};
 use crate::resources::Names;
 use crate::util::{enum_word, opt_past, parse_future};
-use crate::Ctx;
 
 fn values<T: serde::Serialize>(items: &[T]) -> Result<Vec<Value>> {
     Ok(items
@@ -115,7 +115,12 @@ pub fn config_show(ctx: &mut Ctx<'_>) -> Result<()> {
             ("url", c.url.unwrap_or_else(|| "-".into())),
             (
                 "token",
-                if c.token.is_some() { "set (hidden)" } else { "not set" }.into(),
+                if c.token.is_some() {
+                    "set (hidden)"
+                } else {
+                    "not set"
+                }
+                .into(),
             ),
             ("ca_cert", c.ca_cert.unwrap_or_else(|| "-".into())),
         ],
@@ -157,12 +162,18 @@ pub async fn agent_overview(ctx: &mut Ctx<'_>, agent: &str) -> Result<()> {
         ctx.out,
         &[
             ("agent", format!("{} ({})", o.agent.name, o.agent.id)),
-            ("zone", format!("{} ({})", o.zone.name, scalar(v.pointer("/zone/mode")))),
+            (
+                "zone",
+                format!("{} ({})", o.zone.name, scalar(v.pointer("/zone/mode"))),
+            ),
             ("gateway", scalar(v.pointer("/gateway/name"))),
             ("last seen", time_cell(v.get("last_seen_at"))),
             ("flows (24h)", o.flows_24h.to_string()),
             ("denied (24h)", o.denied_24h.to_string()),
-            ("bytes out/in (24h)", format!("{}/{}", o.bytes_out_24h, o.bytes_in_24h)),
+            (
+                "bytes out/in (24h)",
+                format!("{}/{}", o.bytes_out_24h, o.bytes_in_24h),
+            ),
         ],
     )?;
     writeln!(ctx.out, "\nTop destinations:")?;
@@ -179,7 +190,11 @@ pub async fn agent_overview(ctx: &mut Ctx<'_>, agent: &str) -> Result<()> {
         ],
     )?;
     writeln!(ctx.out, "\nRecent denials:")?;
-    table(ctx.out, &values(&o.recent_denied)?, &flow_cols(Names::from_pairs([])))?;
+    table(
+        ctx.out,
+        &values(&o.recent_denied)?,
+        &flow_cols(Names::from_pairs([])),
+    )?;
     writeln!(ctx.out, "\nRecent tool calls:")?;
     table(
         ctx.out,
@@ -327,7 +342,7 @@ pub async fn verify(ctx: &mut Ctx<'_>, revision: Option<u64>) -> Result<i32> {
     if revision.is_none() {
         // The draft of your session: send the session header when there is one.
         if c.session().is_none()
-            && let Some(s) = c.current_session().await?
+            && let Some(s) = c.open_session_of_caller().await?
         {
             c.set_session(Some(s.id));
         }
@@ -346,14 +361,19 @@ pub async fn verify(ctx: &mut Ctx<'_>, revision: Option<u64>) -> Result<i32> {
         return Ok(0);
     }
     let names = Names::load(&c, PolicyKind::Rules).await?;
-    ctx.say(&format!("Verification of {target}: {} finding(s).", r.findings.len()))?;
+    ctx.say(&format!(
+        "Verification of {target}: {} finding(s).",
+        r.findings.len()
+    ))?;
     let n = names.clone();
     table(
         ctx.out,
         &values(&r.findings)?,
         &[
             col("FINDING", "/type"),
-            colf("SUBJECT", move |v| n.name(v.get("rule").or(v.get("id")).unwrap_or(&Value::Null))),
+            colf("SUBJECT", move |v| {
+                n.name(v.get("rule").or(v.get("id")).unwrap_or(&Value::Null))
+            }),
             colf("DETAIL", move |v| match v.get("by") {
                 Some(by) => format!("shadowed by {}", names.name(by)),
                 None => String::new(),
@@ -504,8 +524,14 @@ pub async fn install(ctx: &mut Ctx<'_>, a: InstallArgs) -> Result<i32> {
             }
         }
     }
-    let failed = installs.iter().filter(|i| i.state == InstallState::Failed).count();
-    let pending = installs.iter().filter(|i| i.state == InstallState::Pending).count();
+    let failed = installs
+        .iter()
+        .filter(|i| i.state == InstallState::Failed)
+        .count();
+    let pending = installs
+        .iter()
+        .filter(|i| i.state == InstallState::Pending)
+        .count();
     if ctx.json {
         ctx.print_json(&installs)?;
     } else {
@@ -532,7 +558,11 @@ pub async fn install(ctx: &mut Ctx<'_>, a: InstallArgs) -> Result<i32> {
         return Ok(0);
     }
     if failed > 0 {
-        writeln!(ctx.err, "error: revision {} failed on {failed} gateway(s)", a.revision)?;
+        writeln!(
+            ctx.err,
+            "error: revision {} failed on {failed} gateway(s)",
+            a.revision
+        )?;
         return Ok(1);
     }
     if pending > 0 {
@@ -593,15 +623,20 @@ pub async fn gateways(ctx: &mut Ctx<'_>, cmd: GatewaysCmd) -> Result<()> {
         }
         GatewaysCmd::Command { gateway, command } => {
             let id = c.resolve_gateway(&gateway).await?;
-            let cmd: GatewayCommand = serde_json::from_value(crate::resources::gateway_command(&command))
-                .map_err(|_| anyhow!("unknown command `{command}`"))?;
+            let cmd: GatewayCommand =
+                serde_json::from_value(crate::resources::gateway_command(&command))
+                    .map_err(|_| anyhow!("unknown command `{command}`"))?;
             c.send_gateway_command(id, &cmd).await?;
-            ctx.say(&format!("Command {command} queued for gateway {id} (sent with its next heartbeat)."))
+            ctx.say(&format!(
+                "Command {command} queued for gateway {id} (sent with its next heartbeat)."
+            ))
         }
         GatewaysCmd::Delete { gateway } => {
             let id = c.resolve_gateway(&gateway).await?;
             c.delete_gateway(id).await?;
-            ctx.say(&format!("Removed gateway {id}; its certificate is revoked."))
+            ctx.say(&format!(
+                "Removed gateway {id}; its certificate is revoked."
+            ))
         }
     }
 }
@@ -695,15 +730,21 @@ fn flow_cols(agents: std::rc::Rc<Names>) -> Vec<crate::output::Col> {
                 verdict
             }
         }),
-        colf("AGENT", move |v| match v.get("agent_name").and_then(Value::as_str) {
-            Some(n) => n.to_string(),
-            None => agents.name(&v["agent_id"]),
+        colf("AGENT", move |v| {
+            match v.get("agent_name").and_then(Value::as_str) {
+                Some(n) => n.to_string(),
+                None => agents.name(&v["agent_id"]),
+            }
         }),
         colf("DESTINATION", flow_dest),
         col("APP", "/app"),
         colf("RULE", rule_cell),
         colf("BYTES OUT/IN", |v| {
-            format!("{}/{}", scalar(v.get("bytes_out")), scalar(v.get("bytes_in")))
+            format!(
+                "{}/{}",
+                scalar(v.get("bytes_out")),
+                scalar(v.get("bytes_in"))
+            )
         }),
         col("ID", "/id"),
     ]
@@ -779,7 +820,14 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
             kv(
                 ctx.out,
                 &[
-                    ("period", format!("{} .. {}", time_cell(st.get("from")), time_cell(st.get("to")))),
+                    (
+                        "period",
+                        format!(
+                            "{} .. {}",
+                            time_cell(st.get("from")),
+                            time_cell(st.get("to"))
+                        ),
+                    ),
                     ("bucket", scalar(st.get("bucket"))),
                     ("total", scalar(st.get("total"))),
                     ("allow", scalar(st.get("allow"))),
@@ -819,7 +867,10 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                     ("source", scalar(f.get("src"))),
                     ("destination", flow_dest(&f)),
                     ("address", scalar(f.get("dst"))),
-                    ("protocol", format!("{} {}", scalar(f.get("protocol")), scalar(f.get("app")))),
+                    (
+                        "protocol",
+                        format!("{} {}", scalar(f.get("protocol")), scalar(f.get("app"))),
+                    ),
                     ("rule", rule_cell(&f)),
                     ("reason", scalar(f.pointer("/decision/reason"))),
                     ("revision", scalar(f.pointer("/decision/revision"))),
@@ -827,7 +878,10 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                     ("llm provider", scalar(f.get("llm_provider"))),
                     ("internal", scalar(f.get("internal"))),
                     ("data classes", scalar(f.get("data_classes"))),
-                    ("bytes out/in", format!("{}/{}", d.flow.bytes_out, d.flow.bytes_in)),
+                    (
+                        "bytes out/in",
+                        format!("{}/{}", d.flow.bytes_out, d.flow.bytes_in),
+                    ),
                 ],
             )?;
             if !d.http.is_empty() {
@@ -858,7 +912,11 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                 let confidence = d
                     .correlation
                     .as_ref()
-                    .map(|c| scalar(Some(&serde_json::to_value(c.confidence).unwrap_or_default())))
+                    .map(|c| {
+                        scalar(Some(
+                            &serde_json::to_value(c.confidence).unwrap_or_default(),
+                        ))
+                    })
                     .unwrap_or_else(|| "-".into());
                 writeln!(ctx.out, "\nTool call ({confidence}):")?;
                 kv(
@@ -872,7 +930,11 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                     ],
                 )?;
             }
-            if let Some(trace) = raw.get("trace").and_then(Value::as_array).filter(|t| !t.is_empty()) {
+            if let Some(trace) = raw
+                .get("trace")
+                .and_then(Value::as_array)
+                .filter(|t| !t.is_empty())
+            {
                 writeln!(ctx.out, "\nRule trace:")?;
                 table(
                     ctx.out,
@@ -886,14 +948,20 @@ pub async fn logs(ctx: &mut Ctx<'_>, cmd: LogsCmd) -> Result<()> {
                 )?;
             }
             if let Some(m) = raw.get("agent_message").and_then(Value::as_str) {
-                writeln!(ctx.out, "\nMessage received by the agent:\n{}", crate::output::sanitize(m))?;
+                writeln!(
+                    ctx.out,
+                    "\nMessage received by the agent:\n{}",
+                    crate::output::sanitize(m)
+                )?;
             }
             if let Some(p) = raw.get("allow_proposal").filter(|p| p.is_object()) {
                 let dests = p["destinations"]
                     .as_array()
                     .map(|a| {
                         a.iter()
-                            .map(|d| format!("{} ({})", scalar(d.get("label")), scalar(d.get("kind"))))
+                            .map(|d| {
+                                format!("{} ({})", scalar(d.get("label")), scalar(d.get("kind")))
+                            })
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
@@ -1021,7 +1089,9 @@ pub async fn internal_map(ctx: &mut Ctx<'_>, a: MapArgs) -> Result<()> {
         &[
             colf("SOURCE", move |v| l1.name(&v["source"])),
             colf("TARGET", move |v| l2.name(&v["target"])),
-            colf("PORT", |v| format!("{}/{}", scalar(v.get("protocol")), scalar(v.get("port")))),
+            colf("PORT", |v| {
+                format!("{}/{}", scalar(v.get("protocol")), scalar(v.get("port")))
+            }),
             col("APP", "/app"),
             col("FLOWS", "/flows"),
             col("ALERTS", "/alerts"),
@@ -1141,7 +1211,11 @@ pub async fn captures(ctx: &mut Ctx<'_>, cmd: CapturesCmd) -> Result<()> {
             let path = output.unwrap_or_else(|| PathBuf::from(format!("capture-{id}.pcap")));
             // Captures may hold sensitive traffic: owner-only file.
             config::write_private(&path, &data)?;
-            ctx.say(&format!("Wrote {} bytes to {}.", data.len(), path.display()))
+            ctx.say(&format!(
+                "Wrote {} bytes to {}.",
+                data.len(),
+                path.display()
+            ))
         }
     }
 }
@@ -1227,7 +1301,8 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
                 entries.push(e);
             }
             match &output {
-                Some(p) => std::fs::write(p, &data).with_context(|| format!("cannot write {}", p.display()))?,
+                Some(p) => std::fs::write(p, &data)
+                    .with_context(|| format!("cannot write {}", p.display()))?,
                 None => ctx.out.write_all(&data)?,
             }
             let chain = afw_core::audit::verify_chain(&entries);
@@ -1237,7 +1312,11 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
                     .is_none_or(|e| e.prev_hash == afw_core::audit::GENESIS_HASH);
             match (chain, genesis_ok) {
                 (Ok(()), true) => {
-                    writeln!(ctx.err, "Exported {} entries; hash chain verified locally.", entries.len())?;
+                    writeln!(
+                        ctx.err,
+                        "Exported {} entries; hash chain verified locally.",
+                        entries.len()
+                    )?;
                     Ok(0)
                 }
                 (Err(e), _) => {
@@ -1245,7 +1324,10 @@ pub async fn audit(ctx: &mut Ctx<'_>, cmd: AuditCmd) -> Result<i32> {
                     Ok(1)
                 }
                 (Ok(()), false) => {
-                    writeln!(ctx.err, "error: the first exported entry does not start the chain")?;
+                    writeln!(
+                        ctx.err,
+                        "error: the first exported entry does not start the chain"
+                    )?;
                     Ok(1)
                 }
             }
@@ -1367,7 +1449,7 @@ pub async fn tokens(ctx: &mut Ctx<'_>, cmd: TokensCmd) -> Result<()> {
 pub async fn rulebase(ctx: &mut Ctx<'_>) -> Result<()> {
     let c = ctx.client()?;
     if c.session().is_none()
-        && let Some(s) = c.current_session().await?
+        && let Some(s) = c.open_session_of_caller().await?
     {
         c.set_session(Some(s.id));
     }
@@ -1380,7 +1462,11 @@ pub async fn rulebase(ctx: &mut Ctx<'_>) -> Result<()> {
     let mut layers = vec![("Baseline".to_string(), sections(&rb["baseline"]), None)];
     for z in rb["zones"].as_array().cloned().unwrap_or_default() {
         layers.push((
-            format!("Zone {} ({})", scalar(z.pointer("/zone/name")), scalar(z.get("mode"))),
+            format!(
+                "Zone {} ({})",
+                scalar(z.pointer("/zone/name")),
+                scalar(z.get("mode"))
+            ),
             sections(&z),
             z.get("cleanup_number").cloned(),
         ));
@@ -1400,7 +1486,9 @@ pub async fn rulebase(ctx: &mut Ctx<'_>) -> Result<()> {
                     col("NO", "/number"),
                     col("NAME", "/name"),
                     colf("SOURCES", move |v| n1.list(v.get("sources"), "all zones")),
-                    colf("DESTINATIONS", move |v| n2.list(v.get("destinations"), "any")),
+                    colf("DESTINATIONS", move |v| {
+                        n2.list(v.get("destinations"), "any")
+                    }),
                     colf("SERVICES", move |v| n3.list(v.get("services"), "any")),
                     col("ACTION", "/action"),
                     col("HITS", "/hits"),
@@ -1452,7 +1540,10 @@ pub async fn intent_policy(ctx: &mut Ctx<'_>, cmd: IntentPolicyCmd) -> Result<()
             if ctx.json {
                 return ctx.print_json(&saved);
             }
-            ctx.say(&format!("Intent policy saved as version {}.", saved.version))
+            ctx.say(&format!(
+                "Intent policy saved as version {}.",
+                saved.version
+            ))
         }
     }
 }
@@ -1474,7 +1565,7 @@ pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<i32> {
     let c = ctx.client()?;
     // The plan reuses what already exists: read the policy as your session sees it.
     if c.session().is_none()
-        && let Some(s) = c.current_session().await?
+        && let Some(s) = c.open_session_of_caller().await?
     {
         c.set_session(Some(s.id));
     }
@@ -1483,7 +1574,8 @@ pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<i32> {
     opts.zone_mode = parse_enum("zone mode", &mode)?;
     opts.existing = Some(&existing);
     opts.downgrade = downgrade;
-    let plan = afw_import::import(&yaml, &opts).map_err(|e| anyhow!("egress-guard import failed: {e}"))?;
+    let plan =
+        afw_import::import(&yaml, &opts).map_err(|e| anyhow!("egress-guard import failed: {e}"))?;
     if ctx.json && !apply {
         ctx.print_json(&plan)?;
         return Ok(0);
@@ -1492,7 +1584,10 @@ pub async fn import(ctx: &mut Ctx<'_>, cmd: ImportCmd) -> Result<i32> {
         write!(ctx.out, "{}", plan.report.to_markdown())?;
     }
     if !apply {
-        writeln!(ctx.err, "Report only: rerun with --apply to merge the plan into your session.")?;
+        writeln!(
+            ctx.err,
+            "Report only: rerun with --apply to merge the plan into your session."
+        )?;
         return Ok(0);
     }
     if !plan.is_safe() && !force {

@@ -78,7 +78,8 @@ impl Ctx<'_> {
             .or_else(|| self.config.ca_cert.clone().map(PathBuf::from));
         let ca_cert_pem = match ca {
             Some(p) => Some(
-                std::fs::read(&p).with_context(|| format!("cannot read CA certificate {}", p.display()))?,
+                std::fs::read(&p)
+                    .with_context(|| format!("cannot read CA certificate {}", p.display()))?,
             ),
             None => None,
         };
@@ -102,13 +103,24 @@ impl Ctx<'_> {
         if let Some(s) = c.session() {
             return Ok(s);
         }
-        if let Some(s) = c.current_session().await? {
+        if let Some(s) = c.open_session_of_caller().await? {
             c.set_session(Some(s.id));
             return Ok(s.id);
         }
         let s = c.open_session(None).await?;
         writeln!(self.err, "Opened editing session {}.", s.id)?;
         Ok(s.id)
+    }
+
+    /// Reads see your draft: attach your open session, if any (never opens one).
+    pub async fn attach_session(&mut self) -> Result<AfwClient> {
+        let c = self.client()?;
+        if c.session().is_none()
+            && let Some(s) = c.open_session_of_caller().await?
+        {
+            c.set_session(Some(s.id));
+        }
+        Ok(c)
     }
 
     pub fn url_override(&self) -> Option<String> {
@@ -160,7 +172,10 @@ pub async fn run(args: impl IntoIterator<Item = OsString>, io: Io<'_>) -> i32 {
     let config_path = match cli.config.clone().or_else(config::default_path) {
         Some(p) => p,
         None => {
-            let _ = writeln!(err, "error: cannot locate the configuration file: set AFW_CONFIG or HOME");
+            let _ = writeln!(
+                err,
+                "error: cannot locate the configuration file: set AFW_CONFIG or HOME"
+            );
             return 1;
         }
     };
@@ -204,7 +219,9 @@ pub fn error_text(e: &anyhow::Error) -> String {
     let mut s = format!("{e:#}");
     if let Some(ce) = e.downcast_ref::<ClientError>() {
         match ce.status() {
-            Some(401) => s.push_str("\nhint: the token is missing, invalid or expired (`afw login`)."),
+            Some(401) => {
+                s.push_str("\nhint: the token is missing, invalid or expired (`afw login`).")
+            }
             Some(403) => s.push_str("\nhint: your role or delegation does not allow this action."),
             Some(423) => s.push_str("\nhint: another session holds a lock on this resource."),
             _ => {}

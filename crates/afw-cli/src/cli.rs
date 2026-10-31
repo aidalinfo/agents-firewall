@@ -460,7 +460,11 @@ pub struct InstallArgs {
     /// Revision to install.
     pub revision: u64,
     /// Gateway (name or id); repeatable.
-    #[arg(long = "gateway", required_unless_present = "all", conflicts_with = "all")]
+    #[arg(
+        long = "gateway",
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
     pub gateways: Vec<String>,
     /// Every gateway.
     #[arg(long)]
@@ -804,7 +808,10 @@ pub struct EnrollArgs {
     #[arg(long = "gateway-image", default_value = "afw-gateway:local")]
     pub gateway_image: String,
     /// Kubernetes: Secret holding the gateway registration token.
-    #[arg(long = "registration-secret", default_value = "afw-gateway-registration")]
+    #[arg(
+        long = "registration-secret",
+        default_value = "afw-gateway-registration"
+    )]
     pub registration_secret: String,
     /// Kubernetes: also output the gateway manifests of the namespace.
     #[arg(long = "with-gateway")]

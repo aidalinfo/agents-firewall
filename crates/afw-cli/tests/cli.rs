@@ -8,12 +8,9 @@ use afw_core::api::{
     Approval, ApprovalStatus, Enrollment, Gateway, GatewayStatus, Install, InstallResult,
     InstallState, Me, Page, Revision, Role, Session, SessionState,
 };
-use afw_core::events::{
-    Actor, ActorKind, DecisionRef, FlowEvent, Interface, Verdict,
-};
+use afw_core::events::{Actor, ActorKind, DecisionRef, FlowEvent, Interface, Verdict};
 use afw_core::policy::{
-    Action, Agent, AgentKind, L4Proto, Layer, NetObject, NetObjectSpec, Rule, Track, Zone,
-    ZoneMode,
+    Action, Agent, AgentKind, L4Proto, Layer, NetObject, NetObjectSpec, Rule, Track, Zone, ZoneMode,
 };
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -43,7 +40,14 @@ impl Env {
     }
 }
 
-async fn afw_full(env: &Env, url: Option<&str>, token: Option<&str>, args: &[&str], stdin: &str, docker: &str) -> Out {
+async fn afw_full(
+    env: &Env,
+    url: Option<&str>,
+    token: Option<&str>,
+    args: &[&str],
+    stdin: &str,
+    docker: &str,
+) -> Out {
     let mut full: Vec<std::ffi::OsString> = vec!["afw".into()];
     full.push("--config".into());
     full.push(env.config().into());
@@ -72,7 +76,15 @@ async fn afw_full(env: &Env, url: Option<&str>, token: Option<&str>, args: &[&st
 }
 
 async fn afw(env: &Env, fake: &FakeApi, args: &[&str]) -> Out {
-    afw_full(env, Some(&fake.url()), Some("tok-secret-123"), args, "", "docker").await
+    afw_full(
+        env,
+        Some(&fake.url()),
+        Some("tok-secret-123"),
+        args,
+        "",
+        "docker",
+    )
+    .await
 }
 
 fn actor() -> Actor {
@@ -153,7 +165,10 @@ fn snapshot(name: &str, actual: &str) {
             path.display()
         )
     });
-    assert_eq!(actual, expected, "snapshot {name} differs (AFW_UPDATE_SNAPSHOTS=1 to update)");
+    assert_eq!(
+        actual, expected,
+        "snapshot {name} differs (AFW_UPDATE_SNAPSHOTS=1 to update)"
+    );
 }
 
 #[tokio::test]
@@ -230,7 +245,15 @@ async fn login_stores_token_0600_and_never_prints_it() {
             writable_zones: None,
         },
     );
-    let o = afw_full(&env, None, None, &["login", "--url", &fake.url()], "tok-from-stdin-42\n", "docker").await;
+    let o = afw_full(
+        &env,
+        None,
+        None,
+        &["login", "--url", &fake.url()],
+        "tok-from-stdin-42\n",
+        "docker",
+    )
+    .await;
     assert_eq!(o.code, 0, "{}", o.err);
     assert!(o.out.contains("Logged in"));
     assert!(!o.out.contains("tok-from-stdin-42") && !o.err.contains("tok-from-stdin-42"));
@@ -243,7 +266,10 @@ async fn login_stores_token_0600_and_never_prints_it() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(env.config()).unwrap().permissions().mode();
+        let mode = std::fs::metadata(env.config())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
     for args in [&["config", "show"][..], &["--json", "config", "show"][..]] {
@@ -265,8 +291,20 @@ async fn login_stores_token_0600_and_never_prints_it() {
 async fn login_refused_token_writes_nothing() {
     let env = Env::new();
     let fake = FakeApi::start().await;
-    fake.on("GET", "/me", Reply::problem(401, "Unauthorized", "invalid token"));
-    let o = afw_full(&env, None, None, &["login", "--url", &fake.url()], "bad\n", "docker").await;
+    fake.on(
+        "GET",
+        "/me",
+        Reply::problem(401, "Unauthorized", "invalid token"),
+    );
+    let o = afw_full(
+        &env,
+        None,
+        None,
+        &["login", "--url", &fake.url()],
+        "bad\n",
+        "docker",
+    )
+    .await;
     assert_eq!(o.code, 1);
     assert!(o.err.contains("401") && o.err.contains("hint"), "{}", o.err);
     assert!(!env.config().exists());
@@ -309,7 +347,16 @@ async fn create_opens_a_session_and_sends_a_valid_body() {
     let out = afw(
         &env,
         &fake,
-        &["objects", "create", "--name", "pypi", "--domain", "*.pypi.org", "--category", "internal"],
+        &[
+            "objects",
+            "create",
+            "--name",
+            "pypi",
+            "--domain",
+            "*.pypi.org",
+            "--category",
+            "internal",
+        ],
     )
     .await;
     assert_eq!(out.code, 0, "{}", out.err);
@@ -318,7 +365,10 @@ async fn create_opens_a_session_and_sends_a_valid_body() {
     assert_eq!(r.header("x-afw-session"), Some(sid.to_string().as_str()));
     let body = r.json();
     assert_eq!(body["name"], "pypi");
-    assert_eq!(body["spec"], json!({"type": "domain", "pattern": "*.pypi.org"}));
+    assert_eq!(
+        body["spec"],
+        json!({"type": "domain", "pattern": "*.pypi.org"})
+    );
     assert_eq!(body["category"], "internal");
     serde_json::from_value::<NetObject>(body).unwrap();
 }
@@ -330,7 +380,12 @@ async fn invalid_body_is_refused_locally() {
     let out = afw(&env, &fake, &["objects", "create", "--name", "x"]).await;
     assert_eq!(out.code, 1);
     assert!(out.err.contains("--domain"), "{}", out.err);
-    let out = afw(&env, &fake, &["objects", "create", "--name", "x", "--host", "not-an-ip"]).await;
+    let out = afw(
+        &env,
+        &fake,
+        &["objects", "create", "--name", "x", "--host", "not-an-ip"],
+    )
+    .await;
     assert_eq!(out.code, 1);
     assert!(out.err.contains("invalid object"), "{}", out.err);
     assert!(fake.requests().is_empty(), "nothing sent to the API");
@@ -376,8 +431,18 @@ async fn rule_create_resolves_names_and_appends_to_the_zone_layer() {
         &env,
         &fake,
         &[
-            "rules", "create", "--name", "allow-github", "--zone", "clients", "--destination",
-            "github", "--action", "accept", "--expires", "7d",
+            "rules",
+            "create",
+            "--name",
+            "allow-github",
+            "--zone",
+            "clients",
+            "--destination",
+            "github",
+            "--action",
+            "accept",
+            "--expires",
+            "7d",
         ],
     )
     .await;
@@ -405,7 +470,11 @@ async fn api_refusal_shows_problem_and_hint() {
     );
     let out = afw(&env, &fake, &["zones", "delete", &z.id.to_string()]).await;
     assert_eq!(out.code, 1);
-    assert!(out.err.contains("403") && out.err.contains("applies to the caller"), "{}", out.err);
+    assert!(
+        out.err.contains("403") && out.err.contains("applies to the caller"),
+        "{}",
+        out.err
+    );
     assert!(out.err.contains("hint"));
 }
 
@@ -448,7 +517,14 @@ async fn allow_from_flow_prepares_rule_in_session() {
     let out = afw(
         &env,
         &fake,
-        &["allow", &flow.to_string(), "--destination", "wildcard", "--expires-in-days", "30"],
+        &[
+            "allow",
+            &flow.to_string(),
+            "--destination",
+            "wildcard",
+            "--expires-in-days",
+            "30",
+        ],
     )
     .await;
     assert_eq!(out.code, 0, "{}", out.err);
@@ -482,7 +558,11 @@ async fn publish_reports_revision_or_pending_approval() {
     let sid = Uuid::new_v4();
     fake.on_json("GET", "/sessions/current", 200, &session(sid));
     let a = approval(sid);
-    fake.on("POST", &format!("/sessions/{sid}/publish"), Reply::json(202, &a));
+    fake.on(
+        "POST",
+        &format!("/sessions/{sid}/publish"),
+        Reply::json(202, &a),
+    );
     fake.on(
         "POST",
         &format!("/sessions/{sid}/publish"),
@@ -501,7 +581,11 @@ async fn publish_reports_revision_or_pending_approval() {
     );
     let out = afw(&env, &fake, &["session", "publish", "-m", "open pypi"]).await;
     assert_eq!(out.code, 0, "{}", out.err);
-    assert!(out.out.contains("approval") && out.out.contains(&a.id.to_string()), "{}", out.out);
+    assert!(
+        out.out.contains("approval") && out.out.contains(&a.id.to_string()),
+        "{}",
+        out.out
+    );
     let out = afw(&env, &fake, &["session", "publish", "-m", "open pypi"]).await;
     assert!(out.out.contains("Published revision 12"), "{}", out.out);
 }
@@ -545,7 +629,11 @@ async fn install_all_waits_for_each_gateway() {
     );
     let out = afw(&env, &fake, &["install", "12", "--all"]).await;
     assert_eq!(out.code, 0, "{}", out.err);
-    assert!(out.out.contains("gw-1") && out.out.contains("installed"), "{}", out.out);
+    assert!(
+        out.out.contains("gw-1") && out.out.contains("installed"),
+        "{}",
+        out.out
+    );
     assert_eq!(
         fake.requests_to("POST", "/installs")[0].json(),
         json!({"revision": 12, "gateways": []})
@@ -644,8 +732,20 @@ async fn logs_flows_sends_ef41_filters_and_prints_rows() {
         &env,
         &fake,
         &[
-            "logs", "flows", "--agent", "laurent-bot", "--verdict", "deny", "--destination",
-            "exfil.example", "--from", "2026-10-30T08:00:00Z", "-q", "upload", "--limit", "20",
+            "logs",
+            "flows",
+            "--agent",
+            "laurent-bot",
+            "--verdict",
+            "deny",
+            "--destination",
+            "exfil.example",
+            "--from",
+            "2026-10-30T08:00:00Z",
+            "-q",
+            "upload",
+            "--limit",
+            "20",
         ],
     )
     .await;
@@ -699,7 +799,17 @@ async fn enroll_dry_run_touches_nothing() {
     let out = afw(
         &env,
         &fake,
-        &["enroll", "laurent-bot", "--zone", "clients", "--compose", file.to_str().unwrap(), "--ip", "10.77.0.11", "--dry-run"],
+        &[
+            "enroll",
+            "laurent-bot",
+            "--zone",
+            "clients",
+            "--compose",
+            file.to_str().unwrap(),
+            "--ip",
+            "10.77.0.11",
+            "--dry-run",
+        ],
     )
     .await;
     assert_eq!(out.code, 0, "{}", out.err);
@@ -733,8 +843,18 @@ async fn enroll_compose_then_unenroll_round_trip() {
         Some(&fake.url()),
         Some("tok"),
         &[
-            "enroll", "laurent-bot", "--zone", "clients", "--compose", file.to_str().unwrap(),
-            "--ip", "10.77.0.11", "--hermes", "--env-file", env_file.to_str().unwrap(), "--apply",
+            "enroll",
+            "laurent-bot",
+            "--zone",
+            "clients",
+            "--compose",
+            file.to_str().unwrap(),
+            "--ip",
+            "10.77.0.11",
+            "--hermes",
+            "--env-file",
+            env_file.to_str().unwrap(),
+            "--apply",
         ],
         "",
         "true",
@@ -742,17 +862,26 @@ async fn enroll_compose_then_unenroll_round_trip() {
     .await;
     assert_eq!(out.code, 0, "{}", out.err);
     assert!(out.err.contains("Running: true compose -f"), "{}", out.err);
-    assert!(!out.out.contains("plugin-secret-xyz"), "token written to the env file, not printed");
+    assert!(
+        !out.out.contains("plugin-secret-xyz"),
+        "token written to the env file, not printed"
+    );
     let envs = std::fs::read_to_string(&env_file).unwrap();
     assert_eq!(envs, "AFW_TOKEN_LAURENT_BOT=plugin-secret-xyz\n");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&env_file).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&env_file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
     let enrolled = std::fs::read_to_string(&file).unwrap();
     assert!(enrolled.contains("afw-net-laurent-bot") && enrolled.contains("AFW_TOKEN_LAURENT_BOT"));
-    assert!(!enrolled.contains("plugin-secret-xyz"), "secret never written in the compose file");
+    assert!(
+        !enrolled.contains("plugin-secret-xyz"),
+        "secret never written in the compose file"
+    );
     let body = fake.requests_to("POST", "/enrollments")[0].json();
     assert_eq!(
         body,
@@ -764,13 +893,31 @@ async fn enroll_compose_then_unenroll_round_trip() {
 
     // Unenroll: exact inverse and agent deleted in the session.
     fake.on_json("GET", "/agents", 200, &vec![updated.clone()]);
-    fake.on("DELETE", &format!("/agents/{}", updated.id), Reply::empty(204));
-    let out = afw(&env, &fake, &["unenroll", "laurent-bot", "--compose", file.to_str().unwrap()]).await;
+    fake.on(
+        "DELETE",
+        &format!("/agents/{}", updated.id),
+        Reply::empty(204),
+    );
+    let out = afw(
+        &env,
+        &fake,
+        &[
+            "unenroll",
+            "laurent-bot",
+            "--compose",
+            file.to_str().unwrap(),
+        ],
+    )
+    .await;
     assert_eq!(out.code, 0, "{}", out.err);
     let restored: serde_yaml::Value =
         serde_yaml::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(restored, original);
-    assert_eq!(fake.requests_to("DELETE", &format!("/agents/{}", updated.id)).len(), 1);
+    assert_eq!(
+        fake.requests_to("DELETE", &format!("/agents/{}", updated.id))
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -784,11 +931,24 @@ async fn enroll_api_refusal_leaves_compose_untouched() {
     fake.on_json("GET", "/zones", 200, &vec![z]);
     fake.on_json("GET", "/gateways", 200, &vec![gw]);
     fake.on_json("GET", "/sessions/current", 200, &session(Uuid::new_v4()));
-    fake.on("POST", "/enrollments", Reply::problem(403, "Forbidden", "viewer"));
+    fake.on(
+        "POST",
+        "/enrollments",
+        Reply::problem(403, "Forbidden", "viewer"),
+    );
     let out = afw(
         &env,
         &fake,
-        &["enroll", "laurent-bot", "--zone", "clients", "--compose", file.to_str().unwrap(), "--ip", "10.77.0.11"],
+        &[
+            "enroll",
+            "laurent-bot",
+            "--zone",
+            "clients",
+            "--compose",
+            file.to_str().unwrap(),
+            "--ip",
+            "10.77.0.11",
+        ],
     )
     .await;
     assert_eq!(out.code, 1);
@@ -796,10 +956,23 @@ async fn enroll_api_refusal_leaves_compose_untouched() {
 }
 
 fn empty_policy(fake: &FakeApi) {
-    for p in ["/objects", "/services", "/data-classes", "/zones", "/agents", "/rules", "/inspection-rules"] {
+    for p in [
+        "/objects",
+        "/services",
+        "/data-classes",
+        "/zones",
+        "/agents",
+        "/rules",
+        "/inspection-rules",
+    ] {
         fake.on_json("GET", p, 200, &json!([]));
     }
-    fake.on_json("GET", "/settings", 200, &afw_core::policy::PolicySettings::default());
+    fake.on_json(
+        "GET",
+        "/settings",
+        200,
+        &afw_core::policy::PolicySettings::default(),
+    );
 }
 
 fn example() -> String {
@@ -813,9 +986,18 @@ fn example() -> String {
 async fn import_report_only_changes_nothing() {
     let env = Env::new();
     let fake = FakeApi::start().await;
-    fake.on("GET", "/sessions/current", Reply::problem(404, "Not Found", "none"));
+    fake.on(
+        "GET",
+        "/sessions/current",
+        Reply::problem(404, "Not Found", "none"),
+    );
     empty_policy(&fake);
-    let out = afw(&env, &fake, &["import", "egress-guard", &example(), "--zone", "assistant"]).await;
+    let out = afw(
+        &env,
+        &fake,
+        &["import", "egress-guard", &example(), "--zone", "assistant"],
+    )
+    .await;
     assert_eq!(out.code, 0, "{}", out.err);
     assert!(out.out.contains("assistant"), "{}", out.out);
     assert!(out.err.contains("--apply"));
@@ -829,17 +1011,34 @@ async fn import_apply_merges_fragment_and_optionally_intent_policy() {
     let sid = Uuid::new_v4();
     fake.on_json("GET", "/sessions/current", 200, &session(sid));
     empty_policy(&fake);
-    fake.on_json("POST", &format!("/sessions/{sid}/import"), 200, &session(sid));
+    fake.on_json(
+        "POST",
+        &format!("/sessions/{sid}/import"),
+        200,
+        &session(sid),
+    );
     fake.on_json(
         "PUT",
         "/intent-policy",
         200,
-        &afw_core::api::IntentPolicy { version: 4, action_classes: vec![] },
+        &afw_core::api::IntentPolicy {
+            version: 4,
+            action_classes: vec![],
+        },
     );
     let out = afw(
         &env,
         &fake,
-        &["import", "egress-guard", &example(), "--zone", "assistant", "--apply", "--force", "--intent-policy"],
+        &[
+            "import",
+            "egress-guard",
+            &example(),
+            "--zone",
+            "assistant",
+            "--apply",
+            "--force",
+            "--intent-policy",
+        ],
     )
     .await;
     assert_eq!(out.code, 0, "{}", out.err);

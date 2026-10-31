@@ -372,7 +372,7 @@ impl AfwClient {
         if let Some(id) = self.session() {
             return Ok(id);
         }
-        if let Some(s) = self.current_session().await? {
+        if let Some(s) = self.open_session_of_caller().await? {
             self.set_session(Some(s.id));
             return Ok(s.id);
         }
@@ -443,7 +443,11 @@ impl AfwClient {
         self.json(self.request(Method::POST, path).json(body)).await
     }
 
-    async fn put<T: DeserializeOwned, B: Serialize + ?Sized>(&self, path: &str, body: &B) -> Result<T> {
+    async fn put<T: DeserializeOwned, B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
         self.json(self.request(Method::PUT, path).json(body)).await
     }
 
@@ -664,7 +668,12 @@ impl AfwClient {
             data_classes: self.list_data_classes().await?,
             zones: self.list_zones().await?,
             agents: self.list_agents().await?,
-            rules: self.list_rules().await?.into_iter().map(|r| r.rule).collect(),
+            rules: self
+                .list_rules()
+                .await?
+                .into_iter()
+                .map(|r| r.rule)
+                .collect(),
             inspection_rules: self.list_inspection_rules().await?,
             settings: self.get_settings().await?,
         })
@@ -728,6 +737,15 @@ impl AfwClient {
             Err(ClientError::Api { status: 404, .. }) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// The caller's session when it is still open (`GET /sessions/current` may return the
+    /// caller's last published session, e.g. to resume the install step).
+    pub async fn open_session_of_caller(&self) -> Result<Option<Session>> {
+        Ok(self
+            .current_session()
+            .await?
+            .filter(|s| s.state == afw_core::api::SessionState::Open))
     }
 
     pub async fn get_session(&self, id: Uuid) -> Result<Session> {
@@ -897,30 +915,44 @@ impl AfwClient {
             )
             .await?;
         let bytes = resp.bytes_stream();
-        let state = (Box::pin(bytes), sse::SseParser::new(), Vec::<Result<GatewayEvent>>::new());
-        Ok(futures::stream::unfold(state, |(mut bytes, mut parser, mut pending)| async move {
-            loop {
-                if !pending.is_empty() {
-                    let item = pending.remove(0);
-                    return Some((item, (bytes, parser, pending)));
-                }
-                match bytes.next().await {
-                    None => return None,
-                    Some(Err(e)) => return Some((Err(ClientError::Transport(e)), (bytes, parser, pending))),
-                    Some(Ok(chunk)) => {
-                        let text = String::from_utf8_lossy(&chunk);
-                        for m in parser.push(&text) {
-                            pending.push(serde_json::from_str::<GatewayEvent>(&m.data).map_err(|e| {
-                                ClientError::Decode {
-                                    status: 200,
-                                    message: format!("event `{}`: {e}", m.event),
-                                }
-                            }));
+        let state = (
+            Box::pin(bytes),
+            sse::SseParser::new(),
+            Vec::<Result<GatewayEvent>>::new(),
+        );
+        Ok(futures::stream::unfold(
+            state,
+            |(mut bytes, mut parser, mut pending)| async move {
+                loop {
+                    if !pending.is_empty() {
+                        let item = pending.remove(0);
+                        return Some((item, (bytes, parser, pending)));
+                    }
+                    match bytes.next().await {
+                        None => return None,
+                        Some(Err(e)) => {
+                            return Some((
+                                Err(ClientError::Transport(e)),
+                                (bytes, parser, pending),
+                            ));
+                        }
+                        Some(Ok(chunk)) => {
+                            let text = String::from_utf8_lossy(&chunk);
+                            for m in parser.push(&text) {
+                                pending.push(
+                                    serde_json::from_str::<GatewayEvent>(&m.data).map_err(|e| {
+                                        ClientError::Decode {
+                                            status: 200,
+                                            message: format!("event `{}`: {e}", m.event),
+                                        }
+                                    }),
+                                );
+                            }
                         }
                     }
                 }
-            }
-        }))
+            },
+        ))
     }
 
     // -----------------------------------------------------------------------------------------
@@ -1078,10 +1110,7 @@ async fn api_error(resp: Response) -> ClientError {
         let text = text.trim();
         Problem {
             kind: "about:blank".into(),
-            title: status
-                .canonical_reason()
-                .unwrap_or("Error")
-                .to_string(),
+            title: status.canonical_reason().unwrap_or("Error").to_string(),
             status: status.as_u16(),
             detail: (!text.is_empty()).then(|| text.chars().take(500).collect()),
             instance: None,

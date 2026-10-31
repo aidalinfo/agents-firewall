@@ -110,7 +110,10 @@ impl ServerHandler for AfwMcp {
     ) -> Result<CallToolResult, McpError> {
         let name: Cow<'static, str> = request.name;
         if !tools::tools().iter().any(|t| t.name == name) {
-            return Err(McpError::invalid_params(format!("unknown tool `{name}`"), None));
+            return Err(McpError::invalid_params(
+                format!("unknown tool `{name}`"),
+                None,
+            ));
         }
         Ok(self.call(&name, request.arguments).await)
     }
@@ -127,10 +130,12 @@ pub fn http_router(server: AfwMcp, listen_token: String) -> axum::Router {
     let token = Arc::new(listen_token);
     axum::Router::new()
         .nest_service("/mcp", service)
-        .layer(axum::middleware::from_fn(move |req: Request, next: Next| {
-            let token = token.clone();
-            async move { check_bearer(&token, req, next).await }
-        }))
+        .layer(axum::middleware::from_fn(
+            move |req: Request, next: Next| {
+                let token = token.clone();
+                async move { check_bearer(&token, req, next).await }
+            },
+        ))
 }
 
 async fn check_bearer(token: &str, req: Request, next: Next) -> Response {
@@ -143,7 +148,11 @@ async fn check_bearer(token: &str, req: Request, next: Next) -> Response {
     if constant_time_eq(given.as_bytes(), token.as_bytes()) {
         next.run(req).await
     } else {
-        (StatusCode::UNAUTHORIZED, "missing or invalid bearer token\n").into_response()
+        (
+            StatusCode::UNAUTHORIZED,
+            "missing or invalid bearer token\n",
+        )
+            .into_response()
     }
 }
 

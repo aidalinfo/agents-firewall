@@ -51,10 +51,7 @@ impl RuleEntry {
             serde_json::from_value(Value::Object(obj)).map_err(|e| decode(&e.to_string()))?;
         Ok(Self {
             rule,
-            number: view
-                .get("number")
-                .and_then(Value::as_u64)
-                .map(|n| n as u32),
+            number: view.get("number").and_then(Value::as_u64).map(|n| n as u32),
             hits: view.get("hits").and_then(Value::as_u64),
             view,
             raw,

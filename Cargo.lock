@@ -89,17 +89,20 @@ dependencies = [
 name = "afw-cli"
 version = "0.1.0"
 dependencies = [
+ "afw-api",
  "afw-client",
  "afw-core",
  "afw-enroll",
  "afw-import",
  "anyhow",
+ "axum",
  "chrono",
  "clap",
  "futures",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sqlx",
  "tempfile",
  "tokio",
  "toml",
@@ -246,6 +249,7 @@ dependencies = [
 name = "afw-mcp"
 version = "0.1.0"
 dependencies = [
+ "afw-api",
  "afw-client",
  "afw-core",
  "anyhow",
@@ -256,6 +260,7 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",

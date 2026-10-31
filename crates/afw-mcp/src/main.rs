@@ -85,7 +85,9 @@ async fn main() -> Result<()> {
         Transport::Http { listen } => {
             let listen_token = std::env::var("AFW_MCP_LISTEN_TOKEN").unwrap_or_default();
             if listen_token.len() < 16 {
-                bail!("HTTP mode needs AFW_MCP_LISTEN_TOKEN (at least 16 characters): clients send it as a bearer token");
+                bail!(
+                    "HTTP mode needs AFW_MCP_LISTEN_TOKEN (at least 16 characters): clients send it as a bearer token"
+                );
             }
             let listener = tokio::net::TcpListener::bind(listen)
                 .await

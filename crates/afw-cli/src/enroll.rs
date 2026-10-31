@@ -27,10 +27,18 @@ use crate::config::write_private;
 
 /// What the local transformation produced.
 enum Prepared {
-    Compose { path: PathBuf, yaml: String },
+    Compose {
+        path: PathBuf,
+        yaml: String,
+    },
     Coolify,
-    K8s { yaml: String },
-    Container { netinit: Vec<String>, run: Vec<String> },
+    K8s {
+        yaml: String,
+    },
+    Container {
+        netinit: Vec<String>,
+        run: Vec<String>,
+    },
 }
 
 fn token_env_name(agent: &str) -> String {
@@ -224,6 +232,7 @@ pub async fn enroll(ctx: &mut Ctx<'_>, a: EnrollArgs) -> Result<()> {
 
     // 2. API: create the agent in the session.
     let c = ctx.client()?;
+    ctx.session().await?;
     let zone_id = c.resolve(PolicyKind::Zones, &a.zone).await?;
     let gateway_id = match &a.gateway {
         Some(g) => c.resolve_gateway(g).await?,
@@ -236,7 +245,6 @@ pub async fn enroll(ctx: &mut Ctx<'_>, a: EnrollArgs) -> Result<()> {
             }
         }
     };
-    ctx.session().await?;
     let enrollment = c
         .enroll(&EnrollmentRequest {
             name: agent.clone(),
@@ -279,7 +287,11 @@ pub async fn enroll(ctx: &mut Ctx<'_>, a: EnrollArgs) -> Result<()> {
         match &a.env_file {
             Some(f) => {
                 set_env_line(f, &var, token)?;
-                writeln!(ctx.err, "Hermes plugin token written to {} ({var}).", f.display())?;
+                writeln!(
+                    ctx.err,
+                    "Hermes plugin token written to {} ({var}).",
+                    f.display()
+                )?;
             }
             None => token_shown = Some((var, token.clone())),
         }
@@ -315,7 +327,9 @@ pub async fn enroll(ctx: &mut Ctx<'_>, a: EnrollArgs) -> Result<()> {
 
 fn after_publish(ctx: &mut Ctx<'_>, published: Option<PublishOutcome>) -> Result<()> {
     match published {
-        None => ctx.say("Next: afw session publish -m <comment>, then afw install <revision> --all"),
+        None => {
+            ctx.say("Next: afw session publish -m <comment>, then afw install <revision> --all")
+        }
         Some(PublishOutcome::Published { revision }) => ctx.say(&format!(
             "Published revision {}. Next: afw install {} --all",
             revision.number, revision.number
@@ -356,14 +370,21 @@ async fn apply_infra(
         Prepared::K8s { yaml } => match &a.output {
             Some(p) => {
                 write_atomic(p, yaml.as_bytes())?;
-                writeln!(ctx.err, "Wrote {} (apply it with kubectl apply -f).", p.display())?;
+                writeln!(
+                    ctx.err,
+                    "Wrote {} (apply it with kubectl apply -f).",
+                    p.display()
+                )?;
             }
             None => write!(ctx.out, "{yaml}")?,
         },
         Prepared::Container { netinit, run } => {
             ctx.say("Start the agent with:")?;
             ctx.say(&format!("  docker {}", shell_line(netinit)))?;
-            ctx.say(&format!("  docker run {} <image> [command]", shell_line(run)))?;
+            ctx.say(&format!(
+                "  docker run {} <image> [command]",
+                shell_line(run)
+            ))?;
         }
     }
     Ok(())
@@ -371,10 +392,9 @@ async fn apply_infra(
 
 fn coolify_client(ctx: &Ctx<'_>, url: Option<&str>) -> Result<CoolifyClient> {
     let url = url.ok_or_else(|| anyhow!("--coolify-url (or AFW_COOLIFY_URL) is required"))?;
-    let token = ctx
-        .coolify_token
-        .clone()
-        .ok_or_else(|| anyhow!("set AFW_COOLIFY_TOKEN (Coolify API token with read:sensitive and write)"))?;
+    let token = ctx.coolify_token.clone().ok_or_else(|| {
+        anyhow!("set AFW_COOLIFY_TOKEN (Coolify API token with read:sensitive and write)")
+    })?;
     Ok(CoolifyClient::new(url, token)?)
 }
 
@@ -442,18 +462,23 @@ pub async fn unenroll(ctx: &mut Ctx<'_>, a: UnenrollArgs) -> Result<()> {
         writeln!(ctx.err, "Coolify resource {uuid} restored and restarted.")?;
     }
     if a.keep_agent {
-        return ctx.say(&format!("Unenrolled {} (agent kept in the policy).", a.agent));
+        return ctx.say(&format!(
+            "Unenrolled {} (agent kept in the policy).",
+            a.agent
+        ));
     }
     let c: AfwClient = ctx.client()?;
-    let id: Uuid = c.resolve(PolicyKind::Agents, &a.agent).await?;
     let session = ctx.session().await?;
+    let id: Uuid = c.resolve(PolicyKind::Agents, &a.agent).await?;
     c.delete_agent(id).await?;
     let published = match &a.publish {
         Some(comment) => Some(c.publish_session(session, comment).await?),
         None => None,
     };
     if ctx.json {
-        return ctx.print_json(&json!({"deleted_agent": id, "session_id": session, "published": published}));
+        return ctx.print_json(
+            &json!({"deleted_agent": id, "session_id": session, "published": published}),
+        );
     }
     ctx.say(&format!(
         "Unenrolled {} and deleted agent {id} in session {session}.",

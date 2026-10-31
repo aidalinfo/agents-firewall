@@ -61,24 +61,62 @@ fn tool_list_covers_the_cli_operations() {
     let tools = AfwMcp::tool_list();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
     for expected in [
-        "whoami", "list_resources", "get_resource", "create_resource", "update_resource",
-        "delete_resource", "where_used", "move_rule", "get_rulebase", "open_session",
-        "current_session", "discard_session", "publish_session", "allow_from_log",
-        "verify_policy", "list_revisions", "diff_revision", "install_revision", "list_installs",
-        "list_gateways", "policy_status", "search_flows", "get_flow", "search_dns",
-        "agent_overview", "internal_map", "list_alerts", "ack_alert", "list_audit",
-        "verify_audit", "list_approvals",
+        "whoami",
+        "list_resources",
+        "get_resource",
+        "create_resource",
+        "update_resource",
+        "delete_resource",
+        "where_used",
+        "move_rule",
+        "get_rulebase",
+        "open_session",
+        "current_session",
+        "discard_session",
+        "publish_session",
+        "allow_from_log",
+        "verify_policy",
+        "list_revisions",
+        "diff_revision",
+        "install_revision",
+        "list_installs",
+        "list_gateways",
+        "policy_status",
+        "search_flows",
+        "get_flow",
+        "search_dns",
+        "agent_overview",
+        "internal_map",
+        "list_alerts",
+        "ack_alert",
+        "list_audit",
+        "verify_audit",
+        "list_approvals",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
     // No tool to decide approvals nor to manage tokens: those stay human.
-    assert!(!names.iter().any(|n| n.contains("decide") || n.contains("token")));
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.contains("decide") || n.contains("token"))
+    );
     for t in &tools {
-        assert_eq!(t.input_schema.get("type"), Some(&json!("object")), "{}", t.name);
+        assert_eq!(
+            t.input_schema.get("type"),
+            Some(&json!("object")),
+            "{}",
+            t.name
+        );
         let write = t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(false);
         let desc = t.description.as_deref().unwrap_or_default();
-        if write && t.name != "open_session" && t.name != "discard_session" && t.name != "ack_alert" {
-            assert!(desc.contains("NEVER modify your own zone"), "{}: {desc}", t.name);
+        if write && t.name != "open_session" && t.name != "discard_session" && t.name != "ack_alert"
+        {
+            assert!(
+                desc.contains("NEVER modify your own zone"),
+                "{}: {desc}",
+                t.name
+            );
         }
     }
 }
@@ -100,7 +138,9 @@ async fn tool_call_reaches_the_api_with_mcp_interface() {
     );
     fake.on_json("GET", "/zones", 200, &vec![z.clone()]);
     let s = server(&fake);
-    let r = s.call("list_resources", args(json!({"kind": "zones"}))).await;
+    let r = s
+        .call("list_resources", args(json!({"kind": "zones"})))
+        .await;
     assert_eq!(r.is_error, Some(false), "{}", text(&r));
     assert!(text(&r).contains("clients"));
     let req = &fake.requests_to("GET", "/zones")[0];
@@ -133,7 +173,10 @@ async fn forbidden_is_a_readable_tool_error() {
         .await;
     assert_eq!(r.is_error, Some(true));
     let t = text(&r);
-    assert!(t.contains("403") && t.contains("cannot modify its own zone"), "{t}");
+    assert!(
+        t.contains("403") && t.contains("cannot modify its own zone"),
+        "{t}"
+    );
     assert!(t.contains("Do not retry"), "{t}");
     let put = &fake.requests_to("PUT", &format!("/zones/{own}"))[0];
     assert_eq!(put.header("x-afw-session"), Some(sid.to_string().as_str()));
@@ -168,7 +211,10 @@ async fn publish_202_reports_pending_human_approval() {
         .await;
     assert_eq!(r.is_error, Some(false));
     let t = text(&r);
-    assert!(t.contains("PENDING HUMAN APPROVAL") && t.contains(&approval.id.to_string()), "{t}");
+    assert!(
+        t.contains("PENDING HUMAN APPROVAL") && t.contains(&approval.id.to_string()),
+        "{t}"
+    );
 }
 
 #[tokio::test]
@@ -178,7 +224,9 @@ async fn invalid_arguments_are_reported_without_calling_the_api() {
     let r = s.call("get_flow", args(json!({"flow_id": "nope"}))).await;
     assert_eq!(r.is_error, Some(true));
     assert!(text(&r).contains("UUID"));
-    let r = s.call("list_resources", args(json!({"kind": "secrets"}))).await;
+    let r = s
+        .call("list_resources", args(json!({"kind": "secrets"})))
+        .await;
     assert_eq!(r.is_error, Some(true));
     assert!(fake.requests().is_empty());
 }
@@ -201,13 +249,20 @@ async fn json_rpc_session_over_a_byte_stream() {
     let mut send = async |v: Value| {
         wr.write_all(format!("{v}\n").as_bytes()).await.unwrap();
     };
-    send(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    send(
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-03-26", "capabilities": {},
-        "clientInfo": {"name": "test", "version": "0"}}}))
+        "clientInfo": {"name": "test", "version": "0"}}}),
+    )
     .await;
     let init: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
     assert_eq!(init["result"]["serverInfo"]["name"], "afw-mcp");
-    assert!(init["result"]["instructions"].as_str().unwrap().contains("own zone"));
+    assert!(
+        init["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("own zone")
+    );
     send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).await;
     send(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})).await;
     let list: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();

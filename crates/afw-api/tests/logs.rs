@@ -222,6 +222,7 @@ fn flow(
         data_classes: vec![],
         observed: false,
         content_inspected: true,
+        deny_mode: None,
     }
 }
 
@@ -1785,4 +1786,51 @@ async fn retention_purges_known_destinations() {
         .await
         .unwrap();
     assert_eq!(dests, vec!["new.test"]);
+}
+
+/// EF-54: reading contents is audited whatever the interface (the MCP server sends
+/// `X-Afw-Interface: mcp`); an `mcp_agent` token never gets contents, so nothing to trace.
+#[tokio::test]
+async fn content_access_is_audited_with_the_callers_interface() {
+    let e = env_or_skip!(env());
+    ingest(
+        &e,
+        vec![
+            GatewayEvent::Flow(flow(
+                1,
+                AGENT,
+                ZONE,
+                Some("api.exemple.com"),
+                "93.184.216.34:443",
+                Verdict::Deny,
+                t(5),
+            )),
+            GatewayEvent::Http(http(100, 1, t(5))),
+        ],
+    )
+    .await;
+    for (role, iface) in [("auditor", "mcp"), ("admin", "cli"), ("mcp_agent", "mcp")] {
+        let req = Request::builder()
+            .uri(format!("/api/v1/logs/flows/{}", Uuid::from_u128(1)))
+            .header("authorization", format!("Bearer {}", e.tokens[role]))
+            .header("x-afw-interface", iface)
+            .body(AxBody::empty())
+            .unwrap();
+        let res = router(e.state.clone()).oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "{role}");
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT actor->>'name', interface FROM audit_log WHERE action = 'flow.content_access' \
+         ORDER BY seq",
+    )
+    .fetch_all(&e.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            ("auditor".to_owned(), "mcp".to_owned()),
+            ("admin".to_owned(), "cli".to_owned())
+        ]
+    );
 }

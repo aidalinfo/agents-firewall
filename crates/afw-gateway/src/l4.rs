@@ -47,7 +47,7 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     let Some(dst) = dst.filter(|_| d.verdict == Verdict::Allow && !meta) else {
         let mut d = d;
         d.verdict = Verdict::Deny;
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, afw_core::events::DenyMode::TcpReset);
         stream.reset();
         return;
     };

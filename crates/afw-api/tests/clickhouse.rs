@@ -57,6 +57,7 @@ fn flow(
         data_classes: vec![],
         observed: false,
         content_inspected: true,
+        deny_mode: None,
     }
 }
 

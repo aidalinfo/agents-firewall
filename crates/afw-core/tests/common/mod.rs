@@ -206,6 +206,7 @@ pub fn flow() -> FlowEvent {
         data_classes: vec!["secrets".into()],
         observed: false,
         content_inspected: true,
+        deny_mode: None,
     }
 }
 

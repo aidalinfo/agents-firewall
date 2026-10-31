@@ -745,6 +745,7 @@ async fn logs_flows_sends_ef41_filters_and_prints_rows() {
         llm_provider: false,
         tls_inspected: false,
         content_inspected: false,
+        deny_mode: None,
         data_classes: vec![],
         observed: false,
     };

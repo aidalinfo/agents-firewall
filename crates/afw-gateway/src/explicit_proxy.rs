@@ -5,7 +5,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use afw_core::events::Verdict;
+use afw_core::events::{DenyMode, Verdict};
 use afw_core::policy::AppProto;
 use http::{Method, Request, Response, StatusCode};
 use hyper::body::Incoming;
@@ -87,7 +87,10 @@ async fn proxy_request(
         if (d.verdict == Verdict::Deny && !d.needs_l7) || meta {
             let mut d = d;
             d.verdict = Verdict::Deny;
-            flow.emit_deny(&d);
+            // Logged as what the agent asked (CONNECT name and port, address when resolved)
+            // and as what it got: an explicit 403, not a reset.
+            flow.set_app(AppProto::Https);
+            flow.emit_deny(&d, DenyMode::Http403);
             return Ok(deny_response(d.deny_message(&host)));
         }
         drop(flow);

@@ -36,7 +36,7 @@ pub async fn handle<S: AgentStream>(
     if connect_sni_mismatch {
         let mut d = d0;
         d.verdict = Verdict::Deny;
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, afw_core::events::DenyMode::TcpReset);
         stream.reset();
         return;
     }
@@ -66,7 +66,7 @@ pub async fn handle<S: AgentStream>(
     if d0.agent_id.is_none() {
         let mut d = d0;
         d.verdict = Verdict::Deny;
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, afw_core::events::DenyMode::TcpReset);
         stream.reset();
         return;
     }
@@ -85,7 +85,7 @@ pub async fn handle<S: AgentStream>(
     {
         let mut d = d0;
         d.verdict = Verdict::Deny;
-        flow.emit_deny(&d);
+        flow.emit_deny(&d, afw_core::events::DenyMode::TcpReset);
         stream.reset();
         return;
     }
@@ -111,7 +111,7 @@ pub async fn handle<S: AgentStream>(
             if !allowed {
                 let mut d = d0;
                 d.verdict = Verdict::Deny;
-                flow.emit_deny(&d);
+                flow.emit_deny(&d, afw_core::events::DenyMode::TcpReset);
             }
             return;
         }

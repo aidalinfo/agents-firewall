@@ -74,6 +74,7 @@ fn flow(id: Uuid, agent: Uuid, zone: Uuid, domain: &str) -> FlowEvent {
         data_classes: vec![],
         observed: false,
         content_inspected: true,
+        deny_mode: None,
     }
 }
 

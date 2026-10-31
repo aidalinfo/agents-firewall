@@ -9,7 +9,7 @@ use afw_core::api::{
     AgentOverview, AllowProposal, InternalMap, MapEdge, MapNode, MapNodeKind, MapPeriod,
     ProposedDestination, ProposedDestinationKind, ProposedService, Role, TraceOutcome, TraceStep,
 };
-use afw_core::events::{DecisionRef, FlowEvent, Verdict};
+use afw_core::events::{DecisionRef, DenyMode, FlowEvent, Verdict};
 use afw_core::policy::{
     Action, AppProto, Layer, NetObject, NetObjectSpec, PolicyDocument, Rule, Track,
 };
@@ -163,10 +163,14 @@ pub fn agent_message(flow: &FlowEvent, agent: Option<&str>) -> Option<String> {
     if flow.verdict != Verdict::Deny {
         return None;
     }
-    let http = match flow.app {
-        Some(AppProto::Http) => true,
-        Some(AppProto::Https) => flow.tls_inspected,
-        _ => false,
+    // The gateway says how it refused; older events are judged on the application.
+    let http = match flow.deny_mode {
+        Some(mode) => mode == DenyMode::Http403,
+        None => match flow.app {
+            Some(AppProto::Http) => true,
+            Some(AppProto::Https) => flow.tls_inspected,
+            _ => false,
+        },
     };
     if !http {
         return None;
@@ -556,6 +560,7 @@ mod tests {
             data_classes: vec![],
             observed: false,
             content_inspected: true,
+            deny_mode: None,
         }
     }
 
@@ -602,9 +607,16 @@ mod tests {
             None,
             "non-HTTP denial is a refused connection"
         );
-        let mut opaque = f;
+        let mut opaque = f.clone();
         opaque.tls_inspected = false;
         assert_eq!(agent_message(&opaque, None), None);
+        // A proxy CONNECT refused with a 403 (TLS never inspected) did get the message.
+        let mut connect = opaque.clone();
+        connect.deny_mode = Some(DenyMode::Http403);
+        assert!(agent_message(&connect, None).is_some());
+        let mut reset = f;
+        reset.deny_mode = Some(DenyMode::TcpReset);
+        assert_eq!(agent_message(&reset, None), None, "a reset carries no message");
     }
 
     #[test]

@@ -14,6 +14,11 @@ denied_by_gw() { # denied_by_gw <agent> <label> <curl args>
   evidence "$2: $(printf '%s' "$out" | tr -d '\r' | grep -iE '^HTTP/|^x-agents-firewall|^blocked by' | tr '\n' ' ' | cut -c1-200)"
   if printf '%s' "$out" | grep -q '^HTTP/[0-9.]* [0-9]'; then
     printf '%s' "$out" | grep -qi '^x-agents-firewall: *denied' || fail "$2 reached the API (no gateway denial)"
+    evidence "$2: denied by the gateway (HTTP answer with X-Agents-Firewall: denied)"
+  elif printf '%s' "$out" | grep -qiE 'curl: \((35|56)\)|SSL|TLS|handshake'; then
+    evidence "$2: TLS handshake rejected, no HTTP answer ($(printf '%s' "$out" | grep -iE '^curl:' | head -n1 | cut -c1-120))"
+  else
+    evidence "$2: no HTTP answer ($(printf '%s' "$out" | grep -iE '^curl:' | head -n1 | cut -c1-120))"
   fi
 }
 denied_by_gw laurent-bot "open a session (direct)" "--noproxy '*' -X POST http://$api_ip:8080/api/v1/sessions"

@@ -19,7 +19,10 @@ done
 jqx -s --arg at "$(now_iso)" '{generated_at: $at,
   summary: {pass: map(select(.status == "PASS")) | length, fail: map(select(.status == "FAIL")) | length,
             skip: map(select(.status == "SKIP")) | length},
-  scenarios: sort_by(.id)}' "$RESULTS_DIR"/[0-9][0-9]-*.json >"$STATE_DIR/results.json"
+  scenarios: sort_by(.id)}' "$RESULTS_DIR"/[0-9][0-9]-*.json >"$STATE_DIR/results.json.raw"
+# Publishable results: fake AWS keys masked, local absolute paths made relative to the repository.
+jqx --arg root "$ROOT/" 'walk(if type == "string" then (split($root) | join("")) | gsub("AKIA[A-Z2-7]{16}"; "AKIA****************") else . end)' \
+  "$STATE_DIR/results.json.raw" >"$STATE_DIR/results.json" && rm -f "$STATE_DIR/results.json.raw"
 jqx -r '"# Recette agents-firewall — résultats\n\nGénéré le \(.generated_at) : \(.summary.pass) PASS, \(.summary.fail) FAIL, \(.summary.skip) SKIP.\n\n| Scénario | Résultat | Durée | Détail |\n|---|---|---|---|",
   (.scenarios[] | "| \(.id) — \(.title) | \(.status) | \(.duration_ms / 1000 | floor) s | \(.message | gsub("\\|"; "/")) |"),
   "\nHors démo (production) : migration de Daniel, Laurent et Vulcain et retrait de l'"'"'egress-guard actuel (cahier §8) ; à constater sur les hôtes réels.",

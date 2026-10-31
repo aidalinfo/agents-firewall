@@ -27,12 +27,12 @@ agréé…). Console réelle sur l'API réelle, 1440×900, Playwright `v1.64.1` 
 | `18-alertes-mouvement-lateral.png` | Alertes, dont `port_scan` levée par le scénario 08. |
 | `19-objets-ou-utilise.png` | Objet `allowed.example` et « où utilisé ». |
 | `20-zones.png` | Zones `internes` et `clients` (toutes deux en application, `clients` déléguée à l'agent agréé) avec leurs agents ; liste des objets. |
-| `21-audit-sombre.png` | Journal d'audit, dernières entrées : interfaces Console (« Autoriser »), CLI `afw`, MCP (agent agréé) et API, chaîne intègre. |
+| `21-audit-sombre.png` | Journal d'audit, dernières entrées : interfaces Console (« Autoriser »), CLI `afw`, MCP (agent agréé) et API, avec leur empreinte (l'état de la chaîne, en haut de page, n'est pas dans le cadre ; il est vérifié par le scénario 10). |
 | `22-audit-clair.png` | Le même audit en thème clair. |
 | `23-passerelles-sombre.png` | Passerelle `demo-gw` : en ligne, révision installée, latence ajoutée, installations. |
 | `24-passerelles-clair.png` | Passerelles en thème clair. |
 | `25-revisions-diff.png` | Révisions et diff (révision 2 : zone clients passée en application), retour arrière. |
-| `26-inspection-tls.png` | Inspection TLS (règles d'inspection, CA de la passerelle). |
+| `26-inspection-tls.png` | Inspection TLS : la seule règle « Défaut » (tout inspecter) de la politique de démo ; la CA de la passerelle n'apparaît pas sur cet écran (son empreinte est sur la capture 23). |
 | `27-parametres.png` | Paramètres. |
 
 Juste avant la prise, `demo/screenshots.sh` fait agir les trois interfaces sur le même refus : la CLI renouvelle le

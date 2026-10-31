@@ -108,7 +108,7 @@
       "evidence": [
         "positive control: laurent-bot -> allowed.example received (ctl-baad38d1ca8c)",
         "laurent-bot -> allowed.example with an AWS access key: HTTP 403",
-        "allowed-api received nothing for AKIATG7GAKUYRS5RA2PX (7 requests in its log)",
+        "allowed-api received nothing for AKIA**************** (7 requests in its log)",
         "flow: rule #2 Secrets sortants, classes []",
         "log stores no raw secret (masked)"
       ]
@@ -181,7 +181,7 @@
       "duration_ms": 10463,
       "at": "2026-10-31T10:36:45Z",
       "evidence": [
-        "one command: afw enroll hermes-nouveau-8fc8 --zone clients --ip 10.77.0.13 --gateway demo-gw --compose /Users/killianstein/afw-worktrees/13-recette/demo/.state/s11/docker-compose.yml --network afw-demo_afw-internal --ca-path /Users/killianstein/afw-worktrees/13-recette/demo/.state/s11/gateway.crt --hermes --hermes-plugin-dir /Users/killianstein/afw-worktrees/13-recette/integrations/hermes --console-url http://10.76.0.10:8080 --env-file /Users/killianstein/afw-worktrees/13-recette/demo/.state/s11/.env --publish 'Démo 11 : enrôlement de hermes-nouveau-8fc8' --apply",
+        "one command: afw enroll hermes-nouveau-8fc8 --zone clients --ip 10.77.0.13 --gateway demo-gw --compose demo/.state/s11/docker-compose.yml --network afw-demo_afw-internal --ca-path demo/.state/s11/gateway.crt --hermes --hermes-plugin-dir integrations/hermes --console-url http://10.76.0.10:8080 --env-file demo/.state/s11/.env --publish 'Démo 11 : enrôlement de hermes-nouveau-8fc8' --apply",
         "output:  Container afw-demo-s11-hermes-nouveau-8fc8-1  Starting  Container afw-demo-s11-hermes-nouveau-8fc8-1  Started Enrolled hermes-nouveau-8fc8 (686c9978-135d-40c0-9611-297d23535bcc) in zone clients on gateway 68ae24ee-dbfb-415c-8f2d-b7910fba0037, session f34d861d-c0f2-46f3-a7d9-e501991472c5. Published ",
         "agent hermes-nouveau-8fc8 visible in the console (id 686c9978-135d-40c0-9611-297d23535bcc, zone 00000000-0000-4000-8000-000000000402), revision 9 published, in 6 s",
         "before install: hermes-nouveau-8fc8 -> exfil.example = 403",
@@ -331,7 +331,7 @@
         "acme-bot -> api.github.com (zone clients): HTTP 403",
         "laurent-bot -> allowed.example with a secret: HTTP 403",
         "exfil received nothing for s19-aebacfeb8675 (0 requests in its log)",
-        "allowed-api received nothing for AKIAGKTDTF6ZDHDDI3U5 (1116 requests in its log)",
+        "allowed-api received nothing for AKIA**************** (1116 requests in its log)",
         "API restarted",
         "event queued by the gateway and delivered after the outage: flow {\"id\":\"01a1918a-acbd-7377-b51c-83c78bd2f815\",\"started_at\":\"2026-10-31T10:39:06.941057Z\",\"rule\":\"default-deny\"}",
         "gateway status: online, revision 9"

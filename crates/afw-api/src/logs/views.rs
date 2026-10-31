@@ -616,7 +616,11 @@ mod tests {
         assert!(agent_message(&connect, None).is_some());
         let mut reset = f;
         reset.deny_mode = Some(DenyMode::TcpReset);
-        assert_eq!(agent_message(&reset, None), None, "a reset carries no message");
+        assert_eq!(
+            agent_message(&reset, None),
+            None,
+            "a reset carries no message"
+        );
     }
 
     #[test]

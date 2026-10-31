@@ -85,7 +85,13 @@ pub fn deny_response(text: String) -> Response<GwBody> {
 fn reason_header(text: &str) -> HeaderValue {
     let safe: String = text
         .chars()
-        .map(|c| if c == ' ' || c.is_ascii_graphic() { c } else { '?' })
+        .map(|c| {
+            if c == ' ' || c.is_ascii_graphic() {
+                c
+            } else {
+                '?'
+            }
+        })
         .collect();
     HeaderValue::from_str(&safe).unwrap_or_else(|_| HeaderValue::from_static("denied"))
 }

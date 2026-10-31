@@ -67,9 +67,8 @@ pub async fn list(
                 .map_err(|_| ApiError::BadRequest("invalid cursor".into()))?,
         ),
     };
-    let mut b: QueryBuilder<Postgres> = QueryBuilder::new(format!(
-        "SELECT {AUDIT_COLUMNS} FROM audit_log WHERE true"
-    ));
+    let mut b: QueryBuilder<Postgres> =
+        QueryBuilder::new(format!("SELECT {AUDIT_COLUMNS} FROM audit_log WHERE true"));
     if let Some(c) = cursor {
         match order {
             SortOrder::Asc => b.push(" AND seq > ").push_bind(c),

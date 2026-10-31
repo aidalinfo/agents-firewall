@@ -38,15 +38,9 @@ const shot = async (page: Page, name: string, settle = 1200) => {
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false })
 }
 
-/** The audit list is in ascending order: load every page, then show the most recent entries (ui, api, mcp). */
+/** The audit list shows the most recent entries first (ui, api, mcp): the top of the page. */
 async function showLatestAudit(page: Page) {
   await expect(page.locator('[data-testid^="audit-"]:not([data-testid="audit-chain"]):not([data-testid="audit-export"])').first()).toBeVisible()
-  const more = page.getByRole('button', { name: 'Charger plus' })
-  for (let i = 0; i < 40 && await more.isVisible().catch(() => false); i++) {
-    await more.click()
-    await page.waitForTimeout(300)
-  }
-  await page.locator('[data-testid^="audit-"]:not([data-testid="audit-chain"]):not([data-testid="audit-export"])').last().scrollIntoViewIfNeeded()
 }
 
 test('01 connexion', async ({ page }) => {

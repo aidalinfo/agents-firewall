@@ -7,13 +7,29 @@ repository.workspace = true
 rust-version.workspace = true
 description = "agents-firewall command-line interface (afw)"
 
+[features]
+# `afw import egress-guard` through the afw-import crate (lot L10).
+import = ["dep:afw-import"]
+
 [dependencies]
 afw-core = { workspace = true }
 afw-client = { workspace = true }
+afw-enroll = { workspace = true }
+afw-import = { workspace = true, optional = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+afw-client = { workspace = true, features = ["fake"] }
+tempfile = { workspace = true }
 
 [[bin]]
 name = "afw"

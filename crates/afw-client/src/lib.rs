@@ -212,6 +212,9 @@ pub struct AuditQuery {
 /// `GET /internal-map` filters.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MapQuery {
+    /// Period shortcut `1h`, `24h` or `7d` (`from`/`to` take precedence).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub period: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -645,6 +648,11 @@ impl AfwClient {
         self.delete_resource(PolicyKind::InspectionRules, id).await
     }
 
+    /// `GET /rulebase`: the whole rule base by layer and section, with rule views.
+    pub async fn get_rulebase(&self) -> Result<Value> {
+        self.get("/rulebase").await
+    }
+
     pub async fn get_settings(&self) -> Result<PolicySettings> {
         self.get("/settings").await
     }
@@ -828,6 +836,24 @@ impl AfwClient {
     pub async fn list_flows(&self, q: &FlowQuery) -> Result<FlowPage> {
         self.get_q("/logs/flows", &query_pairs(q)?).await
     }
+    /// `GET /logs/flows` as raw JSON items (flow list items carry display fields such as
+    /// `agent_name` and `rule_label` on top of the flow).
+    pub async fn list_flows_raw(&self, q: &FlowQuery) -> Result<Page<Value>> {
+        self.get_q("/logs/flows", &query_pairs(q)?).await
+    }
+    /// `GET /logs/flows/stats` (histogram; `bucket` = `1m`, `5m` or `1h`).
+    pub async fn flow_stats(&self, q: &FlowQuery, bucket: Option<&str>) -> Result<Value> {
+        let mut pairs = query_pairs(q)?;
+        pairs.retain(|(k, _)| k != "cursor" && k != "limit");
+        if let Some(b) = bucket {
+            pairs.push(("bucket".into(), b.into()));
+        }
+        self.get_q("/logs/flows/stats", &pairs).await
+    }
+    /// `GET /logs/flows/{id}` as raw JSON (trace, agent message, allow proposal included).
+    pub async fn get_flow_raw(&self, id: Uuid) -> Result<Value> {
+        self.get(&format!("/logs/flows/{id}")).await
+    }
     pub async fn get_flow(&self, id: Uuid) -> Result<FlowDetail> {
         self.get(&format!("/logs/flows/{id}")).await
     }
@@ -963,9 +989,13 @@ impl AfwClient {
     // -----------------------------------------------------------------------------------------
     // Hermes plugin and enrollment
 
-    /// `GET /intent-policy` (`agent_plugin` token only).
+    /// `GET /intent-policy`.
     pub async fn intent_policy(&self) -> Result<IntentPolicy> {
         self.get("/intent-policy").await
+    }
+    /// `PUT /intent-policy` (human admin; the server assigns the version).
+    pub async fn update_intent_policy(&self, p: &IntentPolicy) -> Result<IntentPolicy> {
+        self.put("/intent-policy", p).await
     }
     /// `POST /ingest/tool-calls` (`agent_plugin` token only, 202).
     pub async fn ingest_tool_calls(&self, batch: &ToolCallBatch) -> Result<()> {

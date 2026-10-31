@@ -1,0 +1,22 @@
+Search flows (newest first)
+
+Usage: afw logs flows [OPTIONS]
+
+Options:
+      --agent <AGENT>              Agent (name or id)
+      --json                       Print JSON instead of tables
+      --config <FILE>              Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --zone <ZONE>                Zone (name or id)
+      --destination <DESTINATION>  Destination domain, IP or CIDR
+      --url <URL>                  Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>             Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --verdict <VERDICT>          [possible values: allow, deny]
+      --rule <RULE>                Rule (name or id)
+      --session <ID>               Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --from <FROM>                Start: RFC 3339 or a duration ago (`2h`)
+      --to <TO>                    End: RFC 3339 or a duration ago
+  -q, --search <Q>                 Free text search
+      --limit <LIMIT>              Page size (max 1000)
+      --cursor <CURSOR>            `next_cursor` of the previous page
+  -h, --help                       Print help
+  -V, --version                    Print version

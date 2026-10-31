@@ -1,0 +1,22 @@
+Creation/update input: a JSON or YAML file (`-` for stdin), completed or overridden by flags
+
+Usage: afw objects create [OPTIONS]
+
+Options:
+  -f, --file <FILE>          JSON or YAML body (`-` = stdin); flags override its fields
+      --json                 Print JSON instead of tables
+      --config <FILE>        Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --name <NAME>          
+      --comment <COMMENT>    
+      --url <URL>            Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>       Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --category <CATEGORY>  Destination category (`none` clears it) [possible values: llm-provider, cloud-metadata, internal, none]
+      --domain <DOMAIN>      Domain or wildcard (`*.example.com` matches sub-domains only)
+      --session <ID>         Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --host <HOST>          Host IP address
+      --network <NETWORK>    Network (CIDR)
+      --range <RANGE>        Inclusive address range START-END
+      --group <GROUP>        Group of objects (names or ids, comma separated)
+      --any                  Any destination
+  -h, --help                 Print help
+  -V, --version              Print version

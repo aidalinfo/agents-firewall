@@ -1,0 +1,19 @@
+Install a revision on gateways and wait for each gateway's result
+
+Usage: afw install [OPTIONS] <REVISION>
+
+Arguments:
+  <REVISION>  Revision to install
+
+Options:
+      --gateway <GATEWAYS>  Gateway (name or id); repeatable
+      --json                Print JSON instead of tables
+      --all                 Every gateway
+      --config <FILE>       Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --no-wait             Do not wait for the gateways' results
+      --url <URL>           Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>      Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --timeout <TIMEOUT>   Maximum wait, in seconds [default: 120]
+      --session <ID>        Editing session to use (default: your open session) [env: AFW_SESSION=]
+  -h, --help                Print help
+  -V, --version             Print version

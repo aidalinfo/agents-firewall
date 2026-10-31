@@ -1,0 +1,17 @@
+Import an egress-guard policy into your session (objects, rules, data classes)
+
+Usage: afw import egress-guard [OPTIONS] --zone <ZONE> <FILE>
+
+Arguments:
+  <FILE>  egress-guard YAML file
+
+Options:
+      --json            Print JSON instead of tables
+      --zone <ZONE>     Target zone name
+      --config <FILE>   Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --dry-run         Print the import plan without changing anything
+      --url <URL>       Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>  Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --session <ID>    Editing session to use (default: your open session) [env: AFW_SESSION=]
+  -h, --help            Print help
+  -V, --version         Print version

@@ -1,0 +1,68 @@
+agents-firewall command-line interface: everything the console does, enrollment included.
+
+Configuration: ~/.config/afw/config.toml (written by `afw login`), overridden by AFW_URL, AFW_TOKEN and AFW_CA_CERT. Policy changes happen in your editing session, opened automatically on the first change; publish it with `afw session publish -m <comment>`.
+
+Usage: afw [OPTIONS] <COMMAND>
+
+Commands:
+  login             Save the console URL and an API token (read from stdin), after checking them
+  config            Show the configuration (the token is never printed)
+  me                Show who the token belongs to (role, writable zones)
+  objects           Network objects (destinations)
+  services          Services (protocol, ports, application match)
+  data-classes      Data classes (DLP detectors)
+  zones             Zones (VLAN-like groups of agents) and their mode
+  agents            Agents: list, change zone, agent view
+  rules             Rule base: create, update, move, delete
+  rulebase          Whole rule base by layer and section (baseline, then zones), with numbers and hits
+  inspection-rules  TLS inspection rules
+  where-used        Rules, groups and inspection rules referencing an object
+  session           Editing sessions: open, show, discard, publish
+  verify            Pre-install verification: shadowed rules, unused objects, expired rules
+  allow             Prepare an accept rule in your session from a denied flow of the log
+  revisions         Published revisions: history, detail, differences, rollback
+  install           Install a revision on gateways and wait for each gateway's result
+  gateways          Gateways, registration tokens, commands
+  logs              Traffic log: flows, flow detail, DNS, live tail
+  internal-map      Internal flows map (agents and internal hosts)
+  alerts            Alerts
+  alert-channels    Alert channels (webhook, Teams, Pulse Chat)
+  captures          Packet captures
+  audit             Hash-chained audit log
+  approvals         Approvals of widening changes requested by the MCP agent
+  tokens            API tokens
+  intent-policy     Hermes intent policy (action classes evaluated by the plugin)
+  enroll            Enroll a container agent behind its gateway and create the agent in a zone
+  unenroll          Undo an enrollment and delete the agent
+  import            Import a policy from another tool
+  help              Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Print JSON instead of tables
+
+      --config <FILE>
+          Configuration file [default: ~/.config/afw/config.toml]
+          
+          [env: AFW_CONFIG=]
+
+      --url <URL>
+          Console URL (overrides the configuration)
+          
+          [env: AFW_URL=]
+
+      --ca-cert <FILE>
+          Extra trusted CA certificate, PEM (overrides the configuration)
+          
+          [env: AFW_CA_CERT=]
+
+      --session <ID>
+          Editing session to use (default: your open session)
+          
+          [env: AFW_SESSION=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

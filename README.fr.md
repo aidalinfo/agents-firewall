@@ -5,7 +5,7 @@
 **Pare-feu open source pour agents IA : contrôle centralisé des sorties réseau, visibilité complète des flux et audit pour des flottes d'agents LLM.**
 
 [![Licence : Apache 2.0](https://img.shields.io/badge/Licence-Apache_2.0-blue.svg)](LICENSE)
-[![Statut : V1 en construction](https://img.shields.io/badge/statut-V1%20en%20construction-orange.svg)](#statut)
+[![Statut : V1 non publiée](https://img.shields.io/badge/statut-V1%20non%20publi%C3%A9e-yellow.svg)](#statut)
 
 [English](README.md) · [Documentation](#documentation) · [Cahier des charges](docs/cahier-des-charges.md) · [Conception](docs/superpowers/specs/2026-10-30-agents-firewall-design.md) · [Contribuer](CONTRIBUTING.md) · [Sécurité](SECURITY.md)
 
@@ -65,18 +65,26 @@ Les choix d'architecture sont consignés dans les [ADR](docs/adr/README.md).
 
 ## Statut
 
-🚧 **V1 en construction.** Le cahier des charges, la conception, le plan d'implémentation et les décisions d'architecture sont écrits ; les composants sont construits en parallèle et fusionnés dans la branche `dev`. Rien n'est encore prêt pour la production, et aucune version ni image n'est publiée.
+**V1 réalisée, non publiée.** Tous les composants de la V1 (passerelle, API, console, CLI `afw`, serveur MCP, enrôlement, plugin Hermes, import de l'egress-guard, déploiement Compose et Helm) sont fusionnés dans la branche `dev` et passent la recette de bout en bout sur la démo locale : 20 scénarios sur 20 ([résultats](docs/rapport/recette/results.md), [ADR 0027](docs/adr/0027-recette-de-bout-en-bout.md)). Aucune version n'est étiquetée et aucune image n'est publiée : les images se construisent depuis les sources. La migration des agents réels de production reste à faire.
 
-## Démarrage rapide (démo locale, à venir)
+## Démarrage rapide (démo locale)
 
-Dès la V1 livrée, un environnement de démonstration fera tout tourner sur un seul poste, sans accès Internet : console, API, une passerelle avec deux zones, trois agents factices dont un agent Hermes, un faux fournisseur LLM et une cible d'exfiltration.
+La démo fait tout tourner sur un seul poste, sans accès Internet : console, API, PostgreSQL, une passerelle avec deux zones (`internes`, `clients`), trois agents (`daniel-bot`, agent Hermes, `laurent-bot` et `acme-bot`), un LAN simulé et un « Internet » simulé (faux fournisseur LLM, cible d'exfiltration, API autorisée, faux S3, DNS de démo).
+
+Prérequis : Docker avec le plugin Compose v2, `curl`, bash (3.2 et plus, macOS compris). `jq` est facultatif (pris dans une image d'outils s'il manque). Le premier lancement construit toutes les images en local (compilations Rust et Nuxt : comptez plusieurs minutes ; images de base et dépendances téléchargées une fois). `demo/screenshots.sh` télécharge aussi l'image Playwright.
 
 ```sh
-demo/up.sh                 # construit les images, démarre, crée et installe la politique de démo
-# console : http://localhost:3000
-demo/scenarios/run-all.sh  # joue les scénarios de recette (contournements, « Autoriser » en moins de 2 min…)
-demo/down.sh
+demo/up.sh                    # construit les images, démarre, enregistre la passerelle, publie et installe la politique de démo
+demo/scenarios/run-all.sh     # joue les 20 scénarios de recette -> demo/.state/results.md et results.json
+demo/scenarios/run-all.sh 01 05   # ou seulement certains
+demo/screenshots.sh           # facultatif, après run-all.sh : captures de la console (docs/rapport/captures par défaut)
+demo/down.sh                  # arrête (--purge efface aussi les volumes et demo/.state)
 ```
+
+- Console : <http://localhost:3000>. Connexion avec le jeton d'administration : la variable `AFW_DEMO_ADMIN_TOKEN` du fichier `demo/.state/secrets.env` (généré au premier `demo/up.sh`, mode 0600, jamais commité).
+- API : <http://127.0.0.1:8080/api/v1>, avec le même jeton (`Authorization: Bearer …`).
+
+Détails et liste des scénarios : [demo/README.md](demo/README.md).
 
 ## Documentation
 

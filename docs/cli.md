@@ -142,7 +142,7 @@ afw captures download <id> [-o fichier.pcap]    # fichier écrit en 0600
 ## Audit, approbations, jetons
 
 ```sh
-afw audit list [--from-seq --actor --action --interface cli|mcp|ui|api|system --from --to]
+afw audit list [--order desc|asc] [--from-seq --actor --action --interface cli|mcp|ui|api|system --from --to]   # plus récentes d'abord par défaut
 afw audit verify                     # vérifie la chaîne côté serveur (code 1 si rompue)
 afw audit anchor                     # exporte la tête de chaîne vers le stockage immuable maintenant
 afw audit export [--from-seq N] [-o audit.ndjson]   # et revérifie la chaîne localement
@@ -159,16 +159,17 @@ Le secret d'un jeton créé est affiché une seule fois.
 ## Enrôlement (EF-60, EF-64)
 
 ```sh
-afw enroll <service|conteneur> --zone Z --ip 10.77.0.11 [--gateway G] [--name agent] \
-    (--compose docker-compose.yml [--apply] | --coolify <uuid> [--coolify-service] | --k8s workload.yaml) \
+afw enroll <service|conteneur> --zone Z [--ip 10.77.0.11] [--gateway G] [--name agent] \
+    (--compose docker-compose.yml [--apply] | --coolify <uuid> [--coolify-service] | --k8s workload.yaml --gateway-cluster-ip IP) \
     [--hermes [--env-file .env]] [--publish "commentaire"] [--dry-run]
 afw unenroll <agent> (--compose f [--apply] | --coolify <uuid>) [--keep-agent] [--publish "…"]
 ```
 
 - `--compose` : transforme le fichier (conteneur `afw-net-<agent>`, réseau interne, proxy, CA ; ADR 0023) ; `--apply` lance ensuite `docker compose -f <fichier> up -d` (exécutable `AFW_DOCKER`, défaut `docker`).
 - `--coolify` : modifie le compose dans Coolify et redémarre (`--coolify-url` / `AFW_COOLIFY_URL`, jeton `AFW_COOLIFY_TOKEN`).
-- `--k8s` : écrit le gabarit de pod modifié (stdout ou `-o`) ; `--with-gateway` ajoute les manifestes de la passerelle du namespace (`--gateway-cluster-ip` obligatoire).
-- sans cible : affiche les commandes `docker run` à utiliser.
+- `--ip` : adresse fixe de l'agent sur le réseau interne, obligatoire sauf avec `--k8s`.
+- `--k8s` : écrit le gabarit de pod modifié (stdout ou `-o`), sans modifier le fichier d'origine ; `--gateway-cluster-ip` (ClusterIP fixe du Service de la passerelle) est obligatoire ; `--with-gateway` ajoute les manifestes de la passerelle du namespace (`--namespace`, `--gateway-image`, `--registration-secret`). Pas de `afw unenroll --k8s` en V1.
+- sans cible (`docker run`) : crée l'agent et affiche les deux commandes `docker run` à utiliser (`afw-net-<agent>`, puis l'agent).
 - Réseau : `--gateway-ip` (défaut `10.77.0.2`), `--network` (`afw-internal`), `--proxy-url`, `--ca-path` (`/etc/agents-firewall/gateway.crt`), `--netinit-image`.
 - `--hermes` : monte le plugin (`--hermes-plugin-dir`) ; le jeton du plugin, renvoyé une seule fois par l'API, est écrit dans `--env-file` (0600, variable `AFW_TOKEN_<AGENT>` ou `--token-env`) ou affiché ; il n'est jamais écrit dans le compose.
 

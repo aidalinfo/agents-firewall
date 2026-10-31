@@ -2,7 +2,7 @@
 
 Tout ce que fait la console passe par cette API : la CLI `afw`, le serveur MCP et vos propres scripts ont donc exactement les mêmes possibilités. Aucune fonction n'existe seulement dans l'interface.
 
-> **Contrat.** La référence est le fichier OpenAPI `docs/api/openapi.yaml` (à venir, lot des contrats), écrit avant l'implémentation ([ADR 0008](adr/0008-api-contract-first.md)). Ce document en donne la carte et des exemples ; en cas de divergence, le fichier OpenAPI fait foi.
+> **Contrat.** La référence est le fichier OpenAPI [`docs/api/openapi.yaml`](api/openapi.yaml), écrit avant l'implémentation ([ADR 0008](adr/0008-api-contract-first.md)). Ce document en donne la carte et des exemples ; en cas de divergence, le fichier OpenAPI fait foi.
 
 ## Conventions
 
@@ -26,9 +26,9 @@ Authorization: Bearer <jeton>
 
 - **Humains** : jeton OIDC obtenu par la console (fournisseur OIDC générique).
 - **Scripts, CLI, intégrations** : jeton d'API créé par `/api/v1/tokens`, rattaché à un rôle et révocable.
-- **Plugin Hermes** : jeton propre à l'agent, créé à l'enrôlement ; il est prévu qu'il ne donne accès qu'à `ingest/tool-calls` et `intent-policy` (à venir).
+- **Plugin Hermes** : jeton de rôle `agent_plugin`, propre à l'agent et créé à l'enrôlement ; il ne donne accès qu'à `POST /ingest/tool-calls` et `GET /intent-policy`.
 
-Rôles : `admin`, `auditor`, `viewer`, `mcp_agent` (voir [securite.md](securite.md#rôles-et-droits)). `GET /api/v1/me` renvoie l'identité et le rôle du jeton utilisé.
+Rôles : `admin`, `auditor`, `viewer`, `mcp_agent`, `agent_plugin` (voir [securite.md](securite.md#rôles-et-droits)). `GET /api/v1/me` renvoie l'identité et le rôle du jeton utilisé.
 
 Les exemples ci-dessous supposent :
 
@@ -51,9 +51,12 @@ H="Authorization: Bearer $AFW_TOKEN"
 | `agents` | CRUD ; `agents/{id}/overview` (vue agent) |
 | `rules` | CRUD ; `rules/{id}/move` (changer la position) |
 | `inspection-rules` | CRUD de la politique d'inspection HTTPS |
-| `sessions` | `POST` ouvrir, `GET current`, `POST {id}/discard`, `POST {id}/publish` |
+| `sessions` | `POST` ouvrir, `GET current`, `POST {id}/discard`, `POST {id}/publish`, `POST {id}/import` (import egress-guard) |
 | `sessions/{id}/allow-from-log` | préparer une règle depuis un flux refusé |
-| `revisions` | liste, `GET {n}`, `GET {n}/diff?against=m` |
+| `revisions` | liste, `GET {n}`, `GET {n}/diff?against=m`, `POST {n}/revert` (ouvre une session au contenu de `n`) |
+| `rulebase` | base complète par couche et section |
+| `settings` | réglages globaux (réseaux internes, tailles, rétention) |
+| `policy/status` | révisions publiée et installée, passerelles à jour |
 | `verify?revision=n` | règles masquées, objets inutilisés, règles expirées |
 | `installs` | `POST` installer une révision sur des passerelles, `GET` état |
 | `approvals` | élargissements de l'agent MCP en attente de validation humaine |
@@ -62,22 +65,25 @@ H="Authorization: Bearer $AFW_TOKEN"
 
 | Ressource | Opérations |
 |---|---|
-| `logs/flows` | recherche filtrée : `agent`, `zone`, `destination`, `verdict`, `rule`, `from`, `to`, `q` |
+| `logs/flows` | recherche filtrée : `agent`, `zone`, `destination`, `verdict`, `rule`, `from`, `to`, `q` ; un flux refusé porte `deny_mode` (`http_403` ou `tcp_reset` : la façon dont l'agent a reçu le refus ; `dns_refused` est réservé, les refus DNS étant dans `logs/dns`) |
+| `logs/flows/stats` | comptes dans le temps (autorisés, refusés, observés) |
 | `logs/flows/{id}` | détail : HTTP, appel d'outil, corrélation |
 | `logs/dns` | requêtes DNS |
 | `logs/stream` | journal en direct (SSE) |
-| `captures` | `POST` lancer une capture, `GET {id}/download` |
-| `alerts`, `alert-channels` | alertes et canaux d'envoi |
+| `captures` | `POST` lancer une capture, `GET {id}`, `GET {id}/download` |
+| `alerts`, `alert-channels` | alertes (`POST alerts/{id}/ack`) et canaux d'envoi |
 | `internal-map` | carte des flux internes |
 
 ### Administration
 
 | Ressource | Opérations |
 |---|---|
-| `gateways` | liste et état ; `POST registration-tokens` ; `POST {id}/commands` (capture, réinstallation, auto-test) |
-| `audit` | journal d'audit ; `audit/verify` ; `audit/export` |
+| `gateways` | liste et état ; `POST registration-tokens` ; `POST {id}/commands` (capture, réinstallation, auto-test) ; `DELETE {id}` |
+| `audit` | journal d'audit, du plus récent au plus ancien par défaut (`order=asc` pour l'ordre croissant des numéros) ; `audit/verify` ; `GET audit/export` (lignes JSON) ; `POST audit/export` (exporte la tête de chaîne maintenant) |
+| `approvals` | `GET`, `POST {id}/decision` |
 | `tokens` | jetons d'API |
 | `me` | identité courante |
+| `auth/oidc/config` | configuration OIDC publique de la console |
 | `enrollments` | création d'un agent et de son jeton de plugin |
 | `intent-policy` | politique d'intention servie au plugin Hermes |
 | `ingest/tool-calls` | réception des appels d'outil du plugin Hermes |
@@ -86,7 +92,7 @@ Les routes `/gw/v1/…` sont réservées aux passerelles (certificat client) et 
 
 ## Exemples
 
-Les corps de requête ci-dessous montrent les champs figés par les contrats ; les champs complets de chaque ressource sont dans le fichier OpenAPI (à venir).
+Les corps de requête ci-dessous montrent les champs principaux ; les champs complets de chaque ressource sont dans le fichier OpenAPI.
 
 ### Qui suis-je ?
 
@@ -133,9 +139,12 @@ curl -sS "$AFW_URL/api/v1/installs" -H "$H"     # résultat par passerelle
 ```sh
 curl -sS "$AFW_URL/api/v1/revisions/42/diff?against=41" -H "$H"
 
-# Retour arrière = installer la révision précédente
+# Retour arrière, au choix : réinstaller la révision précédente telle quelle…
 curl -sS -X POST "$AFW_URL/api/v1/installs" -H "$H" \
   -H 'Content-Type: application/json' -d '{"revision": 41, "gateways": ["<id passerelle>"]}'
+
+# … ou ouvrir une session au contenu de la révision 41, puis la publier (nouvelle révision) et l'installer
+curl -sS -X POST "$AFW_URL/api/v1/revisions/41/revert" -H "$H"
 ```
 
 ### Abandonner une session
@@ -147,7 +156,8 @@ curl -sS -X POST "$AFW_URL/api/v1/sessions/$SESSION/discard" -H "$H"
 ### Enregistrer une nouvelle passerelle
 
 ```sh
-curl -sS -X POST "$AFW_URL/api/v1/gateways/registration-tokens" -H "$H"
+curl -sS -X POST "$AFW_URL/api/v1/gateways/registration-tokens" -H "$H" \
+  -H 'Content-Type: application/json' -d '{"name": "hote-agents-1"}'   # nom indicatif, facultatif
 ```
 
 ### Capturer le trafic d'un agent
@@ -161,6 +171,7 @@ curl -sS -X POST "$AFW_URL/api/v1/captures" -H "$H" \
 
 ```sh
 curl -sS "$AFW_URL/api/v1/audit/verify" -H "$H"
+curl -sS "$AFW_URL/api/v1/audit?limit=20" -H "$H"              # 20 dernières entrées (order=asc : les plus anciennes d'abord)
 ```
 
 ## Erreurs

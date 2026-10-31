@@ -21,11 +21,12 @@ inspecte le texte des arguments, contournable par construction ; la barrière es
 
 ### Automatique
 
-`afw enroll --hermes <conteneur>` (lot enrôlement) fera, en une commande : l'enrôlement réseau,
-la création de l'agent et de son jeton d'agent dans la console, l'installation de ce plugin dans
-le conteneur (copie dans `~/.hermes/plugins/afw-hermes/`), l'ajout de `afw-hermes` à
-`plugins.enabled`, et la pose des variables `AFW_CONSOLE_URL`, `AFW_AGENT_TOKEN`,
-`AFW_AGENT_NAME` et `AFW_CA_FILE`.
+`afw enroll <service> --hermes --zone <zone> --ip <ip> --compose <fichier>` fait, en une commande,
+l'enrôlement réseau, la création de l'agent et de son jeton dans la console, et le montage en
+lecture seule de ce plugin dans `$HERMES_HOME/plugins/agents-firewall` ; le jeton est référencé
+par une variable `${AFW_TOKEN_<AGENT>}`. L'enrôlement ne modifie pas la configuration de Hermes :
+activez le plugin s'il ne l'est pas déjà (`plugins.enabled`). Détails :
+[docs/enrolement.md](../../docs/enrolement.md#agents-hermes).
 
 ### Manuelle — plugin Hermes (recommandé)
 

@@ -20,6 +20,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const fmt = useFmt()
 const dir = useDirectory()
+const { session } = usePolicySession()
+/** Lock held by another session (the caller's own session locks what it changes). */
+const lockedByOther = (r: RuleView) => (r.locked_by && !(session.value?.state === 'open' && r.locked_by.id === session.value.owner.id) ? r.locked_by : null)
 const cols = 'grid-cols-[42px_minmax(170px,1.4fr)_104px_minmax(150px,1fr)_108px_90px_84px_92px_124px_64px]'
 
 interface Block { key: string, title: string, sub: string, locked: boolean, section: RuleSection | null, rules: RuleView[], layerSize: number }
@@ -44,7 +47,8 @@ function action(r: RuleView) {
 }
 
 function tag(r: RuleView): { label: string, cls: string } | null {
-  if (r.locked_by) return { label: t('rules.tag.locked', { by: r.locked_by.name }), cls: 'bg-warn-bg text-warn' }
+  const other = lockedByOther(r)
+  if (other) return { label: t('rules.tag.locked', { by: other.name }), cls: 'bg-warn-bg text-warn' }
   if (r.pending_change) return { label: t(`rules.tag.${r.pending_change}`), cls: 'bg-pri-bg text-pri' }
   if (!r.enabled) return { label: t('rules.tag.disabled'), cls: 'bg-sub text-text3' }
   if (r.expired) return { label: t('rules.tag.expired'), cls: 'bg-warn-bg text-warn' }

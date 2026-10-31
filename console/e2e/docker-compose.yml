@@ -26,6 +26,9 @@ services:
       AFW_DATA_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       AFW_BOOTSTRAP_ADMIN_TOKEN: ${AFW_E2E_TOKEN:-afw-e2e-admin-token-0123456789}
       AFW_PKI_DIR: /var/lib/afw-api/pki
+      # Alert channel URLs are resolved and checked (SSRF guard): the e2e test targets the console host.
+      AFW_ALERT_ALLOWED_HOSTS: console
+      AFW_ALERT_WEBHOOK_SECRET: e2e-webhook-signing-key
       AFW_AUDIT_EXPORT_DIR: /var/lib/afw-api/audit-export
       RUST_LOG: info
     depends_on:

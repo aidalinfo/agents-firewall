@@ -600,7 +600,7 @@ export function createMockApi(opts: MockOptions = {}): MockApi {
     dataClasses: collection<DataClass>('data_classes'),
     zones: collection<Zone>('zones'),
     agents: collection<Agent>('agents'),
-    rules: collection<Rule>('rules'),
+    rules: { ...collection<Rule>('rules'), list: () => delay(() => ruleViews(viewDoc())) },
     inspectionRules: collection<InspectionRule>('inspection_rules'),
     whereUsed: id => delay(() => {
       const doc = viewDoc()

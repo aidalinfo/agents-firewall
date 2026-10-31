@@ -187,7 +187,7 @@ export function createHttpApi(opts: HttpOptions): AfwApi {
     dataClasses: collection('/data-classes'),
     zones: collection('/zones'),
     agents: collection('/agents'),
-    rules: collection('/rules'),
+    rules: collection('/rules') as unknown as AfwApi['rules'],
     inspectionRules: collection('/inspection-rules'),
     whereUsed: id => call(client.GET('/objects/{id}/where-used', { params: { path: { id }, header: read() } })),
     listRules: (query = {}) => call(client.GET('/rules', { params: { query, header: read() } })),

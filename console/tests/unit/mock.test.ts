@@ -18,7 +18,7 @@ describe('mock API answers in the shapes of the contract', () => {
     assertSchemaArray('DataClass', await api.dataClasses.list())
     assertSchemaArray('Zone', await api.zones.list())
     assertSchemaArray('Agent', await api.agents.list())
-    assertSchemaArray('Rule', await api.rules.list())
+    assertSchemaArray('RuleView', await api.rules.list())
     assertSchemaArray('InspectionRule', await api.inspectionRules.list())
     assertSchemaArray('RuleView', await api.listRules())
     assertSchema('Rulebase', await api.getRulebase())

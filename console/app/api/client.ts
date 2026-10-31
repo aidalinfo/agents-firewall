@@ -102,7 +102,8 @@ export interface AfwApi {
   dataClasses: PolicyCollection<DataClass>
   zones: PolicyCollection<Zone>
   agents: PolicyCollection<Agent>
-  rules: PolicyCollection<Rule>
+  /** `GET /rules` lists rule views (number, hits, lock, pending change); the other operations take a `Rule`. */
+  rules: Omit<PolicyCollection<Rule>, 'list'> & { list(): Promise<RuleView[]> }
   inspectionRules: PolicyCollection<InspectionRule>
   whereUsed(id: Uuid): Promise<WhereUsed>
   listRules(query?: RuleQuery): Promise<RuleView[]>

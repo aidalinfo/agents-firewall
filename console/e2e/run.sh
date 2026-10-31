@@ -39,7 +39,7 @@ docker run --rm --network "$network" -v "$repo:/repo:ro" -e TOKEN="$AFW_E2E_TOKE
 echo "seed: logs inserted"
 
 docker run --rm --network "$network" --ipc=host \
-  -v "$console:/console" -w /console \
+  -v "$repo:/repo" -w /repo/console \
   -v afw-pnpm-store:/pnpm-store -e npm_config_store_dir=/pnpm-store \
   -e CI=1 -e AFW_E2E_CONSOLE=http://console:3000 -e AFW_E2E_API=http://afw-api:8080 -e AFW_E2E_TOKEN \
   -e AFW_E2E_SCREENSHOTS="${AFW_E2E_SCREENSHOTS:-}" -e HOME=/tmp \

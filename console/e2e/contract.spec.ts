@@ -39,7 +39,7 @@ test('every method of the HTTP client matches the contract against the real API'
   assertSchemaArray('DataClass', await api.dataClasses.list())
   assertSchemaArray('Zone', await api.zones.list())
   assertSchemaArray('Agent', await api.agents.list())
-  assertSchemaArray('Rule', await api.rules.list())
+  assertSchemaArray('RuleView', await api.rules.list())
   assertSchemaArray('InspectionRule', await api.inspectionRules.list())
   assertSchemaArray('RuleView', await api.listRules())
   assertSchema('Rulebase', await api.getRulebase())
@@ -68,9 +68,9 @@ test('every method of the HTTP client matches the contract against the real API'
   await api.sendGatewayCommand(gateways[0]!.id, { type: 'self_test' })
 
   // Alert channels and acknowledgement (outside policy sessions).
-  const channel = await api.alertChannels.create({ id: '7a1c0000-0000-4000-8000-0000000000c1', name: 'e2e-webhook', kind: 'webhook', url: 'https://hooks.example.org/afw', min_severity: 'critical', enabled: false })
+  const channel = await api.alertChannels.create({ id: '7a1c0000-0000-4000-8000-0000000000c1', name: 'e2e-webhook', kind: 'webhook', url: 'https://console/afw-hook', min_severity: 'critical', enabled: false })
   assertSchema('AlertChannel', channel)
-  assertSchema('AlertChannel', await api.alertChannels.update({ ...channel, enabled: false, url: 'https://hooks.example.org/afw2' }))
+  assertSchema('AlertChannel', await api.alertChannels.update({ ...channel, enabled: false, url: 'https://console/afw-hook-2' }))
   assertSchemaArray('AlertChannel', await api.alertChannels.list())
   await api.alertChannels.remove(channel.id)
   const alerts = await api.listAlerts({ acknowledged: false })

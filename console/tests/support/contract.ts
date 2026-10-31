@@ -5,12 +5,13 @@
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import Ajv2020 from 'ajv/dist/2020'
+import { fileURLToPath } from 'node:url'
+import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import { parse } from 'yaml'
 import type { components } from '../../app/api/schema'
 
-const spec = parse(readFileSync(resolve(__dirname, '../../../docs/api/openapi.yaml'), 'utf8')) as Record<string, unknown>
+const spec = parse(readFileSync(resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../docs/api/openapi.yaml'), 'utf8')) as Record<string, unknown>
 
 /**
  * Strict mode: an object schema with `properties` admits no undeclared field (most generated

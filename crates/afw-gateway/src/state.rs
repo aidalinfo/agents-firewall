@@ -315,6 +315,7 @@ impl Gateway {
         let events = Arc::new(EventSink::new(Some(
             opts.state_dir.join("events.spool.jsonl"),
         )));
+        events.start();
         let gateway_id = opts
             .gateway_id
             .or_else(|| stored_gateway_id(&opts.state_dir))

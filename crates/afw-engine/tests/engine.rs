@@ -835,11 +835,20 @@ fn content_rules_apply_flags_uninspectable_flows() {
     let other = b.domain("other.example.com");
     let llm = b.obj_cat(
         "llm",
-        NetObjectSpec::Domain { pattern: "llm.example.com".into() },
+        NetObjectSpec::Domain {
+            pattern: "llm.example.com".into(),
+        },
         Some(DestCategory::LlmProvider),
     );
     let secrets = b.class("secrets");
-    b.rule("no secrets to api", Layer::Baseline, 1, &[api], Action::Deny).data_classes = vec![secrets];
+    b.rule(
+        "no secrets to api",
+        Layer::Baseline,
+        1,
+        &[api],
+        Action::Deny,
+    )
+    .data_classes = vec![secrets];
     b.rule("all", Layer::Zone { zone_id: z }, 1, &[], Action::Accept);
     let p = b.compile();
 
@@ -853,7 +862,8 @@ fn content_rules_apply_flags_uninspectable_flows() {
     assert!(!dec.content_rules_apply);
     let _ = other;
     // LLM provider: data-class rules are skipped (EF-25).
-    b.rule("no secrets anywhere", Layer::Baseline, 2, &[], Action::Deny).data_classes = vec![secrets];
+    b.rule("no secrets anywhere", Layer::Baseline, 2, &[], Action::Deny)
+        .data_classes = vec![secrets];
     let p = b.compile();
     let dec = p.evaluate(&ctx(A, Some("llm.example.com"), None, 22));
     assert!(!dec.content_rules_apply);
@@ -868,7 +878,17 @@ fn content_rules_apply_flags_uninspectable_flows() {
     let api = b.domain("api.example.com");
     let secrets = b.class("secrets");
     b.rule("allow api", Layer::Baseline, 1, &[api], Action::Accept);
-    b.rule("no secrets", Layer::Zone { zone_id: z }, 1, &[], Action::Deny).data_classes = vec![secrets];
+    b.rule(
+        "no secrets",
+        Layer::Zone { zone_id: z },
+        1,
+        &[],
+        Action::Deny,
+    )
+    .data_classes = vec![secrets];
     let p = b.compile();
-    assert!(!p.evaluate(&ctx(A, Some("api.example.com"), None, 22)).content_rules_apply);
+    assert!(
+        !p.evaluate(&ctx(A, Some("api.example.com"), None, 22))
+            .content_rules_apply
+    );
 }

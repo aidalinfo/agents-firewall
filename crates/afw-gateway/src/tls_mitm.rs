@@ -96,10 +96,13 @@ pub async fn handle<S: AgentStream>(
     // Counting and pcap capture on the wire, below TLS: a capture holds the encrypted bytes
     // exchanged with the agent, never decrypted content (EF-33/EF-35; the decrypted exchange
     // only exists, masked, in HTTP events).
-    let capture = state
-        .captures
-        .for_agent(d0.agent_id)
-        .map(|c| (c, flow.src, upstream.or(flow.target.addr()).unwrap_or(flow.src)));
+    let capture = state.captures.for_agent(d0.agent_id).map(|c| {
+        (
+            c,
+            flow.src,
+            upstream.or(flow.target.addr()).unwrap_or(flow.src),
+        )
+    });
     let wire = Tap::new(stream, flow.counters.clone(), capture);
     let tls = match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(wire)).await {
         Ok(Ok(t)) => t,

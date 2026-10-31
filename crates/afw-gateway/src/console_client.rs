@@ -260,7 +260,7 @@ async fn events_loop(state: Arc<GatewayState>, http: Arc<ConsoleHttp>) {
             _ = state.events.notify.notified() => {}
         }
         loop {
-            let batch = state.events.take_batch(BATCH_MAX);
+            let batch = state.events.take_batch(BATCH_MAX).await;
             if batch.is_empty() {
                 break;
             }
@@ -391,7 +391,7 @@ pub async fn write_local(state: Arc<GatewayState>) {
             _ = tokio::time::sleep(EVENTS_EVERY) => {}
             _ = state.events.notify.notified() => {}
         }
-        let batch = state.events.take_batch(BATCH_MAX * 10);
+        let batch = state.events.take_batch(BATCH_MAX * 10).await;
         if batch.is_empty() {
             continue;
         }

@@ -4,7 +4,9 @@
 #
 # Internal side: AFW_INTERNAL_IFACE, or the interface(s) holding the AFW_INTERNAL_SUBNETS (comma
 # separated CIDRs). From there:
-#   - TCP to the gateway's own service ports (3128, 53, 9090) is accepted as is;
+#   - TCP to the gateway's own proxy and DNS ports (3128, 53) is accepted as is; health and
+#     metrics (9090) are NOT reachable from the agents (the public CA is served on
+#     http://<gateway>:3128/ca.crt);
 #   - every other TCP connection is redirected to the transparent listener (:15001);
 #   - UDP 53 (any resolver, e.g. dig @8.8.8.8) is redirected to the gateway DNS;
 #   - nothing is forwarded (chain forward policy drop): agents only get what the gateway relays.
@@ -76,7 +78,7 @@ delete table inet afw
 table inet afw {
   chain prerouting {
     type nat hook prerouting priority dstnat; policy accept;
-    iifname $set_list fib daddr type local tcp dport { $pport, $dport, $hport } accept
+    iifname $set_list fib daddr type local tcp dport { $pport, $dport } accept
     iifname $set_list udp dport 53 redirect to :$dport
     iifname $set_list meta l4proto tcp redirect to :$tport
   }
@@ -91,6 +93,7 @@ table inet afw {
   chain input {
     type filter hook input priority filter; policy accept;
     iifname $set_list meta l4proto udp udp dport != $dport drop
+    iifname $set_list tcp dport $hport drop
   }
 }
 NFT

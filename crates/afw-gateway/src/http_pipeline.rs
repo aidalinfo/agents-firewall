@@ -572,12 +572,26 @@ async fn handle(hf: Arc<HttpFlow>, req: Request<Incoming>) -> Response<GwBody> {
 
     // 4. Body: buffered up to max_buffered_body, then streamed analysis.
     let (mut parts, mut body) = req.into_parts();
-    let encoding = parts
-        .headers
-        .get(header::CONTENT_ENCODING)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim().to_ascii_lowercase())
-        .filter(|s| !s.is_empty() && s != "identity");
+    // Every Content-Encoding header, combined in order; an unreadable or unknown coding is
+    // refused by `decode_content` (fail closed).
+    let encoding = {
+        let all: Vec<String> = parts
+            .headers
+            .get_all(header::CONTENT_ENCODING)
+            .iter()
+            .map(|v| {
+                v.to_str()
+                    .map(|s| s.trim().to_ascii_lowercase())
+                    .unwrap_or_else(|_| "invalid".into())
+            })
+            .collect();
+        let joined = all.join(",");
+        let meaningful = joined
+            .split(',')
+            .map(str::trim)
+            .any(|c| !c.is_empty() && c != "identity");
+        meaningful.then_some(joined)
+    };
     let mut buf = BytesMut::new();
     let mut ended = false;
     while buf.len() <= max_buf {

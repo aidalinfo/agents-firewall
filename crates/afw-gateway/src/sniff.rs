@@ -11,8 +11,12 @@ pub const MAX_SNIFF: usize = 16 * 1024 + 5;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sniff {
     NeedMore,
-    Tls { sni: Option<String> },
-    Http { host: Option<String> },
+    Tls {
+        sni: Option<String>,
+    },
+    Http {
+        host: Option<String>,
+    },
     Ssh,
     Other,
     /// Looks like TLS or HTTP but is malformed or incomplete (slow or truncated start):
@@ -30,7 +34,9 @@ fn is_request_line(line: &[u8]) -> bool {
         return true;
     }
     let mut parts = line.split(|&b| b == b' ');
-    let (Some(m), Some(t), Some(v), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+    let (Some(m), Some(t), Some(v), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
         return false;
     };
     !m.is_empty()
@@ -51,7 +57,8 @@ fn could_be_request_line(partial: &[u8]) -> bool {
         return false;
     }
     let Some(t) = parts.next() else { return true };
-    if !t.iter().all(|&b| b.is_ascii_graphic()) || (t.is_empty() && parts.clone().next().is_some()) {
+    if !t.iter().all(|&b| b.is_ascii_graphic()) || (t.is_empty() && parts.clone().next().is_some())
+    {
         return false;
     }
     let Some(v) = parts.next() else { return true };
@@ -95,7 +102,11 @@ pub fn classify(buf: &[u8]) -> Sniff {
     match rest.iter().position(|&b| b == b'\n') {
         None => {
             if could_be_request_line(rest.strip_suffix(b"\r").unwrap_or(rest)) {
-                if buf.len() >= MAX_SNIFF { Sniff::Suspect } else { Sniff::NeedMore }
+                if buf.len() >= MAX_SNIFF {
+                    Sniff::Suspect
+                } else {
+                    Sniff::NeedMore
+                }
             } else {
                 Sniff::Other
             }
@@ -104,8 +115,13 @@ pub fn classify(buf: &[u8]) -> Sniff {
             let line = rest[..nl].strip_suffix(b"\r").unwrap_or(&rest[..nl]);
             if !is_request_line(line) {
                 // A complete line that only looks like a request (wrong version, extra spaces…).
-                let looks_http = line.windows(6).any(|w| w == b" HTTP/") || line.starts_with(b"PRI ");
-                return if looks_http { Sniff::Suspect } else { Sniff::Other };
+                let looks_http =
+                    line.windows(6).any(|w| w == b" HTTP/") || line.starts_with(b"PRI ");
+                return if looks_http {
+                    Sniff::Suspect
+                } else {
+                    Sniff::Other
+                };
             }
             if line.starts_with(b"PRI ") {
                 return Sniff::Http { host: None };
@@ -233,7 +249,11 @@ pub async fn read_initial<S: AsyncRead + Unpin>(
         }
         // Timeout or end of stream: nothing sent (server-first protocol) is L4; a started but
         // incomplete TLS or HTTP preamble is refused.
-        let partial = if buf.is_empty() { Sniff::Other } else { Sniff::Suspect };
+        let partial = if buf.is_empty() {
+            Sniff::Other
+        } else {
+            Sniff::Suspect
+        };
         let want = chunk.len().min(MAX_SNIFF - buf.len());
         match tokio::time::timeout_at(deadline, s.read(&mut chunk[..want])).await {
             Err(_) => return Ok((buf, partial)),
@@ -257,8 +277,16 @@ mod tests {
             }
         );
         assert_eq!(classify(b"GE"), Sniff::NeedMore);
-        assert_eq!(classify(b"\r\nPROPFIND /a HTTP/1.1\r\nHost: x\r\n\r\n"), Sniff::Http { host: Some("x".into()) });
-        assert_eq!(classify(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"), Sniff::Http { host: None });
+        assert_eq!(
+            classify(b"\r\nPROPFIND /a HTTP/1.1\r\nHost: x\r\n\r\n"),
+            Sniff::Http {
+                host: Some("x".into())
+            }
+        );
+        assert_eq!(
+            classify(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"),
+            Sniff::Http { host: None }
+        );
         assert_eq!(classify(b"GET / HTTP/1.1\r\nHost: a"), Sniff::NeedMore);
         assert_eq!(classify(b"GET / HTTP/9.9\r\n\r\n"), Sniff::Suspect);
         assert_eq!(classify(b"PING\r\n"), Sniff::Other);

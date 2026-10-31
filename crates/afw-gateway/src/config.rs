@@ -95,6 +95,11 @@ pub struct RunArgs {
     pub proxy_port: u16,
     #[arg(long, env = "AFW_DNS_PORT", default_value_t = 53)]
     pub dns_port: u16,
+    /// Address of the health/metrics listener (default: AFW_LISTEN_IP). In transparent mode
+    /// nftables makes it unreachable from the internal interface anyway; elsewhere, bind it
+    /// to an address agents cannot reach.
+    #[arg(long, env = "AFW_HEALTH_IP")]
+    pub health_ip: Option<IpAddr>,
     #[arg(long, env = "AFW_HEALTH_PORT", default_value_t = 9090)]
     pub health_port: u16,
     /// Install this InstalledPolicy file at start-up (tests, recette without console).

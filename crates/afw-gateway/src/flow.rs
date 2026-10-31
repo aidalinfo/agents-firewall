@@ -259,7 +259,10 @@ pub async fn resolve(state: &GatewayState, name: &str, port: u16) -> Option<Sock
 /// by name is never resolved upstream (no exfiltration through resolution). Otherwise the name
 /// is resolved by the gateway and the decision is taken again with that trusted address.
 /// Nameless flows are judged on their original destination.
-pub async fn decide_and_resolve(flow: &Flow, app: Option<AppProto>) -> (Decision, Option<SocketAddr>) {
+pub async fn decide_and_resolve(
+    flow: &Flow,
+    app: Option<AppProto>,
+) -> (Decision, Option<SocketAddr>) {
     let state = &flow.state;
     let Some(name) = &flow.name else {
         let dst = flow.target.addr();
@@ -329,7 +332,8 @@ pub async fn handle<S: AgentStream>(
             // Looks like TLS/HTTP but cannot be classified (slow, truncated or malformed): never
             // relayed raw (it would escape inspection).
             let flow = Flow::new(state.clone(), src, target, connect_name, None);
-            let (mut d, _) = state.decide(&flow.ctx(None, flow.target.addr().map(|a| a.ip()), true));
+            let (mut d, _) =
+                state.decide(&flow.ctx(None, flow.target.addr().map(|a| a.ip()), true));
             d.verdict = Verdict::Deny;
             d.rule_id = None;
             d.rule_number = None;

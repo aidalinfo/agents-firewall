@@ -127,7 +127,12 @@ where
         _ = tokio::io::copy(&mut ur, &mut aw) => End::Closed,
     };
     if let End::Protocol = end {
-        let _ = aw.write_all(&close_frame(1002, "agents-firewall: websocket extensions are not allowed")).await;
+        let _ = aw
+            .write_all(&close_frame(
+                1002,
+                "agents-firewall: websocket extensions are not allowed",
+            ))
+            .await;
         let _ = aw.flush().await;
         let _ = aw.shutdown().await;
         let _ = uw.shutdown().await;

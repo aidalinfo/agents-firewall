@@ -15,7 +15,10 @@ pub async fn handle<S: AgentStream>(flow: Arc<Flow>, stream: S) {
     // CONNECT target name: resolved by the gateway. Transparent: the original destination is
     // the real destination (any name only comes from the DNS cache, for attribution).
     let (mut d, dst) = match flow.target.addr() {
-        Some(orig) => (state.decide(&flow.ctx(app, Some(orig.ip()), true)).0, Some(orig)),
+        Some(orig) => (
+            state.decide(&flow.ctx(app, Some(orig.ip()), true)).0,
+            Some(orig),
+        ),
         None => decide_and_resolve(&flow, app).await,
     };
     // Raw TCP content is never analysed: if a deny-by-content rule could apply to this

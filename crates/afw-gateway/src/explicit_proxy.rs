@@ -102,6 +102,18 @@ async fn proxy_request(
             .body(full(""))
             .expect("static response"));
     }
+    // The public inspection CA is served to agents on the proxy port (health and metrics are
+    // not reachable from the internal network).
+    if req.method() == Method::GET
+        && req.uri().authority().is_none()
+        && req.uri().path() == "/ca.crt"
+    {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/x-pem-file")
+            .body(full(state.ca.ca_cert_pem()))
+            .expect("static response"));
+    }
     // Absolute-form request: one flow per request (a proxy connection may change hosts).
     let Some(authority) = req.uri().authority().map(|a| a.as_str().to_string()) else {
         return Ok(simple(

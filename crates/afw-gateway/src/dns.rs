@@ -161,7 +161,10 @@ async fn decide_name(
     let is_agent_name = active.installed.as_ref().is_some_and(|p| {
         p.document.agents.iter().any(|a| {
             let n = a.name.to_ascii_lowercase();
-            name == n || name.strip_prefix(n.as_str()).is_some_and(|r| r.starts_with('.'))
+            name == n
+                || name
+                    .strip_prefix(n.as_str())
+                    .is_some_and(|r| r.starts_with('.'))
         })
     });
     if !is_agent_name {

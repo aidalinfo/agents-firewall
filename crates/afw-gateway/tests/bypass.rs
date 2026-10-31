@@ -745,22 +745,42 @@ async fn raw_tcp_where_content_rules_apply_is_refused() {
     // The agent resolves allowed.test through the gateway (name attribution), then opens a
     // raw (non-HTTP, non-TLS) connection: a deny-by-content rule targets allowed.test and the
     // content could never be analysed => refused.
-    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0")).await.unwrap();
+    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0"))
+        .await
+        .unwrap();
     let mut m = Message::new();
-    m.set_id(9).set_message_type(MessageType::Query).set_op_code(OpCode::Query);
-    m.add_query(Query::query(Name::from_ascii("allowed.test.").unwrap(), RecordType::A));
+    m.set_id(9)
+        .set_message_type(MessageType::Query)
+        .set_op_code(OpCode::Query);
+    m.add_query(Query::query(
+        Name::from_ascii("allowed.test.").unwrap(),
+        RecordType::A,
+    ));
     sock.send_to(&m.to_vec().unwrap(), h.dns()).await.unwrap();
     let mut buf = [0u8; 512];
-    let _ = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf))
+        .await
+        .unwrap();
     let mut t = h.transparent(AGENT_IP, h.plain_addr).await;
-    let _ = t.write_all(format!("\x00\x01raw {AWS_KEY}").as_bytes()).await;
+    let _ = t
+        .write_all(format!("\x00\x01raw {AWS_KEY}").as_bytes())
+        .await;
     let mut b = [0u8; 16];
-    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut b)).await.unwrap();
+    let r = tokio::time::timeout(Duration::from_secs(5), t.read(&mut b))
+        .await
+        .unwrap();
     assert!(matches!(r, Ok(0) | Err(_)), "{r:?}");
     let ev = h
-        .wait_event(|e| flow(e).is_some_and(|f| f.verdict == Verdict::Deny && f.domain.as_deref() == Some("allowed.test")))
+        .wait_event(|e| {
+            flow(e).is_some_and(|f| {
+                f.verdict == Verdict::Deny && f.domain.as_deref() == Some("allowed.test")
+            })
+        })
         .await;
-    assert_eq!(flow(&ev).unwrap().decision.rule_name, "content-not-inspectable");
+    assert_eq!(
+        flow(&ev).unwrap().decision.rule_name,
+        "content-not-inspectable"
+    );
     assert!(!h.log.contains_bytes(AWS_KEY.as_bytes()));
 }
 
@@ -770,22 +790,39 @@ async fn host_header_must_match_absolute_uri_and_be_unique() {
     let port = h.plain_addr.port();
     // Plain HTTP (transparent): absolute URI vs Host.
     let mut s = h.transparent(AGENT_IP, h.plain_addr).await;
-    let raw = format!("GET http://allowed.test:{port}/a HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n");
+    let raw = format!(
+        "GET http://allowed.test:{port}/a HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n"
+    );
     let resp = http_raw(&mut s, raw.as_bytes()).await;
-    assert!(resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"), "{resp}");
+    assert!(
+        resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"),
+        "{resp}"
+    );
     // Two Host headers.
     let mut s = h.transparent(AGENT_IP, h.plain_addr).await;
-    let raw = "GET /b HTTP/1.1\r\nHost: allowed.test\r\nHost: denied.test\r\nConnection: close\r\n\r\n";
+    let raw =
+        "GET /b HTTP/1.1\r\nHost: allowed.test\r\nHost: denied.test\r\nConnection: close\r\n\r\n";
     let resp = http_raw(&mut s, raw.as_bytes()).await;
-    assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+    assert!(
+        resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"),
+        "{resp}"
+    );
     // Inspected HTTPS, two Host headers.
     let resp = post_tls(&h, "allowed.test", raw.as_bytes().to_vec()).await;
-    assert!(resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"), "{resp}");
+    assert!(
+        resp.starts_with("HTTP/1.1 403") || resp.starts_with("HTTP/1.1 400"),
+        "{resp}"
+    );
     // Explicit proxy.
     let mut p = tokio::net::TcpStream::connect(h.proxy()).await.unwrap();
-    let raw = format!("GET http://allowed.test:{port}/c HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n");
+    let raw = format!(
+        "GET http://allowed.test:{port}/c HTTP/1.1\r\nHost: denied.test\r\nConnection: close\r\n\r\n"
+    );
     let resp = http_raw(&mut p, raw.as_bytes()).await;
-    assert!(resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"), "{resp}");
+    assert!(
+        resp.starts_with("HTTP/1.1 403") && resp.contains("host-mismatch"),
+        "{resp}"
+    );
     assert!(h.log.all().is_empty(), "{:?}", h.log.all());
 }
 
@@ -793,9 +830,14 @@ async fn host_header_must_match_absolute_uri_and_be_unique() {
 async fn h2_authority_and_host_must_agree() {
     use http_body_util::{BodyExt, Empty};
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
-    for (authority, host, ok) in [("allowed.test", "denied.test", false), ("allowed.test", "allowed.test", true)] {
+    for (authority, host, ok) in [
+        ("allowed.test", "denied.test", false),
+        ("allowed.test", "allowed.test", true),
+    ] {
         let s = h.transparent(AGENT_IP, h.upstream_addr).await;
-        let tls = tls_with(s, "allowed.test", &h.inspection_ca(), vec![b"h2".to_vec()]).await.unwrap();
+        let tls = tls_with(s, "allowed.test", &h.inspection_ca(), vec![b"h2".to_vec()])
+            .await
+            .unwrap();
         assert_eq!(tls.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
         let (mut send, conn) = hyper::client::conn::http2::handshake(
             hyper_util::rt::TokioExecutor::new(),

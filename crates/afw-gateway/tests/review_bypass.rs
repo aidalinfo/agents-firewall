@@ -20,7 +20,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 async fn dns_a(h: &Harness, name: &str) -> hickory_proto::op::Message {
     use hickory_proto::op::{Message, MessageType, OpCode, Query};
     use hickory_proto::rr::{Name, RecordType};
-    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0")).await.unwrap();
+    let sock = tokio::net::UdpSocket::bind(format!("{AGENT_IP}:0"))
+        .await
+        .unwrap();
     let mut m = Message::new();
     m.set_id(7)
         .set_message_type(MessageType::Query)
@@ -58,9 +60,12 @@ async fn http_with_leading_crlf_or_unlisted_method_bypasses_http_pipeline() {
     eprintln!("leading CRLF response: {resp:?}");
     // Same through the explicit proxy (CONNECT tunnel, no DNS needed).
     let mut p = tokio::net::TcpStream::connect(h.proxy()).await.unwrap();
-    p.write_all(format!("CONNECT allowed.test:{port} HTTP/1.1\r\nHost: allowed.test:{port}\r\n\r\n").as_bytes())
-        .await
-        .unwrap();
+    p.write_all(
+        format!("CONNECT allowed.test:{port} HTTP/1.1\r\nHost: allowed.test:{port}\r\n\r\n")
+            .as_bytes(),
+    )
+    .await
+    .unwrap();
     let mut head = [0u8; 64];
     let _ = p.read(&mut head).await.unwrap();
     let raw2 = format!(
@@ -68,7 +73,10 @@ async fn http_with_leading_crlf_or_unlisted_method_bypasses_http_pipeline() {
         body.len()
     );
     let resp2 = http_raw(&mut p, raw2.as_bytes()).await;
-    eprintln!("PROPFIND response: {resp2:?}; upstream saw: {:?}", h.log.all());
+    eprintln!(
+        "PROPFIND response: {resp2:?}; upstream saw: {:?}",
+        h.log.all()
+    );
     assert!(
         !h.log.contains_bytes(AWS_KEY.as_bytes()),
         "secret relayed uninspected to the upstream (L4 path), Host denied.test never checked"
@@ -83,13 +91,21 @@ struct SlowFirstByte<S> {
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for SlowFirstByte<S> {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_read(cx, buf)
     }
 }
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for SlowFirstByte<S> {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         if !self.first_sent {
             let n = std::task::ready!(Pin::new(&mut self.inner).poll_write(cx, &buf[..1]))?;
             self.first_sent = true;
@@ -118,11 +134,16 @@ use std::future::Future as _;
 async fn slow_client_hello_bypasses_tls_inspection_and_dlp() {
     let h = harness(Some(installed(1, ZoneMode::Enforce))).await;
     assert_eq!(dns_a(&h, "allowed.test.").await.answers().len(), 1);
-    let up_ca = afw_tls::GatewayCa::load_or_create(&h._up_dir.path().join("ca"), "upstream test CA")
-        .unwrap()
-        .ca_cert_pem();
+    let up_ca =
+        afw_tls::GatewayCa::load_or_create(&h._up_dir.path().join("ca"), "upstream test CA")
+            .unwrap()
+            .ca_cert_pem();
     let tcp = h.transparent(AGENT_IP, h.upstream_addr).await;
-    let slow = SlowFirstByte { inner: tcp, first_sent: false, sleep: None };
+    let slow = SlowFirstByte {
+        inner: tcp,
+        first_sent: false,
+        sleep: None,
+    };
     // The agent trusts the REAL upstream CA, not the inspection CA: if this handshake
     // succeeds, the gateway did not terminate TLS.
     let tls = tls_with(slow, "allowed.test", &up_ca, vec![b"http/1.1".to_vec()]).await;
@@ -134,11 +155,22 @@ async fn slow_client_hello_bypasses_tls_inspection_and_dlp() {
         }
     };
     // `/admin` is denied by rule 4 (path rule) and the body carries a denied secret.
-    let resp = http_raw(&mut tls, &post("allowed.test", "/admin", &format!("key={AWS_KEY}"))).await;
+    let resp = http_raw(
+        &mut tls,
+        &post("allowed.test", "/admin", &format!("key={AWS_KEY}")),
+    )
+    .await;
     eprintln!("response: {resp:?}");
     panic!(
         "TLS not inspected: direct handshake with the upstream succeeded; upstream saw {:?}",
-        h.log.all().iter().map(|s| (s.path.clone(), String::from_utf8_lossy(&s.body).into_owned())).collect::<Vec<_>>()
+        h.log
+            .all()
+            .iter()
+            .map(|s| (
+                s.path.clone(),
+                String::from_utf8_lossy(&s.body).into_owned()
+            ))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -167,8 +199,16 @@ async fn absolute_uri_allowed_but_host_header_fronted() {
     );
     let resp2 = http_raw(&mut p, raw.as_bytes()).await;
     eprintln!("proxy: {resp2:?}");
-    let fronted: Vec<_> = h.log.all().into_iter().filter(|s| s.host.starts_with("denied.test")).collect();
-    assert!(fronted.is_empty(), "upstream received Host: denied.test (domain fronting): {fronted:?}");
+    let fronted: Vec<_> = h
+        .log
+        .all()
+        .into_iter()
+        .filter(|s| s.host.starts_with("denied.test"))
+        .collect();
+    assert!(
+        fronted.is_empty(),
+        "upstream received Host: denied.test (domain fronting): {fronted:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -232,12 +272,23 @@ async fn websocket_permessage_deflate_bypasses_dlp() {
     frame[0] |= 0x40; // RSV1: compressed message
     ws.write_all(&frame).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(2), read_frame(&mut ws)).await;
-    let leaked = h.log.all().iter().flat_map(|s| s.ws_messages.clone()).any(|m| {
-        let mut out = Vec::new();
-        let _ = std::io::Read::read_to_end(&mut flate2::read::DeflateDecoder::new(&m[..]), &mut out);
-        out.windows(AWS_KEY.len()).any(|w| w == AWS_KEY.as_bytes())
-    });
-    assert!(!leaked, "compressed WebSocket message carrying the secret reached the upstream");
+    let leaked = h
+        .log
+        .all()
+        .iter()
+        .flat_map(|s| s.ws_messages.clone())
+        .any(|m| {
+            let mut out = Vec::new();
+            let _ = std::io::Read::read_to_end(
+                &mut flate2::read::DeflateDecoder::new(&m[..]),
+                &mut out,
+            );
+            out.windows(AWS_KEY.len()).any(|w| w == AWS_KEY.as_bytes())
+        });
+    assert!(
+        !leaked,
+        "compressed WebSocket message carrying the secret reached the upstream"
+    );
 }
 
 #[allow(dead_code)]

@@ -495,7 +495,8 @@ impl Inner {
         flow.l7 = l7;
         let mut accept_pending = false;
         let mut content_pending = false;
-        let content_stage = ctx.data_classes.is_empty() && ctx.method.is_none() && ctx.path.is_none();
+        let content_stage =
+            ctx.data_classes.is_empty() && ctx.method.is_none() && ctx.path.is_none();
 
         let mut trace = Vec::with_capacity(self.baseline.len() + zone.rules.len());
         let matched = self.baseline.iter().chain(zone.rules.iter()).find(|rule| {
@@ -511,7 +512,8 @@ impl Inner {
                 // Would the rule match if one of its classes were found in the content?
                 let mut probe = ctx.clone();
                 probe.data_classes = rule.data_classes.clone();
-                content_pending = self.check(rule, agent.zone_id, &probe, &flow) == TraceOutcome::Matched;
+                content_pending =
+                    self.check(rule, agent.zone_id, &probe, &flow) == TraceOutcome::Matched;
             }
             trace.push(TraceStep {
                 rule_id: rule.id,

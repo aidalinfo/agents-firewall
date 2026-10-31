@@ -80,7 +80,10 @@ async fn run(a: RunArgs) -> anyhow::Result<()> {
     o.transparent = (a.intercept == Intercept::Transparent).then(|| at(a.transparent_port));
     o.proxy = Some(at(a.proxy_port));
     o.dns = Some(at(a.dns_port));
-    o.health = Some(at(a.health_port));
+    o.health = Some(SocketAddr::new(
+        a.health_ip.unwrap_or(a.listen_ip),
+        a.health_port,
+    ));
     o.resolver = afw_gateway::upstream::default_resolver(a.upstream_dns_addr()?);
     o.extra_roots = a.extra_roots()?;
     o.console_url = a.console_url.clone().filter(|u| !u.is_empty());

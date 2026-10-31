@@ -1,0 +1,52 @@
+# End-to-end stack of the console (lot L3b): PostgreSQL + afw-api (image built from
+# deploy/docker/Dockerfile.api) + the console in http mode (Nitro relays /api to afw-api, so the
+# browser stays on one origin). Started by e2e/run.sh; never published anywhere.
+name: afw-console-e2e
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: afw
+      POSTGRES_PASSWORD: afw-e2e
+      POSTGRES_DB: afw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afw -d afw"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  afw-api:
+    image: ${AFW_API_IMAGE:-afw-api:local}
+    environment:
+      AFW_LISTEN: 0.0.0.0:8080
+      AFW_GW_LISTEN: 0.0.0.0:8443
+      AFW_PUBLIC_URL: http://console:3000
+      DATABASE_URL: postgres://afw:afw-e2e@postgres:5432/afw
+      AFW_DATA_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      AFW_BOOTSTRAP_ADMIN_TOKEN: ${AFW_E2E_TOKEN:-afw-e2e-admin-token-0123456789}
+      AFW_PKI_DIR: /var/lib/afw-api/pki
+      # Alert channel URLs are resolved and checked (SSRF guard): the e2e test targets the console host.
+      AFW_ALERT_ALLOWED_HOSTS: console
+      AFW_ALERT_WEBHOOK_SECRET: e2e-webhook-signing-key
+      AFW_AUDIT_EXPORT_DIR: /var/lib/afw-api/audit-export
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  console:
+    image: ${AFW_CONSOLE_IMAGE:-afw-console:e2e}
+    environment:
+      NUXT_PUBLIC_API_MODE: http
+      NUXT_PUBLIC_API_BASE: ""
+      NUXT_API_PROXY_TARGET: http://afw-api:8080
+      PORT: "3000"
+    depends_on:
+      afw-api:
+        condition: service_healthy

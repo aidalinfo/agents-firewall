@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { FlowStats } from '~/api/types'
 
-export type Segment = 'all' | 'allow' | 'deny' | 'alert'
+export type Segment = 'all' | 'allow' | 'deny' | 'observed'
 
 const props = defineProps<{
   stats: FlowStats | null
   segment: Segment
+  /** Selected period (null for a dragged range): picks the tick format. */
+  period?: string | null
 }>()
 const emit = defineEmits<{
   'update:segment': [Segment]
@@ -15,25 +17,31 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const fmt = useFmt()
 
+const BUCKET_MS = { '1m': 60_000, '5m': 300_000, '1h': 3_600_000 } as const
+
 const segments = computed(() => {
   const s = props.stats
   return ([
     ['all', s?.total, 'var(--text3)'],
-    ['allow', s?.allowed, 'var(--bar)'],
-    ['deny', s?.denied, 'var(--ko)'],
-    ['alert', s?.alerts, 'var(--warn)'],
+    ['allow', s?.allow, 'var(--bar)'],
+    ['deny', s?.deny, 'var(--ko)'],
+    ['observed', s?.observed, 'var(--obs)'],
   ] as const).map(([key, n, swatch]) => ({ key, n: fmt.num(n ?? null), swatch }))
 })
 
-const max = computed(() => Math.max(1, ...(props.stats?.histogram ?? []).map(h => h.allowed + h.denied)))
-const bars = computed(() => (props.stats?.histogram ?? []).map((h) => {
-  const scale = 60 / Math.max(max.value, 60)
-  const dim = (props.segment === 'deny' || props.segment === 'alert') && h.denied === 0
-  return { ...h, ok: Math.round(h.allowed * scale), ko: Math.round(h.denied * scale), dim, tip: t('journal.histTip', { time: fmt.hm(h.at), ok: h.allowed, ko: h.denied }) }
+const points = computed(() => props.stats?.points ?? [])
+const max = computed(() => Math.max(1, ...points.value.map(h => h.allow + h.deny + h.observed)))
+const bars = computed(() => points.value.map((h) => {
+  // Tallest bucket fills the 60 px of the chart.
+  const scale = 60 / max.value
+  const dim = (props.segment === 'deny' && h.deny === 0) || (props.segment === 'observed' && h.observed === 0)
+  return { ...h, ok: Math.round(h.allow * scale), ko: Math.round(h.deny * scale), obs: Math.round(h.observed * scale), dim, tip: t('journal.histTip', { time: fmt.hm(h.at), ok: h.allow, ko: h.deny, obs: h.observed }) }
 }))
 const ticks = computed(() => {
-  const h = props.stats?.histogram ?? []
-  return [0, 15, 30, 45].map(i => fmt.hm(h[i]?.at)).concat(t('journal.now'))
+  const h = points.value
+  if (!h.length) return []
+  const label = (iso: string) => (props.period === '7d' ? fmt.dateTime(iso) : fmt.hm(iso))
+  return [0, 0.25, 0.5, 0.75].map(r => label(h[Math.floor(r * h.length)]!.at)).concat(t('journal.now'))
 })
 
 const drag = ref<{ a: number, b: number } | null>(null)
@@ -46,10 +54,10 @@ function over(i: number) {
 function up() {
   const d = drag.value
   drag.value = null
-  const h = props.stats?.histogram
-  if (!d || !h || d.a === d.b) return
+  const h = points.value
+  if (!d || !h.length || d.a === d.b || !props.stats) return
   const [a, b] = d.a < d.b ? [d.a, d.b] : [d.b, d.a]
-  emit('range', { from: h[a]!.at, to: new Date(new Date(h[b]!.at).getTime() + 60_000).toISOString() })
+  emit('range', { from: h[a]!.at, to: new Date(new Date(h[b]!.at).getTime() + BUCKET_MS[props.stats.bucket]).toISOString() })
 }
 const inDrag = (i: number) => !!drag.value && i >= Math.min(drag.value.a, drag.value.b) && i <= Math.max(drag.value.a, drag.value.b)
 </script>
@@ -96,6 +104,10 @@ const inDrag = (i: number) => !!drag.value && i >= Math.min(drag.value.a, drag.v
         <div
           class="rounded-t-[1px] bg-ko"
           :style="{ height: `${b.ko}px` }"
+        />
+        <div
+          class="bg-obs"
+          :style="{ height: `${b.obs}px` }"
         />
         <div
           class="bg-bar"

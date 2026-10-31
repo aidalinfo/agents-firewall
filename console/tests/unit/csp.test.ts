@@ -17,6 +17,11 @@ describe('content security policy', () => {
     expect(csp).toMatch(/script-src 'self';/)
   })
 
+  it('adds the OIDC token endpoint origin when configured', () => {
+    expect(contentSecurityPolicy({ oidcOrigin: 'https://id.example/realms/x' })).toContain(`connect-src 'self' https://id.example;`)
+    expect(contentSecurityPolicy({ apiBase: 'https://a.example', oidcOrigin: 'javascript:x' })).toContain(`connect-src 'self' https://a.example;`)
+  })
+
   it('ignores API bases that are not http(s) URLs', () => {
     expect(apiOrigin('javascript:alert(1)')).toBeNull()
     expect(apiOrigin('')).toBeNull()

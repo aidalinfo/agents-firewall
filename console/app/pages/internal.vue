@@ -1,52 +1,79 @@
 <script setup lang="ts">
-import type { AlertChannel, InternalMap, InternalNode } from '~/api/types'
-import { safeHref } from '~/utils/security'
+import type { AlertChannel, InternalMap, MapEdge, MapNode, MapPeriod } from '~/api/types'
 
 const { t } = useI18n()
 const api = useApi()
 const fmt = useFmt()
+const problem = useProblem()
+const dir = useDirectory()
 const { alerts, refreshShell } = useShell()
 
 useHead({ title: () => `${t('nav.internal')} — agents-firewall` })
 
-const period = ref<InternalMap['period']>('24h')
+const period = ref<MapPeriod>('24h')
 const map = ref<InternalMap | null>(null)
 const channels = ref<AlertChannel[]>([])
 
-watch(period, async p => (map.value = await api.internalMap(p)), { immediate: true })
-onMounted(async () => (channels.value = await api.listAlertChannels()))
+watch(period, async (p) => {
+  try {
+    map.value = await api.internalMap(p)
+  }
+  catch (e) {
+    problem.notify(e)
+  }
+}, { immediate: true })
+onMounted(async () => {
+  void dir.ensure()
+  channels.value = await api.alertChannels.list().catch(() => [])
+})
 
 const W = 820
-const H = 450
 const NODE_H = 44
+const H = computed(() => Math.max(260, 60 + Math.max(agentsN.value, systemsN.value) * 58))
+const agentsN = computed(() => map.value?.nodes.filter(n => n.kind === 'agent').length ?? 0)
+const systemsN = computed(() => map.value?.nodes.filter(n => n.kind !== 'agent').length ?? 0)
+
+/** Edge state shown on the map: an alert raised on it, or first seen in the period (lateral movement hint). */
+const edgeState = (e: MapEdge) => (e.alerts > 0 ? 'alert' : e.new ? 'new' : 'usual')
 
 const layout = computed(() => {
   const nodes = map.value?.nodes ?? []
   const agents = nodes.filter(n => n.kind === 'agent')
-  const systems = nodes.filter(n => n.kind === 'system')
-  const place = (list: InternalNode[], x: number, w: number, top: number, bottom: number) =>
-    list.map((n, i) => ({ ...n, href: safeHref(n.href), x, w, y: list.length === 1 ? top : Math.round(top + (i * (bottom - top)) / (list.length - 1)) }))
-  return [...place(agents, 40, 170, 40, H - 90), ...place(systems, 600, 210, 20, H - 60)]
+  const systems = nodes.filter(n => n.kind !== 'agent')
+  const edges = map.value?.edges ?? []
+  const place = (list: MapNode[], x: number, w: number, top: number, bottom: number) =>
+    list.map((n, i) => {
+      const touching = edges.filter(e => e.source === n.id || e.target === n.id)
+      const state = touching.some(e => e.alerts > 0) ? 'alert' : touching.length && touching.every(e => e.new) ? 'new' : 'normal'
+      const sub = n.kind === 'agent' ? `@${dir.zoneName(n.zone_id) ?? ''}` : (n.address && n.address !== n.label ? n.address : t('internal.internalHost'))
+      return { ...n, state, sub, href: n.kind === 'agent' && n.agent_id ? `/agents/${n.agent_id}` : null, x, w, y: list.length === 1 ? top : Math.round(top + (i * (bottom - top)) / (list.length - 1)) }
+    })
+  return [...place(agents, 40, 170, 40, H.value - 90), ...place(systems, 600, 210, 20, H.value - 60)]
 })
 
+const maxFlows = computed(() => Math.max(1, ...(map.value?.edges ?? []).map(e => e.flows)))
 const edges = computed(() => {
   const pos = new Map(layout.value.map(n => [n.id, n]))
   return (map.value?.edges ?? []).flatMap((e) => {
-    const a = pos.get(e.from)
-    const b = pos.get(e.to)
+    const a = pos.get(e.source)
+    const b = pos.get(e.target)
     if (!a || !b) return []
     const y1 = a.y + NODE_H / 2
     const y2 = b.y + NODE_H / 2
     const d = b.kind === 'agent'
       ? `M40 ${y1} C-2 ${y1} -2 ${y2} 40 ${y2}`
       : `M210 ${y1} C400 ${y1} 410 ${y2} 600 ${y2}`
-    const stroke = e.state === 'alert' ? 'var(--ko)' : e.state === 'new' ? 'var(--warn)' : 'var(--edge)'
-    const dash = e.state === 'alert' ? '6 4' : e.state === 'new' ? '5 4' : undefined
-    return [{ d, stroke, width: e.state === 'usual' ? e.weight : Math.min(e.weight, 2.5), dash, key: `${e.from}-${e.to}`, agentToAgent: b.kind === 'agent', labelY: Math.round((y1 + y2) / 2) - 8 }]
+    const state = edgeState(e)
+    const stroke = state === 'alert' ? 'var(--ko)' : state === 'new' ? 'var(--warn)' : 'var(--edge)'
+    const dash = state === 'alert' ? '6 4' : state === 'new' ? '5 4' : undefined
+    const weight = 1 + Math.round(Math.log2(1 + (e.flows / maxFlows.value) * 31))
+    return [{ d, stroke, width: state === 'usual' ? weight : Math.min(weight, 2.5), dash, key: `${e.source}-${e.target}-${e.port}`, agentToAgent: b.kind === 'agent', labelY: Math.round((y1 + y2) / 2) - 8 }]
   })
 })
 
-const highCount = computed(() => alerts.data.value.filter(a => a.severity === 'critical' && !a.resolved).length)
+const nodeLabel = (id: string) => map.value?.nodes.find(n => n.id === id)?.label ?? id
+const connections = computed(() => [...(map.value?.edges ?? [])].sort((a, b) => b.last_seen_at.localeCompare(a.last_seen_at)))
+const highCount = computed(() => alerts.data.value.filter(a => a.event.severity === 'critical').length)
 </script>
 
 <template>
@@ -137,7 +164,7 @@ const highCount = computed(() => alerts.data.value.filter(a => a.severity === 'c
                 :href="n.href ?? undefined"
                 class="absolute flex flex-col justify-center rounded-lg px-[10px] py-1 leading-[1.2] no-underline"
                 :class="[
-                  n.kind === 'agent' ? 'border border-line2 bg-panel' : n.state === 'alert' ? 'border border-ko bg-ko-bg' : n.state === 'new' ? 'border-[1.5px] border-dashed border-ko bg-ko-bg' : 'border border-line2 bg-sub',
+                  n.kind === 'agent' ? 'border border-line2 bg-panel' : n.state === 'alert' ? 'border border-ko bg-ko-bg' : n.state === 'new' ? 'border-[1.5px] border-dashed border-warn bg-warn-bg' : 'border border-line2 bg-sub',
                 ]"
                 :style="{ left: `${n.x}px`, top: `${n.y}px`, width: `${n.w}px`, height: `${NODE_H}px`, color: 'var(--text)' }"
                 @click.prevent="n.href && navigateTo(n.href)"
@@ -148,44 +175,52 @@ const highCount = computed(() => alerts.data.value.filter(a => a.severity === 'c
                 >{{ n.label }}</strong>
                 <span
                   class="text-[10.5px]"
-                  :class="n.state !== 'normal' ? 'font-semibold text-ko' : n.zone_mode === 'observe' ? 'text-obs' : 'text-text3'"
-                >{{ n.sub }}<template v-if="n.zone_mode === 'observe'"> · {{ t('zone.observation') }}</template></span>
+                  :class="n.state === 'alert' ? 'font-semibold text-ko' : n.state === 'new' ? 'font-semibold text-warn' : dir.zone(n.zone_id)?.mode === 'observe' ? 'text-obs' : 'text-text3'"
+                >{{ n.sub }}<template v-if="dir.zone(n.zone_id)?.mode === 'observe'"> · {{ t('zone.observation') }}</template></span>
               </component>
             </div>
           </div>
         </section>
 
         <section
-          aria-labelledby="admin-title"
+          aria-labelledby="conn-title"
           class="afw-card overflow-x-auto"
         >
           <div class="flex items-baseline gap-[10px] px-[14px] pt-3 pb-2">
             <h2
-              id="admin-title"
+              id="conn-title"
               class="m-0 text-sm font-[650]"
             >
-              {{ t('internal.admin') }}
+              {{ t('internal.connections') }}
             </h2>
-            <span class="text-xs text-text3">{{ t('internal.adminSub') }}</span>
+            <span class="text-xs text-text3">{{ t('internal.connectionsSub') }}</span>
           </div>
           <div class="min-w-[640px]">
-            <div class="afw-th grid grid-cols-[74px_104px_104px_120px_minmax(180px,1fr)_100px] gap-[10px] border-y border-line px-[14px] py-1.5">
-              <span>{{ t('internal.col.time') }}</span><span>{{ t('internal.col.agent') }}</span><span>{{ t('internal.col.api') }}</span><span>{{ t('internal.col.action') }}</span><span>{{ t('internal.col.resource') }}</span><span>{{ t('internal.col.signal') }}</span>
+            <div class="afw-th grid grid-cols-[120px_minmax(140px,1fr)_96px_70px_80px_86px_80px] gap-[10px] border-y border-line px-[14px] py-1.5">
+              <span>{{ t('internal.col.agent') }}</span><span>{{ t('internal.col.target') }}</span><span>{{ t('internal.col.port') }}</span><span>{{ t('internal.col.flows') }}</span><span>{{ t('internal.col.volume') }}</span><span>{{ t('internal.col.last') }}</span><span>{{ t('internal.col.signal') }}</span>
             </div>
             <div
-              v-for="(a, i) in map?.admin_calls ?? []"
-              :key="i"
-              class="grid grid-cols-[74px_104px_104px_120px_minmax(180px,1fr)_100px] items-center gap-[10px] border-b border-line px-[14px] py-[7px] text-xs"
+              v-for="e in connections"
+              :key="`${e.source}-${e.target}-${e.port}`"
+              class="grid grid-cols-[120px_minmax(140px,1fr)_96px_70px_80px_86px_80px] items-center gap-[10px] border-b border-line px-[14px] py-[7px] text-xs"
             >
-              <span class="font-mono text-[11.5px] text-text2">{{ fmt.time(a.at) }}</span>
-              <span class="font-mono text-[11.5px]">{{ a.agent_name }}</span>
-              <span>{{ a.api }}</span>
-              <span class="font-mono text-[11.5px] font-semibold">{{ a.action }}</span>
-              <span class="truncate font-mono text-[11.5px] text-text2">{{ a.resource }}</span>
+              <span class="truncate font-mono text-[11.5px]">{{ nodeLabel(e.source) }}</span>
+              <span class="truncate font-mono text-[11.5px]">{{ nodeLabel(e.target) }}</span>
+              <span class="font-mono text-[11.5px] text-text2">{{ e.protocol }}/{{ e.port }}<template v-if="e.app"> · {{ e.app }}</template></span>
+              <span class="font-mono text-[11.5px]">{{ fmt.num(e.flows) }}</span>
+              <span class="font-mono text-[11.5px] text-text2">{{ fmt.bytes(e.bytes) }}</span>
+              <span class="text-text3">{{ fmt.rel(e.last_seen_at) }}</span>
               <span><span
-                v-if="a.signal"
-                class="rounded bg-warn-bg px-1.5 py-px text-[11px] font-bold text-warn"
-              >{{ t(`internal.signal.${a.signal}`) }}</span></span>
+                v-if="edgeState(e) !== 'usual'"
+                class="rounded px-1.5 py-px text-[11px] font-bold"
+                :class="edgeState(e) === 'alert' ? 'bg-ko-bg text-ko' : 'bg-warn-bg text-warn'"
+              >{{ t(`internal.${edgeState(e)}`) }}</span></span>
+            </div>
+            <div
+              v-if="!connections.length"
+              class="px-[14px] py-4 text-center text-text3"
+            >
+              {{ t('internal.none') }}
             </div>
           </div>
         </section>

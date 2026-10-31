@@ -1,54 +1,69 @@
 <script setup lang="ts">
-import type { AgentOverview } from '~/api/types'
+import type { AgentOverview, FlowEvent, FlowStats } from '~/api/types'
+import { flowRuleLabel } from '~/utils/format'
 
 const { t } = useI18n()
 const api = useApi()
 const fmt = useFmt()
 const toast = useToast()
+const problem = useProblem()
 const route = useRoute()
 const id = computed(() => String(route.params.id))
 
 const ov = ref<AgentOverview | null>(null)
+const volume = ref<FlowStats | null>(null)
 const error = ref<string | null>(null)
+const moveOpen = ref(false)
 
-watch(id, async (v) => {
+async function load(v: string) {
   error.value = null
   try {
-    ov.value = await api.agentOverview(v)
+    const since = new Date(Date.now() - 86_400_000).toISOString()
+    const [o, st] = await Promise.all([api.agentOverview(v), api.flowStats({ agent: v, bucket: '1h', from: since })])
+    ov.value = o
+    volume.value = st
   }
   catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    error.value = problem.text(e)
   }
-}, { immediate: true })
+}
+watch(id, v => void load(v), { immediate: true })
 
 useHead({ title: () => `${ov.value?.agent.name ?? t('nav.agents')} — agents-firewall` })
 
-const maxBytes = computed(() => Math.max(1, ...(ov.value?.volume ?? []).map(v => v.allowed_bytes + v.denied_bytes)))
-const scaleTop = computed(() => Math.ceil(maxBytes.value / 5_000_000) * 5_000_000)
-const bars = computed(() => (ov.value?.volume ?? []).map(v => ({
-  ok: Math.round((v.allowed_bytes / scaleTop.value) * 140),
-  ko: Math.round((v.denied_bytes / scaleTop.value) * 140),
-  tip: t('agent.barTip', { h: fmt.hm(v.at), ok: fmt.bytes(v.allowed_bytes), ko: fmt.bytes(v.denied_bytes) }),
+/** Flows per hour over 24 h, counted by the API (`GET /logs/flows/stats?agent=…&bucket=1h`). */
+const points = computed(() => volume.value?.points ?? [])
+const scaleTop = computed(() => {
+  const max = Math.max(1, ...points.value.map(p => p.allow + p.deny + p.observed))
+  const step = max <= 10 ? 10 : 10 ** Math.ceil(Math.log10(max)) / 2
+  return Math.ceil(max / step) * step
+})
+const bars = computed(() => points.value.map(p => ({
+  ok: Math.round(((p.allow + p.observed) / scaleTop.value) * 140),
+  ko: Math.round((p.deny / scaleTop.value) * 140),
+  tip: t('agent.barTip', { h: fmt.hm(p.at), ok: p.allow + p.observed, ko: p.deny }),
 })))
 const ticks = computed(() => {
-  const v = ov.value?.volume ?? []
-  return [0, 6, 12, 18, 23].map(i => fmt.hm(v[i]?.at))
+  const v = points.value
+  if (!v.length) return []
+  return [0, 0.25, 0.5, 0.75].map(r => fmt.hm(v[Math.floor(r * v.length)]!.at)).concat(t('journal.now'))
 })
 
-const maxFlows = computed(() => Math.max(1, ...(ov.value?.destinations ?? []).map(d => d.flows)))
+const maxFlows = computed(() => Math.max(1, ...(ov.value?.top_destinations ?? []).map(d => d.flows)))
 const destWidth = (n: number) => `${Math.max(2, Math.round(Math.sqrt(n / maxFlows.value) * 100))}%`
+const deniedDestinations = computed(() => ov.value?.top_destinations.filter(d => d.denied > 0).length ?? 0)
+const dest = (f: FlowEvent) => f.domain ?? f.dst
 
 async function capture() {
   if (!ov.value) return
-  await api.startCapture({ agent_id: ov.value.agent.id, duration_secs: 900 })
-  toast.add({ title: t('flow.captureStarted', { agent: ov.value.agent.name }), icon: 'i-lucide-radio' })
+  try {
+    await api.startCapture({ agent_id: ov.value.agent.id, duration_secs: 900 })
+    toast.add({ title: t('flow.captureStarted', { agent: ov.value.agent.name }), icon: 'i-lucide-radio' })
+  }
+  catch (e) {
+    problem.notify(e)
+  }
 }
-
-function changeZone() {
-  toast.add({ title: t('rules.useCli'), description: `afw agent move ${ov.value?.agent.name} --zone …`, icon: 'i-lucide-terminal' })
-}
-
-const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag === 'internal' ? 'bg-sub text-text2' : 'bg-warn-bg text-warn')
 </script>
 
 <template>
@@ -88,10 +103,10 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
               {{ ov.agent.name }}
             </h1>
             <span class="inline-flex items-center gap-[5px] rounded-full bg-ok-bg px-2 py-px text-[11.5px] font-[650] text-ok">
-              <span class="size-1.5 rounded-full bg-ok" />{{ t('agent.active', { when: fmt.rel(ov.last_flow_at) }) }}
+              <span class="size-1.5 rounded-full bg-ok" />{{ t('agent.active', { when: fmt.rel(ov.last_seen_at) }) }}
             </span>
           </div>
-          <span class="text-[12.5px] text-text2">{{ ov.description }}</span>
+          <span class="font-mono text-[12px] text-text2">{{ ov.agent.addresses.join(', ') }}<template v-for="(v, k) in ov.agent.labels" :key="k"> · {{ k }}={{ v }}</template></span>
         </div>
         <dl class="m-0 flex flex-wrap gap-x-[22px] gap-y-1.5 text-xs">
           <div class="flex flex-col">
@@ -107,14 +122,14 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
             <dt class="text-text3">
               {{ t('agent.gateway') }}
             </dt><dd class="m-0 font-mono">
-              {{ ov.gateway_name ?? '—' }}
+              {{ ov.gateway?.name ?? '—' }}
             </dd>
           </div>
           <div class="flex flex-col">
             <dt class="text-text3">
               {{ t('agent.enrollment') }}
             </dt><dd class="m-0">
-              {{ t(`kind.${ov.agent.kind}`) }} · {{ fmt.date(ov.enrolled_at).slice(0, 5) }}
+              {{ t(`kind.${ov.agent.kind}`) }}
             </dd>
           </div>
           <div class="flex flex-col">
@@ -128,13 +143,13 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
             </dd>
           </div>
           <div
-            v-if="ov.egress_guard"
+            v-if="ov.agent.mcp_admin"
             class="flex flex-col"
           >
             <dt class="text-text3">
-              egress-guard
-            </dt><dd class="m-0">
-              {{ t('agent.egressRemoved', { d: fmt.date(ov.egress_guard).slice(0, 5) }) }}
+              MCP
+            </dt><dd class="m-0 font-semibold">
+              {{ t('agents.mcpAgent') }}
             </dd>
           </div>
         </dl>
@@ -157,7 +172,8 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
           <UButton
             color="neutral"
             variant="outline"
-            @click="changeZone"
+            data-testid="agent-move"
+            @click="moveOpen = true"
           >
             {{ t('agent.changeZone') }}
           </UButton>
@@ -171,7 +187,7 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
         <div class="afw-card flex flex-col gap-0.5 px-[14px] py-3">
           <span class="text-xs text-text3">{{ t('agent.kpi.flows') }}</span>
           <strong class="text-[22px] font-[650]">{{ fmt.num(ov.flows_24h) }}</strong>
-          <span class="text-[11.5px] text-text3">{{ t('agent.kpi.flowsLlm', { n: fmt.num(ov.llm_flows_24h) }) }}</span>
+          <span class="text-[11.5px] text-text3">{{ t('agent.kpi.flowsSub') }}</span>
         </div>
         <div class="afw-card flex flex-col gap-0.5 px-[14px] py-3">
           <span class="text-xs text-text3">{{ t('agent.kpi.sent') }}</span>
@@ -181,15 +197,15 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
         <div class="afw-card flex flex-col gap-0.5 px-[14px] py-3">
           <span class="text-xs text-text3">{{ t('agent.kpi.denied') }}</span>
           <strong class="text-[22px] font-[650] text-ko">{{ ov.denied_24h }}</strong>
-          <span class="text-[11.5px] text-text3">{{ t('agent.kpi.deniedDest', ov.denied_destinations_24h) }}</span>
+          <span class="text-[11.5px] text-text3">{{ t('agent.kpi.deniedDest', deniedDestinations) }}</span>
         </div>
         <div class="afw-card flex flex-col gap-0.5 px-[14px] py-3">
           <span class="text-xs text-text3">{{ t('agent.kpi.destinations') }}</span>
-          <strong class="text-[22px] font-[650]">{{ ov.destinations_7d }}</strong>
+          <strong class="text-[22px] font-[650]">{{ ov.top_destinations.length }}</strong>
           <span
             class="text-[11.5px]"
-            :class="ov.new_destinations_7d ? 'font-semibold text-warn' : 'text-text3'"
-          >{{ t('agent.kpi.newDest', ov.new_destinations_7d) }}</span>
+            :class="ov.alerts.length ? 'font-semibold text-warn' : 'text-text3'"
+          >{{ t('agent.kpi.alerts', ov.alerts.length) }}</span>
         </div>
       </section>
 
@@ -217,7 +233,7 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
           class="grid grid-cols-[40px_minmax(0,1fr)] gap-2"
         >
           <div class="flex h-[140px] flex-col justify-between text-right font-mono text-[10.5px] text-text3">
-            <span>{{ fmt.bytes(scaleTop) }}</span><span>{{ fmt.bytes(scaleTop / 2) }}</span><span>0</span>
+            <span>{{ fmt.num(scaleTop) }}</span><span>{{ fmt.num(scaleTop / 2) }}</span><span>0</span>
           </div>
           <div class="flex flex-col gap-1">
             <div
@@ -249,10 +265,6 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
             </div>
           </div>
         </div>
-        <span
-          v-if="ov.volume_note"
-          class="text-xs text-text2"
-        >{{ ov.volume_note }}</span>
       </section>
 
       <div class="flex flex-wrap items-start gap-4">
@@ -270,37 +282,31 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
             <span class="text-xs text-text3">{{ t('agent.destinationsSub') }}</span>
           </div>
           <div class="min-w-[620px]">
-            <div class="afw-th grid grid-cols-[minmax(200px,1.4fr)_70px_minmax(120px,1fr)_80px_96px] gap-[10px] border-y border-line px-[14px] py-1.5">
-              <span>{{ t('agent.col.destination') }}</span><span>{{ t('agent.col.rule') }}</span><span>{{ t('agent.col.flows') }}</span><span>{{ t('agent.col.sent') }}</span><span>{{ t('agent.col.last') }}</span>
+            <div class="afw-th grid grid-cols-[minmax(200px,1.4fr)_60px_minmax(120px,1fr)_80px_96px] gap-[10px] border-y border-line px-[14px] py-1.5">
+              <span>{{ t('agent.col.destination') }}</span><span>{{ t('agent.col.denied') }}</span><span>{{ t('agent.col.flows') }}</span><span>{{ t('agent.col.sent') }}</span><span>{{ t('agent.col.last') }}</span>
             </div>
             <div
-              v-for="d in ov.destinations"
+              v-for="d in ov.top_destinations"
               :key="d.destination"
-              class="grid grid-cols-[minmax(200px,1.4fr)_70px_minmax(120px,1fr)_80px_96px] items-center gap-[10px] border-b border-line px-[14px] py-[7px]"
+              class="grid grid-cols-[minmax(200px,1.4fr)_60px_minmax(120px,1fr)_80px_96px] items-center gap-[10px] border-b border-line px-[14px] py-[7px]"
             >
               <span class="flex min-w-0 items-center gap-1.5">
                 <span class="truncate font-mono text-xs font-medium">{{ d.destination }}</span>
-                <span
-                  v-for="tag in d.tags"
-                  :key="tag"
-                  class="flex-none rounded px-[5px] text-[10.5px] font-bold"
-                  :class="tagCls(tag)"
-                >{{ t(`agent.tag.${tag}`) }}</span>
               </span>
               <span
                 class="font-mono text-[11.5px]"
-                :class="d.verdict === 'deny' ? 'text-ko' : d.rule_layer === 'baseline' ? 'text-obs' : 'text-text2'"
-              >{{ d.rule_label }}</span>
+                :class="d.denied ? 'font-semibold text-ko' : 'text-text3'"
+              >{{ d.denied || '—' }}</span>
               <span class="flex items-center gap-2">
                 <span class="h-1.5 flex-1 overflow-hidden rounded-[3px] bg-sub"><span
                   class="block h-1.5"
-                  :class="d.verdict === 'deny' ? 'bg-ko' : 'bg-bar'"
+                  :class="d.denied === d.flows ? 'bg-ko' : 'bg-bar'"
                   :style="{ width: destWidth(d.flows) }"
                 /></span>
                 <span class="w-12 text-right font-mono text-[11.5px]">{{ fmt.num(d.flows) }}</span>
               </span>
               <span class="font-mono text-[11.5px]">{{ fmt.bytes(d.bytes_out) }}</span>
-              <span class="text-xs text-text3">{{ fmt.rel(d.last_at) }}</span>
+              <span class="text-xs text-text3">{{ fmt.rel(d.last_seen_at) }}</span>
             </div>
           </div>
         </section>
@@ -324,17 +330,17 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
             </div>
             <ul class="m-0 flex list-none flex-col p-0">
               <li
-                v-for="k in ov.recent_denials"
-                :key="k.destination"
+                v-for="k in ov.recent_denied"
+                :key="k.id"
                 class="flex items-center gap-[10px] border-t border-line py-2"
               >
                 <span class="flex min-w-0 flex-1 flex-col leading-[1.35]">
-                  <span class="flex items-center gap-1.5"><span class="truncate font-mono text-xs font-semibold">{{ k.destination }}</span><span class="text-[11px] text-text3">×{{ k.count }}</span></span>
-                  <span class="text-[11.5px] text-text3">{{ fmt.rel(k.last_at) }} · {{ t('agent.ruleN', { n: k.rule_label }) }} · {{ t(`agent.reason.${k.reason}`) }}</span>
+                  <span class="truncate font-mono text-xs font-semibold">{{ dest(k) }}</span>
+                  <span class="text-[11.5px] text-text3">{{ fmt.rel(k.started_at) }} · {{ t('agent.ruleN', { n: flowRuleLabel(k) }) }} · {{ k.decision.reason }}</span>
                 </span>
                 <NuxtLink
-                  v-if="k.can_allow"
-                  :to="{ path: '/', query: { flow: k.flow_id } }"
+                  v-if="k.decision.layer !== 'baseline'"
+                  :to="`/flows/${k.id}`"
                   class="flex h-7 flex-none items-center rounded-md border border-line2 px-[10px] text-xs font-semibold no-underline"
                   style="color: var(--text)"
                 >{{ t('agent.allowEllipsis') }}</NuxtLink>
@@ -344,7 +350,7 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
                 >{{ t('agent.baseline') }}</span>
               </li>
               <li
-                v-if="!ov.recent_denials.length"
+                v-if="!ov.recent_denied.length"
                 class="border-t border-line py-2 text-text3"
               >
                 {{ t('agent.noDenials') }}
@@ -362,21 +368,54 @@ const tagCls = (tag: string) => (tag === 'denied' ? 'bg-ko-bg text-ko' : tag ===
               >
                 {{ t('agent.topTools') }}
               </h2>
-              <span class="text-xs text-text3">24 h</span>
+              <span class="text-xs text-text3">{{ ov.agent.hermes ? 'Hermes' : '—' }}</span>
             </div>
             <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
               <li
-                v-for="tool in ov.top_tools"
-                :key="tool.tool"
+                v-for="tool in ov.recent_tool_calls"
+                :key="tool.id"
                 class="flex justify-between gap-[10px]"
               >
-                <span class="font-mono">{{ tool.tool }}</span>
-                <span class="text-text2">{{ t('agent.toolStats', { n: tool.flows, v: fmt.bytes(tool.bytes_out) }) }}<template v-if="tool.denied"> · <span class="font-semibold text-ko">{{ t('agent.toolDenied', tool.denied) }}</span></template></span>
+                <span class="min-w-0 truncate font-mono">{{ tool.tool }}<span class="text-text3">({{ tool.args_summary }})</span></span>
+                <span class="flex-none text-text2">{{ fmt.hm(tool.started_at) }}<template v-if="tool.status"> · {{ tool.status }}</template></span>
+              </li>
+              <li
+                v-if="!ov.recent_tool_calls.length"
+                class="text-text3"
+              >
+                {{ t('agent.noToolCalls') }}
+              </li>
+            </ul>
+          </section>
+          <section
+            v-if="ov.alerts.length"
+            aria-labelledby="alerts-title"
+            class="afw-card flex flex-col gap-2 px-[14px] py-3"
+          >
+            <h2
+              id="alerts-title"
+              class="m-0 text-sm font-[650]"
+            >
+              {{ t('nav.alerts') }}
+            </h2>
+            <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
+              <li
+                v-for="a in ov.alerts"
+                :key="a.id"
+                class="flex flex-col"
+              >
+                <span class="font-semibold">{{ t(`alerts.kind.${a.kind}`) }} <span class="font-normal text-text3">· {{ fmt.rel(a.at) }}</span></span>
+                <span class="text-text2">{{ a.summary }}</span>
               </li>
             </ul>
           </section>
         </div>
       </div>
     </div>
+    <FormsAgentZoneForm
+      v-model:open="moveOpen"
+      :agent="ov?.agent ?? null"
+      @saved="load(id)"
+    />
   </div>
 </template>

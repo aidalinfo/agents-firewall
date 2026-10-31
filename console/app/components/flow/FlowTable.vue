@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { FlowSummary } from '~/api/types'
+import type { FlowListItem } from '~/api/types'
 import { verdictTone } from '~/utils/format'
 
 defineProps<{
-  flows: FlowSummary[]
+  flows: FlowListItem[]
   selected: string | null
   loading?: boolean
 }>()
@@ -13,7 +13,7 @@ const { t } = useI18n()
 const fmt = useFmt()
 const cols = 'grid-cols-[92px_84px_124px_minmax(200px,1.5fr)_118px_minmax(140px,1fr)_62px]'
 
-function tone(f: FlowSummary) {
+function tone(f: FlowListItem) {
   const v = verdictTone(f)
   return v === 'ok' ? { fg: 'var(--ok)', bg: 'var(--ok-bg)', key: 'allow' } : v === 'obs' ? { fg: 'var(--obs)', bg: 'var(--obs-bg)', key: 'observed' } : { fg: 'var(--ko)', bg: 'var(--ko-bg)', key: 'deny' }
 }
@@ -60,19 +60,19 @@ function tone(f: FlowSummary) {
         </span>
         <span class="flex min-w-0 flex-col leading-[1.3]">
           <span class="truncate font-mono text-xs font-medium">{{ f.domain ?? f.dst }}</span>
-          <span class="truncate font-mono text-[10.5px] text-text3"><span class="text-pri">{{ f.method }}</span> {{ f.path }}</span>
+          <span class="truncate font-mono text-[10.5px] text-text3"><span class="text-pri">{{ (f.app ?? f.protocol).toUpperCase() }}</span> {{ f.dst }}</span>
         </span>
         <span class="flex min-w-0 items-center gap-1.5">
           <span
-            class="rounded bg-sub px-[5px] font-mono text-[11px] font-semibold"
+            class="truncate rounded bg-sub px-[5px] font-mono text-[11px] font-semibold"
             :style="{ color: f.decision.layer === 'baseline' ? 'var(--obs)' : 'var(--text)' }"
-          >#{{ f.rule_label }}</span>
-          <span class="truncate text-[11.5px] text-text2">{{ f.decision.rule_name }}</span>
+            :title="f.decision.reason"
+          >{{ f.rule_label }}</span>
         </span>
         <span class="flex min-w-0 items-center gap-1.5">
           <span class="truncate font-mono text-[11.5px] text-text2">{{ f.tool ?? '—' }}</span>
           <span
-            v-if="f.correlation?.confidence === 'uncertain'"
+            v-if="f.correlation_confidence && f.correlation_confidence !== 'certain'"
             :title="t('flow.uncertain')"
             class="flex-none rounded bg-warn-bg px-1 font-mono text-[10px] font-bold text-warn"
           >≈</span>

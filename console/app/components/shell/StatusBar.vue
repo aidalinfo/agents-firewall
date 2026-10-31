@@ -1,7 +1,6 @@
 <script setup lang="ts">
-const { t, te } = useI18n()
-const { gateways, policy, stats } = useShell()
-const detail = (d: string) => (te(`gateways.detail.${d}`) ? t(`gateways.detail.${d}`) : d)
+const { t } = useI18n()
+const { gateways, policy, stats, perMinute } = useShell()
 const emit = defineEmits<{ shortcuts: [] }>()
 </script>
 
@@ -16,21 +15,21 @@ const emit = defineEmits<{ shortcuts: [] }>()
         v-for="g in gateways.data.value"
         :key="g.id"
         class="flex items-center gap-[5px]"
-        :class="g.status === 'online' ? '' : g.status === 'degraded' ? 'text-warn' : 'text-ko'"
+        :class="g.status === 'online' ? '' : g.status === 'pending' ? 'text-warn' : 'text-ko'"
       >
         <span
           class="size-1.5 rounded-full"
-          :class="g.status === 'online' ? 'bg-ok' : g.status === 'degraded' ? 'bg-warn' : 'bg-ko'"
+          :class="g.status === 'online' ? 'bg-ok' : g.status === 'pending' ? 'bg-warn' : 'bg-ko'"
         />
-        {{ g.name }}<template v-if="g.status_detail"> · {{ detail(g.status_detail) }}</template>
+        {{ g.name }}<template v-if="g.status !== 'online'"> · {{ t(`gateways.status.${g.status}`) }}</template><template v-else-if="g.active_revision != null && g.active_revision !== g.desired_revision"> · {{ t('gateways.behind', { n: g.active_revision }) }}</template>
       </span>
     </NuxtLink>
     <span
       v-if="policy.data.value?.installed_revision != null"
       data-testid="status-revision"
     >{{ t('status.revision', { n: policy.data.value.installed_revision, k: policy.data.value.gateways_on_revision, total: policy.data.value.gateways_total }) }}</span>
-    <span v-if="policy.data.value?.latency_p95_ms != null">{{ t('status.latency', { ms: policy.data.value.latency_p95_ms }) }}</span>
-    <span v-if="stats.data.value">{{ t('status.ingestion', { n: stats.data.value.per_minute }) }}</span>
+    <span v-if="policy.data.value?.p95_ms != null">{{ t('status.latency', { ms: policy.data.value.p95_ms }) }}</span>
+    <span v-if="stats.data.value">{{ t('status.ingestion', { n: perMinute }) }}</span>
     <span class="flex-1" />
     <button
       type="button"

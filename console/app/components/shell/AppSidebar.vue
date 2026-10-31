@@ -8,7 +8,7 @@ const { me, logout } = useAuth()
 const { changeCount } = usePolicySession()
 const { gateways, openCritical, openAlerts } = useShell()
 
-const initials = computed(() => (me.value?.name ?? '?').split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase())
+const initials = computed(() => (me.value?.actor.name ?? '?').split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase())
 
 function badge(key: string): { text: string, tone: 'ko' | 'warn' | 'neutral' } | null {
   if (key === 'internal' && openCritical.value) return { text: String(openCritical.value), tone: 'ko' }
@@ -47,7 +47,7 @@ const userMenu = computed(() => [
       </span>
       <span class="flex min-w-0 flex-1 flex-col leading-[1.2]">
         <strong class="text-[13.5px] font-[650]">agents-firewall</strong>
-        <span class="font-mono text-[11px] text-text3">{{ me?.tenant ?? '—' }}</span>
+        <span class="font-mono text-[11px] text-text3">{{ me?.email ?? me?.actor.name ?? '—' }}</span>
       </span>
       <UIcon
         name="i-lucide-chevrons-up-down"
@@ -86,7 +86,7 @@ const userMenu = computed(() => [
             v-for="g in gateways.data.value"
             :key="g.id"
             class="size-1.5 rounded-full"
-            :class="g.status === 'online' ? 'bg-ok' : g.status === 'degraded' ? 'bg-warn' : 'bg-ko'"
+            :class="g.status === 'online' ? 'bg-ok' : g.status === 'pending' ? 'bg-warn' : 'bg-ko'"
           />
         </span>
         <span
@@ -123,8 +123,8 @@ const userMenu = computed(() => [
         >
           <span class="flex size-[26px] items-center justify-center rounded-full bg-pri-bg text-[11px] font-bold text-pri">{{ initials }}</span>
           <span class="flex flex-col leading-[1.25]">
-            <span class="text-[12.5px] font-semibold">{{ me?.name }}</span>
-            <span class="font-mono text-[10.5px] text-text3">{{ me ? `${t(`role.${me.role}`)} · ${me.auth}` : '' }}</span>
+            <span class="text-[12.5px] font-semibold">{{ me?.actor.name }}</span>
+            <span class="font-mono text-[10.5px] text-text3">{{ me ? `${t(`role.${me.role}`)} · ${t(`actorKind.${me.actor.kind}`)}` : '' }}</span>
           </span>
         </button>
       </UDropdownMenu>

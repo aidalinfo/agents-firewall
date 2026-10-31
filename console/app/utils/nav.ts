@@ -28,12 +28,16 @@ export const NAV: NavGroup[] = [
     items: [
       { key: 'rules', to: '/rules', icon: 'i-lucide-shield', keys: 'g r' },
       { key: 'objects', to: '/objects', icon: 'i-lucide-layout-grid', keys: 'g o' },
+      { key: 'inspection', to: '/inspection', icon: 'i-lucide-eye' },
       { key: 'revisions', to: '/revisions', icon: 'i-lucide-history', keys: 'g v', also: ['/audit'] },
     ],
   },
   {
     key: 'infra',
-    items: [{ key: 'gateways', to: '/gateways', icon: 'i-lucide-server', keys: 'g p' }],
+    items: [
+      { key: 'gateways', to: '/gateways', icon: 'i-lucide-server', keys: 'g p' },
+      { key: 'settings', to: '/settings', icon: 'i-lucide-settings' },
+    ],
   },
 ]
 

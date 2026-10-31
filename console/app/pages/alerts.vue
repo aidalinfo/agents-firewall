@@ -1,23 +1,38 @@
 <script setup lang="ts">
-import type { AlertChannel } from '~/api/types'
+import type { Alert, AlertChannel } from '~/api/types'
 
 const { t } = useI18n()
 const api = useApi()
-const { alerts, refreshShell } = useShell()
+const problem = useProblem()
+const { refreshShell } = useShell()
 
 useHead({ title: () => `${t('nav.alerts')} — agents-firewall` })
 
 const filter = ref<'open' | 'all' | 'resolved'>('open')
 const channels = ref<AlertChannel[]>([])
+const alerts = ref<Alert[]>([])
+
+async function load() {
+  try {
+    const acknowledged = filter.value === 'all' ? undefined : filter.value === 'resolved'
+    alerts.value = (await api.listAlerts({ acknowledged })).items
+  }
+  catch (e) {
+    problem.notify(e)
+  }
+}
+watch(filter, () => void load())
 onMounted(async () => {
-  channels.value = await api.listAlertChannels()
-  await alerts.refresh()
+  await load()
+  channels.value = await api.alertChannels.list().catch(() => [])
 })
 
+async function changed() {
+  await Promise.all([load(), refreshShell()])
+}
+
 const order = { critical: 0, warning: 1, info: 2 } as const
-const shown = computed(() => alerts.data.value
-  .filter(a => filter.value === 'all' || (filter.value === 'open' ? !a.resolved : a.resolved))
-  .sort((a, b) => order[a.severity] - order[b.severity] || b.at.localeCompare(a.at)))
+const shown = computed(() => [...alerts.value].sort((a, b) => order[a.event.severity] - order[b.event.severity] || b.event.at.localeCompare(a.event.at)))
 </script>
 
 <template>
@@ -38,7 +53,7 @@ const shown = computed(() => alerts.data.value
         </div>
         <AlertsAlertList
           :alerts="shown"
-          @changed="refreshShell"
+          @changed="changed"
         />
         <p
           v-if="!shown.length"
@@ -48,9 +63,15 @@ const shown = computed(() => alerts.data.value
         </p>
       </section>
       <section class="afw-card flex min-w-0 flex-[1_1_320px] flex-col gap-3 px-[14px] py-3">
-        <h2 class="m-0 text-sm font-[650]">
-          {{ t('alerts.channelsTitle') }}
-        </h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="m-0 text-sm font-[650]">
+            {{ t('alerts.channelsTitle') }}
+          </h2>
+          <NuxtLink
+            to="/settings"
+            class="text-xs"
+          >{{ t('alerts.manageChannels') }}</NuxtLink>
+        </div>
         <ul class="m-0 flex list-none flex-col gap-2 p-0">
           <li
             v-for="c in channels"
@@ -61,7 +82,7 @@ const shown = computed(() => alerts.data.value
               class="size-2 rounded-full"
               :class="c.enabled ? 'bg-ok' : 'bg-text3'"
             />
-            <strong>{{ c.name }}</strong><span class="text-text3">{{ t(`alerts.channelKind.${c.kind}`) }}</span>
+            <strong>{{ c.name }}</strong><span class="text-text3">{{ t(`alerts.channelKind.${c.kind}`) }} · ≥ {{ t(`severity.${c.min_severity}`) }}</span>
           </li>
         </ul>
         <p class="m-0 text-[11.5px] text-text3">

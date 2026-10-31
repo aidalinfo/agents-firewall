@@ -28,8 +28,11 @@ describe('i18n', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(fr).sort())
   })
 
-  it('has no empty message', () => {
-    for (const [k, v] of [...Object.entries(fr), ...Object.entries(en)]) expect(v, k).not.toBe('')
+  it('has no empty message and no HTML (refused by the message compiler)', () => {
+    for (const [k, v] of [...Object.entries(fr), ...Object.entries(en)]) {
+      expect(v, k).not.toBe('')
+      expect(v, k).not.toMatch(/<[a-z/][^>]*>/i)
+    }
   })
 
   it('keeps the same placeholders and plural forms in both languages', () => {

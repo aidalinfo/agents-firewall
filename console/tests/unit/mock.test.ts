@@ -1,206 +1,173 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import type { AfwApi } from '../../app/api/client'
+import { describe, expect, it } from 'vitest'
+import { ApiError } from '../../app/api/client'
 import { createMockApi } from '../../app/api/mock'
-import { FLOW_IDS } from '../../app/api/mock-data'
+import { AGENT_IDS, FLOW_IDS, GW_IDS, OBJ, RULE_IDS, ZONE_IDS } from '../../app/api/mock-data'
+import type { StreamEvent } from '../../app/api/types'
+import { assertSchema, assertSchemaArray } from '../support/contract'
 
-const NOW = new Date(2026, 9, 30, 14, 32, 10)
-
-describe('mock API — journal', () => {
-  let api: AfwApi
-  beforeEach(() => {
-    api = createMockApi({ now: NOW, latencyMs: 0 })
+describe('mock API answers in the shapes of the contract', () => {
+  it('every read matches the JSON schemas of docs/api/openapi.yaml', async () => {
+    const api = createMockApi()
+    assertSchema('Me', await api.me())
+    const flows = await api.listFlows({})
+    assertSchema('Page_for_FlowListItem', flows)
+    assertSchema('FlowStats', await api.flowStats({}))
+    for (const id of Object.values(FLOW_IDS)) assertSchema('FlowDetail', await api.getFlow(id))
+    assertSchemaArray('NetObject', await api.objects.list())
+    assertSchemaArray('Service', await api.services.list())
+    assertSchemaArray('DataClass', await api.dataClasses.list())
+    assertSchemaArray('Zone', await api.zones.list())
+    assertSchemaArray('Agent', await api.agents.list())
+    assertSchemaArray('RuleView', await api.rules.list())
+    assertSchemaArray('InspectionRule', await api.inspectionRules.list())
+    assertSchemaArray('RuleView', await api.listRules())
+    assertSchema('Rulebase', await api.getRulebase())
+    assertSchema('WhereUsed', await api.whereUsed(OBJ.llm))
+    assertSchema('PolicySettings', await api.getSettings())
+    assertSchema('Page_for_Revision', await api.listRevisions())
+    assertSchema('RevisionDetail', await api.getRevision(42))
+    assertSchema('RevisionDiff', await api.diffRevision(42))
+    assertSchema('VerifyReport', await api.verify(42))
+    assertSchema('PolicyStatus', await api.policyStatus())
+    assertSchema('Page_for_Install', await api.listInstalls())
+    assertSchema('AgentOverview', await api.agentOverview(AGENT_IDS.daniel))
+    assertSchema('Page_for_Alert', await api.listAlerts())
+    assertSchemaArray('AlertChannel', await api.alertChannels.list())
+    assertSchema('InternalMap', await api.internalMap('24h'))
+    assertSchema('Page_for_AuditEntry', await api.listAudit())
+    assertSchema('AuditVerifyResult', (({ anchor_sources: _a, ...r }) => r)(await api.verifyAudit()))
+    assertSchemaArray('Gateway', await api.listGateways())
+    assertSchemaArray('ApiToken', await api.listTokens())
+    assertSchema('RegistrationToken', await api.createRegistrationToken('gw-new'))
+    assertSchema('Page_for_Capture', await api.listCaptures())
   })
 
-  it('lists the mockup flows, newest first', async () => {
-    const page = await api.listFlows({})
-    expect(page.items).toHaveLength(11)
-    expect(page.items[0]!.agent_name).toBe('daniel-bot')
-    expect(page.items[0]!.domain).toBe('api.exemple.com')
+  it('journal: filters by verdict and agent id, newest first, with display fields from the API', async () => {
+    const api = createMockApi()
+    const page = await api.listFlows({ verdict: 'deny', agent: AGENT_IDS.daniel })
+    expect(page.items.length).toBeGreaterThan(0)
+    expect(page.items.every(f => f.verdict === 'deny' && f.agent_id === AGENT_IDS.daniel)).toBe(true)
+    expect(page.items[0]).toMatchObject({ id: FLOW_IDS.upload, agent_name: 'daniel-bot', zone_name: 'bots-internes', rule_label: 'default-deny', tool: 'upload_file' })
     const times = page.items.map(f => f.started_at)
     expect([...times].sort().reverse()).toEqual(times)
   })
 
-  it('filters by verdict, agent, rule, alert, wildcard destination and free text', async () => {
-    expect((await api.listFlows({ verdict: 'deny' })).items).toHaveLength(5)
-    expect((await api.listFlows({ agent: 'vulcain-bot' })).items).toHaveLength(3)
-    expect((await api.listFlows({ rule: 'S1' })).items.map(f => f.domain)).toEqual(['169.254.169.254'])
-    expect((await api.listFlows({ alert: true })).items).toHaveLength(2)
-    expect((await api.listFlows({ destination: '*.exemple.com' })).items).toHaveLength(2)
-    expect((await api.listFlows({ q: 'sendMail' })).items.map(f => f.domain)).toEqual(['graph.microsoft.com'])
+  it('flow detail: trace ends on the deciding rule, allow proposal and EF-21 message', async () => {
+    const api = createMockApi()
+    const d = await api.getFlow(FLOW_IDS.upload)
+    expect(d.trace.at(-1)).toMatchObject({ layer: 'implicit', outcome: 'matched', rule_label: 'default-deny' })
+    expect(d.trace.slice(0, -1).every(s => s.outcome === 'not_matched')).toBe(true)
+    expect(d.agent_message).toBe('blocked by agents-firewall: upload.fichiers-partage.example not allowed for daniel-bot (rule default-deny)')
+    expect(d.allow_proposal?.zone_id).toBe(ZONE_IDS.internes)
+    expect(d.allow_proposal?.destinations.map(x => x.kind)).toEqual(['exact', 'wildcard'])
+    expect(d.allow_proposal?.service).toMatchObject({ label: 'https', port: 443 })
+    const allowed = await api.getFlow(FLOW_IDS.llm)
+    expect(allowed.allow_proposal).toBeNull()
+    expect(allowed.trace.at(-1)).toMatchObject({ rule_id: RULE_IDS.llm, outcome: 'matched' })
   })
 
-  it('returns journal counters and a 60-minute histogram', async () => {
-    const stats = await api.flowStats({})
-    expect(stats.histogram).toHaveLength(60)
-    expect(stats.total).toBe(stats.allowed + stats.denied)
-  })
+  it('allow → publish → install: rule at the top of the zone layer, revision 43, gateways acknowledge', async () => {
+    const api = createMockApi({ installAckMs: 5 })
+    const session = await api.openSession('Autoriser upload')
+    assertSchema('Session', session)
+    expect(session).toMatchObject({ state: 'open', base_revision: 42, next_revision: 43 })
+    const res = await api.allowFromLog(session.id, { flow_id: FLOW_IDS.upload, destination: 'wildcard', expires_in_days: 30, track: 'detailed' })
+    assertSchema('AllowFromLogResponse', res)
+    expect(res.rule).toMatchObject({ name: 'Autoriser upload.fichiers-partage.example', position: 1, pending_change: 'create', action: 'accept' })
+    expect(res.created_object?.spec).toEqual({ type: 'domain', pattern: '*.fichiers-partage.example' })
+    expect(res.changes.map(c => c.resource.kind)).toEqual(expect.arrayContaining(['object', 'rule']))
 
-  it('returns the evaluation trace and an allow proposal for a zone denial', async () => {
-    const d = await api.getFlow(FLOW_IDS.upload1)
-    expect(d.trace.map(t => [t.label, t.result])).toEqual([
-      ['S1–S5', 'no_match'],
-      ['1–11', 'no_match'],
-      ['12', 'deny'],
-    ])
-    expect(d.agent_message).toBe('blocked by agents-firewall: api.exemple.com not allowed for daniel-bot (rule 12)')
-    expect(d.allow_proposal?.zone.name).toBe('bots-internes')
-    expect(d.allow_proposal?.destination_options.map(o => o.key)).toEqual(['exact', 'group', 'wildcard'])
-    expect(d.allow_proposal?.destination_options[2]?.value).toBe('*.exemple.com')
-    expect(d.allow_proposal?.would_allow.flows).toBe(3)
-    expect(d.http?.method).toBe('POST')
-    expect(d.tool_call?.tool).toBe('terminal · python envoi.py')
-  })
+    // Read with the session: the draft is visible, the former first rule of the zone moved down.
+    api.setSession(session.id)
+    const rb = await api.getRulebase()
+    const zone = rb.zones.find(z => z.zone.id === ZONE_IDS.internes)!
+    const first = zone.sections[0]!.rules[0]!
+    expect(first.id).toBe(res.rule.id)
+    expect(zone.sections.flatMap(s => s.rules).find(r => r.id === RULE_IDS.m365)?.pending_change).toBe('update')
+    api.setSession(null)
+    expect((await api.getRulebase()).zones.find(z => z.zone.id === ZONE_IDS.internes)!.sections[0]!.rules[0]!.id).toBe(RULE_IDS.m365)
 
-  it('never proposes to override the baseline', async () => {
-    const d = await api.getFlow(FLOW_IDS.metadata)
-    expect(d.allow_proposal).toBeNull()
-    expect(d.trace.map(t => [t.label, t.result])).toEqual([['S1', 'deny']])
-  })
-})
+    const outcome = await api.publishSession(session.id, 'Autoriser le dépôt de fichiers')
+    expect(outcome.status).toBe('published')
+    if (outcome.status !== 'published') return
+    assertSchema('Revision', outcome.revision)
+    expect(outcome.revision.number).toBe(43)
+    expect((await api.currentSession())?.pending_install).toBe(43)
 
-describe('mock API — allow from log → publish → install', () => {
-  let api: AfwApi
-  beforeEach(() => {
-    api = createMockApi({ now: NOW, latencyMs: 0 })
-  })
-
-  it('adds a pre-filled rule before the cleanup rule of the zone', async () => {
+    const inst = await api.install(43, [])
+    assertSchema('InstallResult', inst)
+    expect(inst.installs.map(i => i.gateway_id).sort()).toEqual(Object.values(GW_IDS).sort())
+    expect(inst.installs.every(i => i.state === 'pending')).toBe(true)
+    await new Promise(r => setTimeout(r, 20))
+    const status = await api.policyStatus()
+    expect(status).toMatchObject({ latest_revision: 43, installed_revision: 43, gateways_total: 3, gateways_on_revision: 2, pending_installs: 2 })
     expect(await api.currentSession()).toBeNull()
-    const session = await api.openSession('Ouverture api.exemple.com')
-    const { rule, changes } = await api.allowFromLog(session.id, {
-      flow_id: FLOW_IDS.upload1,
-      destination: 'exact',
-      expires_in_days: 30,
-      track: 'detailed',
-    })
-    expect(rule.number).toBe('12')
-    expect(rule.in_session).toBe(true)
-    expect(rule.destination_names).toEqual(['dom-api.exemple.com'])
-    expect(rule.expires_at).not.toBeNull()
-    expect(changes.map(c => c.op)).toEqual(['add', 'add', 'renumber'])
-
-    const zones = await api.listZones()
-    const zone = zones.find(z => z.name === 'bots-internes')!
-    const rb = await api.getRulebase({ zone_id: zone.id })
-    const cleanup = rb.zone.at(-1)!
-    expect(cleanup.number).toBe('13')
-    expect(cleanup.previous_number).toBe('12')
-    expect((await api.currentSession())?.changes).toHaveLength(3)
-    expect((await api.listObjects()).find(o => o.name === 'dom-api.exemple.com')?.in_session).toBe(true)
+    const audit = await api.listAudit({ action: 'session.*' })
+    expect(audit.items.map(e => e.action)).toEqual(expect.arrayContaining(['session.open', 'session.publish']))
   })
 
-  it('reuses an existing group without creating an object', async () => {
-    const session = await api.openSession('s')
-    const { rule, changes } = await api.allowFromLog(session.id, {
-      flow_id: FLOW_IDS.upload1,
-      destination: 'group',
-      expires_in_days: null,
-      track: 'log',
-    })
-    expect(rule.destination_names).toEqual(['grp-portails-partenaires'])
-    expect(rule.expires_at).toBeNull()
-    expect(changes.map(c => c.op)).toEqual(['add', 'renumber'])
+  it('locks: a resource changed in another session answers 423 with its owner', async () => {
+    const api = createMockApi()
+    api.control.lockByOther('object', OBJ.s3)
+    const s = await api.openSession(null)
+    const obj = (await api.objects.get(OBJ.s3))
+    const err = await api.objects.update(s.id, { ...obj, comment: 'x' }).catch(e => e) as ApiError
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(423)
+    expect(err.lockedBy).toBe('Marie Durand')
+    const views = await api.listRules()
+    expect(views.every(v => v.locked_by == null)).toBe(true)
   })
 
-  it('refuses to allow a flow denied by the baseline', async () => {
-    const session = await api.openSession('s')
-    await expect(api.allowFromLog(session.id, {
-      flow_id: FLOW_IDS.metadata,
-      destination: 'exact',
-      expires_in_days: null,
-      track: 'detailed',
-    })).rejects.toMatchObject({ status: 409 })
+  it('approvals: publish answers 202 then 409 while pending', async () => {
+    const api = createMockApi()
+    api.control.requireApproval(true)
+    const s = await api.openSession(null)
+    await api.zones.create(s.id, { id: '', name: 'nouvelle-zone', comment: '', mode: 'observe', delegated_to_mcp: false })
+    const out = await api.publishSession(s.id, 'c')
+    expect(out.status).toBe('approval')
+    if (out.status === 'approval') assertSchema('Approval', out.approval)
+    expect((await api.getSession(s.id)).approval_id).toBeTruthy()
+    await expect(api.publishSession(s.id, 'c')).rejects.toMatchObject({ status: 409, detail: 'approval pending' })
   })
 
-  it('publishes revision 43 then installs it on the selected gateways', async () => {
-    const session = await api.openSession('Ouverture api.exemple.com')
-    await api.allowFromLog(session.id, { flow_id: FLOW_IDS.upload1, destination: 'exact', expires_in_days: 30, track: 'detailed' })
-
-    const report = await api.verify()
-    expect(report.ok).toBe(true)
-    expect(report.findings.map(f => f.code)).toEqual(['expired_rule', 'unused_object'])
-
-    expect((await api.currentSession())?.base_revision).toBe(42)
-    expect((await api.currentSession())?.next_revision).toBe(43)
-    const rev = await api.publishSession(session.id, 'portail partenaire')
-    expect(rev.number).toBe(43)
-    expect(rev.installed).toBe(false)
-    expect(await api.currentSession()).toBeNull()
-    expect((await api.listRevisions())[0]?.number).toBe(43)
-
-    const gateways = await api.listGateways()
-    const install = await api.install(43, gateways.map(g => g.id))
-    expect(install.results.every(r => r.ok)).toBe(true)
-    expect((await api.listGateways()).every(g => g.revision === 43)).toBe(true)
-    expect((await api.getRevision(43)).installed).toBe(true)
-    expect((await api.getRevision(42)).installed).toBe(false)
-    expect(await api.policyStatus()).toMatchObject({ installed_revision: 43, latest_revision: 43, gateways_on_revision: 3, gateways_total: 3 })
-
-    const audit = await api.listAudit({})
-    expect(audit.items.slice(0, 2).map(a => a.action)).toEqual(['install', 'publish'])
+  it('CRUD in a session: validation errors come from the API, deletes refuse referenced objects', async () => {
+    const api = createMockApi()
+    const s = await api.openSession(null)
+    await expect(api.objects.create(s.id, { id: '', name: '', comment: '', category: null, spec: { type: 'any' } })).rejects.toMatchObject({ status: 400 })
+    await expect(api.objects.remove(s.id, OBJ.s3)).rejects.toMatchObject({ status: 409 })
+    const created = await api.objects.create(s.id, { id: '', name: 'dom-test', comment: '', category: null, spec: { type: 'domain', pattern: 'test.example' } })
+    assertSchema('NetObject', created)
+    api.setSession(s.id)
+    expect((await api.objects.list()).some(o => o.name === 'dom-test')).toBe(true)
+    api.setSession(null)
+    expect((await api.objects.list()).some(o => o.name === 'dom-test')).toBe(false)
+    // Moving an agent to another zone is an agent update.
+    const agent = await api.agents.get(AGENT_IDS.compta)
+    const moved = await api.agents.update(s.id, { ...agent, zone_id: ZONE_IDS.clients })
+    expect(moved.zone_id).toBe(ZONE_IDS.clients)
+    expect((await api.getSession(s.id)).changes).toBe(2)
+    // Rule move.
+    const r = await api.moveRule(s.id, RULE_IDS.github, { position: 1 })
+    expect(r.position).toBe(1)
   })
 
-  it('discarding the session restores the rulebase', async () => {
-    const session = await api.openSession('s')
-    await api.allowFromLog(session.id, { flow_id: FLOW_IDS.upload1, destination: 'exact', expires_in_days: 7, track: 'detailed' })
-    await api.discardSession(session.id)
-    expect(await api.currentSession()).toBeNull()
-    const zone = (await api.listZones()).find(z => z.name === 'bots-internes')!
-    const rb = await api.getRulebase({ zone_id: zone.id })
-    expect(rb.zone.at(-1)?.number).toBe('12')
-    expect(rb.zone.some(r => r.in_session)).toBe(false)
-  })
-})
-
-describe('mock API — other screens', () => {
-  const api = createMockApi({ now: NOW, latencyMs: 0 })
-
-  it('serves zones, objects with where-used, agents and overview', async () => {
-    const zones = await api.listZones()
-    expect(zones.map(z => z.name)).toEqual(['bots-internes', 'bots-clients', 'nouveaux-bots', 'ops'])
-    expect(zones.find(z => z.name === 'ops')?.holds_mcp_agent).toBe(true)
-
-    const objects = await api.listObjects()
-    const grp = objects.find(o => o.name === 'grp-portails-partenaires')!
-    expect(grp.members).toHaveLength(4)
-    const used = await api.whereUsed(grp.id)
-    expect(used[0]).toMatchObject({ kind: 'rule', ref: '11', hits: 57 })
-    const unused = objects.find(o => o.name === 'dom-ancien-crm.exemple.fr')!
-    expect(unused.used_in).toBe(0)
-
-    const agents = await api.listAgents()
-    expect(agents.map(a => a.agent.name)).toContain('hermes-compta')
-    const daniel = agents.find(a => a.agent.name === 'daniel-bot')!
-    const ov = await api.agentOverview(daniel.agent.id)
-    expect(ov.volume).toHaveLength(24)
-    expect(ov.recent_denials[0]?.destination).toBe('api.exemple.com')
+  it('stream: pushes flow events and the lagged notice to subscribers', async () => {
+    const api = createMockApi()
+    const got: StreamEvent[] = []
+    const stop = api.streamLogs(e => got.push(e))
+    const f = (await api.getFlow(FLOW_IDS.llm)).flow
+    api.control.emit({ kind: 'event', event: { ...f, id: 'f-new', type: 'flow' } })
+    api.control.emit({ kind: 'lagged', skipped: 3 })
+    stop()
+    api.control.emit({ kind: 'lagged', skipped: 1 })
+    expect(got.map(e => e.kind)).toEqual(['event', 'lagged'])
+    expect((await api.listFlows({})).items[0]!.id).toBe('f-new')
   })
 
-  it('reports the installed policy as the API sees it', async () => {
-    expect(await api.policyStatus()).toMatchObject({ installed_revision: 42, latest_revision: 42, gateways_on_revision: 3, gateways_total: 3, latency_p95_ms: 6 })
-  })
-
-  it('tells the layer of the destination rule on the agent view', async () => {
-    const daniel = (await api.listAgents()).find(a => a.agent.name === 'daniel-bot')!
-    const ov = await api.agentOverview(daniel.agent.id)
-    expect(ov.destinations.find(d => d.rule_label === 'S3')?.rule_layer).toBe('baseline')
-    expect(ov.destinations.find(d => d.rule_label === '9')?.rule_layer).toBe('zone')
-  })
-
-  it('serves alerts, the internal map, gateways and a valid audit chain', async () => {
-    expect((await api.listAlerts()).filter(a => a.severity === 'critical')).toHaveLength(2)
-    const map = await api.internalMap('24h')
-    expect(map.nodes.filter(n => n.kind === 'agent')).toHaveLength(5)
-    expect(map.admin_calls).toHaveLength(5)
-    expect((await api.listGateways()).map(g => g.status)).toEqual(['online', 'degraded', 'online'])
-    expect((await api.verifyAudit()).ok).toBe(true)
-    const rb = await api.getRulebase({})
-    expect(rb.baseline.map(r => r.number)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5'])
-  })
-
-  it('acknowledges an alert', async () => {
-    const alert = (await api.listAlerts())[0]!
-    const acked = await api.acknowledgeAlert(alert.id)
-    expect(acked.acknowledged_by).toBe('Killian Stein')
+  it('expired token: every call answers 401', async () => {
+    const api = createMockApi()
+    api.control.expireToken()
+    await expect(api.me()).rejects.toMatchObject({ status: 401 })
   })
 })

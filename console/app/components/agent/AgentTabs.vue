@@ -1,9 +1,9 @@
 <script setup lang="ts">
 const props = defineProps<{ current?: string }>()
-const api = useApi()
 const { t } = useI18n()
-const agents = useAsyncData('agent-tabs', () => api.listAgents(), { default: () => [] })
-const items = computed(() => agents.data.value.map(a => ({ id: a.agent.id, name: a.agent.name })))
+const dir = useDirectory()
+onMounted(() => void dir.ensure())
+const items = computed(() => dir.data.value.agents.map(a => ({ id: a.id, name: a.name })))
 </script>
 
 <template>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { OidcConfig } from '~/api/types'
+import { authorizeUrl, createPkce, exchangeCode, takeVerifier } from '~/utils/oidc'
 import { createOidcState, safeRedirect, takeOidcState } from '~/utils/security'
 
 definePageMeta({ layout: 'auth' })
@@ -7,16 +9,20 @@ const { t, locale } = useI18n()
 const switchLocale = useSwitchLocale()
 const api = useApi()
 const route = useRoute()
+const problem = useProblem()
 const { login } = useAuth()
 const mode = useNuxtApp().$apiMode
 
 const token = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
+const oidcConfig = ref<OidcConfig | null>(null)
 
 useHead({ title: () => `${t('login.title')} — agents-firewall` })
 
 const redirect = computed(() => safeRedirect(route.query.redirect, window.location.origin))
+const redirectUri = () => `${window.location.origin}/login`
+const oidcEnabled = computed(() => mode === 'mock' || (!!oidcConfig.value?.enabled && !!oidcConfig.value.authorization_endpoint && !!oidcConfig.value.token_endpoint))
 
 async function withToken(value: string, target = redirect.value) {
   busy.value = true
@@ -26,34 +32,62 @@ async function withToken(value: string, target = redirect.value) {
     await navigateTo(safeRedirect(target, window.location.origin))
   }
   catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    error.value = problem.text(e)
   }
   finally {
     busy.value = false
   }
 }
 
-function oidc() {
-  // Anti-CSRF: random state kept in sessionStorage, checked on the way back.
+async function oidc() {
+  // Anti-CSRF: random state kept in sessionStorage, checked on the way back (single use).
   const state = createOidcState(redirect.value, sessionStorage)
-  const url = api.oidcLoginUrl(`${window.location.origin}/login`, state)
-  if (url) window.location.href = url
-  // Mock mode: no identity provider, the demo session stands for an OIDC login.
-  else void withToken('demo-oidc-session', takeOidcState(state, sessionStorage).redirect)
+  const cfg = oidcConfig.value
+  if (mode === 'mock' || !cfg?.authorization_endpoint) {
+    // Mock mode: no identity provider, the demo session stands for an OIDC login.
+    void withToken('demo-oidc-session', takeOidcState(state, sessionStorage).redirect)
+    return
+  }
+  try {
+    const { challenge } = await createPkce(sessionStorage)
+    window.location.href = authorizeUrl(cfg.authorization_endpoint, { clientId: cfg.client_id ?? '', redirectUri: redirectUri(), scope: cfg.scopes ?? 'openid', state, challenge })
+  }
+  catch (e) {
+    // crypto.subtle needs a secure context (https).
+    error.value = problem.text(e)
+  }
 }
 
-// OIDC callback: the control plane redirects back with #access_token=…&state=… (never in the query string).
-onMounted(() => {
-  const hash = new URLSearchParams(window.location.hash.slice(1))
-  const accessToken = hash.get('access_token')
-  if (!accessToken) return
-  history.replaceState(null, '', window.location.pathname + window.location.search)
-  const check = takeOidcState(hash.get('state'), sessionStorage)
-  if (!check.ok) {
+onMounted(async () => {
+  try {
+    oidcConfig.value = await api.oidcConfig()
+  }
+  catch {
+    oidcConfig.value = null
+  }
+  // OIDC callback: ?code=…&state=… from the identity provider.
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('code')
+  if (!code) return
+  history.replaceState(null, '', window.location.pathname)
+  const check = takeOidcState(params.get('state'), sessionStorage)
+  const verifier = takeVerifier(sessionStorage)
+  const cfg = oidcConfig.value
+  if (!check.ok || !verifier || !cfg?.token_endpoint) {
     error.value = t('login.badState')
     return
   }
-  void withToken(accessToken, check.redirect)
+  busy.value = true
+  try {
+    const accessToken = await exchangeCode(cfg.token_endpoint, { clientId: cfg.client_id ?? '', redirectUri: redirectUri(), code, verifier })
+    await withToken(accessToken, check.redirect)
+  }
+  catch (e) {
+    error.value = problem.text(e)
+  }
+  finally {
+    busy.value = false
+  }
 })
 </script>
 
@@ -99,6 +133,7 @@ onMounted(() => {
     />
 
     <UButton
+      v-if="oidcEnabled"
       block
       size="lg"
       icon="i-lucide-log-in"
@@ -110,7 +145,10 @@ onMounted(() => {
       {{ t('login.oidc') }}
     </UButton>
 
-    <div class="flex items-center gap-3 text-[11px] text-text3">
+    <div
+      v-if="oidcEnabled"
+      class="flex items-center gap-3 text-[11px] text-text3"
+    >
       <span class="h-px flex-1 bg-line" />{{ t('login.or') }}<span class="h-px flex-1 bg-line" />
     </div>
 

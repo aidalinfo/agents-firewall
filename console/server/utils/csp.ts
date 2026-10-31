@@ -21,13 +21,16 @@ export function inlineScriptHashes(html: string): string[] {
   return [...out]
 }
 
-/** Strict CSP of the console; inline scripts are only allowed by hash. */
-export function contentSecurityPolicy(opts: { apiBase?: string, scriptHashes?: string[] }): string {
-  const api = apiOrigin(opts.apiBase)
+/**
+ * Strict CSP of the console; inline scripts are only allowed by hash. `oidcOrigin` is the
+ * identity provider whose token endpoint the console calls (authorization code + PKCE).
+ */
+export function contentSecurityPolicy(opts: { apiBase?: string, scriptHashes?: string[], oidcOrigin?: string }): string {
+  const connect = [apiOrigin(opts.apiBase), apiOrigin(opts.oidcOrigin)].filter((o): o is string => !!o)
   return [
     `default-src 'self'`,
     `script-src 'self'${opts.scriptHashes?.length ? ` ${opts.scriptHashes.join(' ')}` : ''}`,
-    `connect-src 'self'${api ? ` ${api}` : ''}`,
+    `connect-src 'self'${[...new Set(connect)].map(o => ` ${o}`).join('')}`,
     `img-src 'self' data:`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self'`,

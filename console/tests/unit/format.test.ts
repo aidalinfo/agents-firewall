@@ -5,7 +5,7 @@ import {
   formatNumber,
   formatRelative,
   formatTime,
-  ruleLabel,
+  flowRuleLabel,
   shortFlowId,
   verdictTone,
 } from '../../app/utils/format'
@@ -84,11 +84,13 @@ describe('formatRelative', () => {
   })
 })
 
-describe('ruleLabel', () => {
-  it('prefixes baseline rules with S and leaves zone rules numeric', () => {
-    expect(ruleLabel({ layer: 'baseline', rule_number: 3 })).toBe('S3')
-    expect(ruleLabel({ layer: 'zone', rule_number: 12 })).toBe('12')
-    expect(ruleLabel({ layer: 'implicit', rule_number: null })).toBe('—')
+describe('flowRuleLabel', () => {
+  const dec = (layer: string, rule_number: number | null, rule_name: string) => ({ layer, rule_number, rule_name, reason: '' })
+  it('follows the API convention of FlowListItem.rule_label', () => {
+    expect(flowRuleLabel({ verdict: 'allow', decision: dec('zone', 12, 'GitHub') })).toBe('12 · GitHub')
+    expect(flowRuleLabel({ verdict: 'deny', decision: dec('baseline', null, 'dns') })).toBe('socle · dns')
+    expect(flowRuleLabel({ verdict: 'deny', decision: dec('implicit', null, 'cleanup') })).toBe('default-deny')
+    expect(flowRuleLabel({ verdict: 'allow', decision: dec('implicit', null, '') })).toBe('implicit')
   })
 })
 

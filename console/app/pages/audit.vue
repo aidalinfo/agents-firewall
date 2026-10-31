@@ -3,7 +3,6 @@ import type { AuditEntry, AuditVerify, Interface } from '~/api/types'
 
 const { t } = useI18n()
 const api = useApi()
-const fmt = useFmt()
 
 useHead({ title: () => `${t('nav.audit')} — agents-firewall` })
 
@@ -25,7 +24,7 @@ async function load(reset = true) {
       limit: 50,
     })
     entries.value = reset ? page.items : [...entries.value, ...page.items]
-    cursor.value = page.next_cursor
+    cursor.value = page.next_cursor ?? null
     if (reset && iface.value === 'all' && actor.value === 'all') actors.value = [...new Set(page.items.map(e => e.actor.name))]
   }
   finally {
@@ -34,7 +33,7 @@ async function load(reset = true) {
 }
 
 const exporting = ref(false)
-const toast = useToast()
+const problem = useProblem()
 
 /** Fetches the export with the bearer token (never a token in a URL), then saves it as a file. */
 async function exportAudit() {
@@ -52,7 +51,7 @@ async function exportAudit() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   catch (e) {
-    toast.add({ title: t('audit.exportFailed'), description: e instanceof Error ? e.message : String(e), color: 'error' })
+    problem.notify(e, t('audit.exportFailed'))
   }
   finally {
     exporting.value = false
@@ -117,7 +116,7 @@ const actorItems = computed(() => [{ label: t('audit.allAuthors'), value: 'all' 
             <UIcon
               :name="chain.ok ? 'i-lucide-shield-check' : 'i-lucide-shield-alert'"
               class="size-[13px]"
-            />{{ chain.ok ? t('audit.chainChecked', { n: chain.checked, at: fmt.hm(chain.anchor_exported_at) }) : t('audit.chainKo') }}
+            />{{ chain.ok ? t('audit.chainOk', { n: chain.checked, sources: chain.anchor_sources.join(', ') }) : t('audit.chainKo', { seq: chain.broken_at ?? '?' }) }}
           </span>
           <UButton
             color="neutral"

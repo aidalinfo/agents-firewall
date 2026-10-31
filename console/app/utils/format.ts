@@ -146,3 +146,26 @@ export function splitSocket(addr: string): { host: string, port: string } {
   const m = /^\[?([^\]]+?)\]?:(\d+)$/.exec(addr)
   return m ? { host: m[1]!, port: m[2]! } : { host: addr, port: '' }
 }
+
+/** How a denied flow was refused, as the agent saw it (label key under `flow.deny.*`). */
+export type DenyKind = 'http403' | 'rst' | 'dnsRefused'
+
+export function denyKind(flow: Pick<FlowEvent, 'verdict' | 'app' | 'tls_inspected'> & { deny_mode?: FlowEvent['deny_mode'] }): DenyKind | null {
+  if (flow.verdict !== 'deny') return null
+  switch (flow.deny_mode) {
+    case 'http_403': return 'http403'
+    case 'tcp_reset': return 'rst'
+    case 'dns_refused': return 'dnsRefused'
+  }
+  // Events of gateways older than `deny_mode`: judged on the application.
+  if (flow.app === 'http' || (flow.app === 'https' && flow.tls_inspected)) return 'http403'
+  if (flow.app === 'dns') return 'dnsRefused'
+  return 'rst'
+}
+
+/** Destination socket of a flow; the requested name when the gateway never resolved it. */
+export function flowTarget(flow: Pick<FlowEvent, 'dst'> & { domain?: string | null }): string {
+  const { host, port } = splitSocket(flow.dst)
+  const unresolved = host === '0.0.0.0' || host === '::'
+  return unresolved && flow.domain && port ? `${flow.domain}:${port}` : flow.dst
+}

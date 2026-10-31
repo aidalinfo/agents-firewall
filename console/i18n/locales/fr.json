@@ -300,6 +300,11 @@
     "binary": "[contenu binaire · {size}]",
     "captureStarted": "Capture demandée pour {agent}",
     "closed": "connexion terminée",
+    "deny": {
+      "http403": "refusée par la passerelle (403 explicite)",
+      "rst": "connexion refusée (RST)",
+      "dnsRefused": "résolution refusée (DNS REFUSED)"
+    },
     "connRefused": "connexion refusée · règle {rule}",
     "conversation": "Conversation {id}",
     "copyId": "Copier l’identifiant du flux",
@@ -336,7 +341,6 @@
     "receivedByAgent": "reçu par l’agent :",
     "request": "requête",
     "response": "réponse",
-    "rst": "connexion refusée (RST)",
     "ruleLink": "Règle #{n}",
     "tab": {
       "agent": "Agent et conversation",

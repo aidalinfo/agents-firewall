@@ -937,7 +937,9 @@ export function createMockApi(opts: MockOptions = {}): MockApi {
     listAudit: (q = {}) => delay(() => page(audit.filter(e =>
       (!q.actor || e.actor.name === q.actor || e.actor.id === q.actor)
       && (!q.interface || e.interface === q.interface)
-      && (!q.action || (q.action.endsWith('*') ? e.action.startsWith(q.action.slice(0, -1)) : e.action === q.action))).map(e => clone(e)), q.limit ?? 100)),
+      && (!q.action || (q.action.endsWith('*') ? e.action.startsWith(q.action.slice(0, -1)) : e.action === q.action)))
+      .sort((a, b) => (q.order === 'asc' ? a.seq - b.seq : b.seq - a.seq))
+      .map(e => clone(e)), q.limit ?? 100)),
     verifyAudit: () => delay(() => ({ ok: true, checked: audit.length, broken_at: null, head_seq: audit.at(-1)?.seq ?? null, head_hash: audit.at(-1)?.hash ?? null, anchor_sources: ['db', 'file'] as never })),
     exportAudit: () => delay(() => new Blob(audit.map(e => `${JSON.stringify(e)}\n`), { type: 'application/x-ndjson' })),
 

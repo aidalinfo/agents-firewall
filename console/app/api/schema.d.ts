@@ -940,7 +940,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Audit entries (ascending seq) */
+        /** Audit entries, most recent first by default (`order=asc` for ascending seq) */
         get: operations["listAudit"];
         put?: never;
         post?: never;
@@ -1521,6 +1521,8 @@ export interface components {
             /** Format: uint32 */
             rule_number?: number | null;
         };
+        /** @description How the gateway refused a denied flow. */
+        DenyMode: "http_403" | "tcp_reset" | "dns_refused";
         /**
          * @description Destination category. `LlmProvider` carries the data-class exemption (EF-25).
          * @enum {string}
@@ -1638,6 +1640,11 @@ export interface components {
              */
             data_classes: string[];
             decision: components["schemas"]["DecisionRef"];
+            /**
+             * @description How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
+             * @default null
+             */
+            deny_mode: components["schemas"]["DenyMode"] | null;
             domain?: string | null;
             dst: string;
             /** Format: date-time */
@@ -1682,6 +1689,11 @@ export interface components {
              */
             data_classes: string[];
             decision: components["schemas"]["DecisionRef"];
+            /**
+             * @description How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
+             * @default null
+             */
+            deny_mode: components["schemas"]["DenyMode"] | null;
             domain?: string | null;
             dst: string;
             /** Format: date-time */
@@ -1817,6 +1829,11 @@ export interface components {
              */
             data_classes: string[];
             decision: components["schemas"]["DecisionRef"];
+            /**
+             * @description How a denied flow was refused, as seen by the agent (`None` for allowed flows and for events of gateways older than this field).
+             * @default null
+             */
+            deny_mode: components["schemas"]["DenyMode"] | null;
             domain?: string | null;
             dst: string;
             /** Format: date-time */
@@ -5150,6 +5167,8 @@ export interface operations {
     listAudit: {
         parameters: {
             query?: {
+                /** @description `desc` (default, most recent first) or `asc`. The cursor continues in the same order. */
+                order?: "desc" | "asc";
                 from_seq?: number;
                 actor?: string;
                 /** @description Exact action, or a prefix ending with `*` (`rule.*`). */

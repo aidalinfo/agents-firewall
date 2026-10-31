@@ -1,7 +1,7 @@
 {
-  "started_ms": 1793443281122,
-  "installed_ms": 1793443286929,
-  "ui_ms": 5807,
-  "agent_through_ms": 1793443288313,
-  "total_ms": 7191
+  "started_ms": 1793445107472,
+  "installed_ms": 1793445113169,
+  "ui_ms": 5697,
+  "agent_through_ms": 1793445113422,
+  "total_ms": 5950
 }

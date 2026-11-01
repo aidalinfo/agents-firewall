@@ -8,3 +8,4 @@
 .venv
 .env
 /demo/.state
+/deploy/tests/ingress/.work

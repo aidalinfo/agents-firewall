@@ -748,7 +748,10 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
         nets.keys().collect::<Vec<_>>(),
         vec!["front", "afw-ingress"]
     );
-    assert_eq!(nets["front"], original["services"]["bot"]["networks"]["front"]);
+    assert_eq!(
+        relay["networks"]["front"],
+        original["services"]["bot"]["networks"]["front"]
+    );
     assert_eq!(strings(&relay["cap_drop"]), vec!["ALL"]);
     assert_eq!(
         strings(&relay["cap_add"]),
@@ -759,7 +762,7 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
     let cmd = strings(&relay["command"])[2].replace("$$", "$");
     assert!(cmd.contains("GW='10.81.0.2'") && cmd.contains("AGENT='10.80.0.11'"), "{cmd}");
     assert!(cmd.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#), "{cmd}");
-    assert!(cmd.contains("PORTS='443 7000 8080 9000 90'") || cmd.contains("PORTS='90 443 7000 8080'"), "{cmd}");
+    assert!(cmd.contains("PORTS='90 443 7000 8080'"), "{cmd}");
     assert!(
         strings(&relay["healthcheck"]["test"])
             .join(" ")

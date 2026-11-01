@@ -313,7 +313,11 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
         }
     }
     for (field, decl_key) in NETWORK_FIELDS {
-        let Some(name) = entry.get(*field).and_then(Value::as_str).map(str::to_string) else {
+        let Some(name) = entry
+            .get(*field)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
             continue;
         };
         // Already declared `external` by another enrollment: inherit the recorded original.

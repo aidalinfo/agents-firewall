@@ -14,9 +14,8 @@ use afw_core::api::EnrollmentRequest;
 use afw_core::policy::AgentKind;
 use afw_enroll::{
     CoolifyClient, CoolifyKind, EnrollSpec, EnrollWarning, HermesSpec, IngressSpec, K8sSpec,
-    docker_run_args,
-    enroll_compose, enroll_coolify, k8s_manifests, netinit_run_args, patch_pod_template,
-    unenroll_compose, unenroll_coolify, validate_agent_name,
+    docker_run_args, enroll_compose, enroll_coolify, k8s_manifests, netinit_run_args,
+    patch_pod_template, unenroll_compose, unenroll_coolify, validate_agent_name,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::json;

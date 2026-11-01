@@ -764,8 +764,14 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
     );
     assert_eq!(relay["labels"]["afw.agent"].as_str(), Some("bot"));
     let cmd = strings(&relay["command"])[2].replace("$$", "$");
-    assert!(cmd.contains("GW='10.81.0.2'") && cmd.contains("AGENT='10.80.0.11'"), "{cmd}");
-    assert!(cmd.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#), "{cmd}");
+    assert!(
+        cmd.contains("GW='10.81.0.2'") && cmd.contains("AGENT='10.80.0.11'"),
+        "{cmd}"
+    );
+    assert!(
+        cmd.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#),
+        "{cmd}"
+    );
     assert!(cmd.contains("PORTS='90 443 7000 8080'"), "{cmd}");
     assert!(
         strings(&relay["healthcheck"]["test"])
@@ -773,7 +779,10 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
             .contains("/tmp/afw-ready")
     );
     // The ingress network keeps its declaration key, now external (created by the gateway).
-    assert_eq!(doc["networks"]["afw-ingress"]["external"].as_bool(), Some(true));
+    assert_eq!(
+        doc["networks"]["afw-ingress"]["external"].as_bool(),
+        Some(true)
+    );
     // The dry run states the mechanism.
     assert!(out.warnings.contains(&EnrollWarning::PortsRelayed {
         service: "bot".into(),
@@ -811,7 +820,11 @@ fn relay_order_and_default_network() {
     assert_eq!(names, ["afw-net-bot", "bot", "afw-in-bot", "other"]);
     let relay = service(&doc, "afw-in-bot");
     assert_eq!(
-        relay["networks"].as_mapping().unwrap().keys().collect::<Vec<_>>(),
+        relay["networks"]
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
         vec!["default", "afw-ingress"]
     );
     let back = unenroll_compose(&out.yaml, "bot").unwrap();
@@ -854,10 +867,14 @@ fn published_ports_without_ingress_or_unsupported_are_refused() {
         assert!(matches!(err, EnrollError::Unsupported(_)), "{y}: {err}");
     }
     // Without ports, no ingress is needed and nothing is added.
-    let out = enroll_compose("services:
+    let out = enroll_compose(
+        "services:
   bot:
     image: bot
-", &s).unwrap();
+",
+        &s,
+    )
+    .unwrap();
     let doc = parse(&out.yaml);
     assert!(doc["services"].get("afw-in-bot").is_none());
     assert!(doc["networks"].get("afw-ingress").is_none());

@@ -132,7 +132,9 @@ impl EnrollSpec {
         }
         if let Some(i) = &self.ingress {
             if i.network.trim().is_empty() {
-                return Err(EnrollError::InvalidSpec("ingress network name is empty".into()));
+                return Err(EnrollError::InvalidSpec(
+                    "ingress network name is empty".into(),
+                ));
             }
             if i.network == self.network {
                 return Err(EnrollError::InvalidSpec(

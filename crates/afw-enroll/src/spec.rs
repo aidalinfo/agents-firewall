@@ -49,8 +49,24 @@ pub struct EnrollSpec {
     pub ca_path_host: String,
     /// Hermes plugin installation (EF-61), `None` for a non-Hermes agent.
     pub hermes: Option<HermesSpec>,
-    /// Image of the `afw-net-<agent>` container (alpine + iproute2).
+    /// Image of the `afw-net-<agent>` container (alpine + iproute2 + socat), also used by the
+    /// `afw-in-<agent>` ingress relay.
     pub netinit_image: String,
+    /// Inbound path for the published ports of the agent (`afw-in-<agent>` relay routed through
+    /// the gateway), `None` = a service that publishes ports is refused.
+    #[serde(default)]
+    pub ingress: Option<IngressSpec>,
+}
+
+/// Ingress network of the gateway: the `afw-in-<agent>` relay reaches the agent through it, the
+/// gateway forwards to the internal network and masquerades, so that the agent answers to the
+/// gateway (its only route) and keeps no other interface or route (issue #22).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IngressSpec {
+    /// Ingress network of the gateway (`internal: true`), declared `external` in the agent compose.
+    pub network: String,
+    /// Gateway address on the ingress network (next hop of the relay towards the agent).
+    pub gateway_ip: IpAddr,
 }
 
 /// Hermes plugin installation parameters (EF-61).
@@ -113,6 +129,21 @@ impl EnrollSpec {
         }
         if self.netinit_image.trim().is_empty() {
             return Err(EnrollError::InvalidSpec("netinit_image is empty".into()));
+        }
+        if let Some(i) = &self.ingress {
+            if i.network.trim().is_empty() {
+                return Err(EnrollError::InvalidSpec("ingress network name is empty".into()));
+            }
+            if i.network == self.network {
+                return Err(EnrollError::InvalidSpec(
+                    "the ingress network must differ from the internal network".into(),
+                ));
+            }
+            if i.gateway_ip.is_ipv4() != self.agent_ip.is_ipv4() {
+                return Err(EnrollError::InvalidSpec(
+                    "ingress gateway_ip and agent_ip must be of the same address family".into(),
+                ));
+            }
         }
         if let Some(h) = &self.hermes {
             if !is_env_name(&h.agent_token_env) {
@@ -186,6 +217,11 @@ pub fn net_service_name(agent_name: &str) -> String {
     format!("afw-net-{agent_name}")
 }
 
+/// Name of the ingress relay service of an agent (only when the agent publishes ports).
+pub fn ingress_service_name(agent_name: &str) -> String {
+    format!("afw-in-{agent_name}")
+}
+
 /// Agent names end up in service names, labels and Kubernetes objects.
 pub fn validate_agent_name(name: &str) -> Result<(), EnrollError> {
     let ok = !name.is_empty()
@@ -244,8 +280,13 @@ pub enum EnrollWarning {
     LinksRemoved { service: String },
     /// `net.*` sysctls cannot be set on a container sharing a namespace; they were removed.
     NetSysctlsRemoved { service: String, keys: Vec<String> },
-    /// Ports moved to the holder sit on an `internal` network: Docker no longer publishes them.
-    PortsNotPublished { service: String },
+    /// The published ports are now served by the `afw-in-<agent>` relay, which forwards them to
+    /// the agent through the gateway (inbound TCP, not inspected).
+    PortsRelayed {
+        service: String,
+        relay: String,
+        ports: Vec<u16>,
+    },
     /// Kubernetes: a `hostPath` volume.
     HostPath { service: String, path: String },
     /// Kubernetes: an existing NetworkPolicy also allows egress of enrolled pods elsewhere than
@@ -295,9 +336,18 @@ impl std::fmt::Display for EnrollWarning {
                 "{service}: net.* sysctls were removed ({})",
                 keys.join(", ")
             ),
-            Self::PortsNotPublished { service } => write!(
+            Self::PortsRelayed {
+                service,
+                relay,
+                ports,
+            } => write!(
                 f,
-                "{service}: its ports were moved to the network holder, on an internal network Docker does not publish them any more"
+                "{service}: its published ports are now served by {relay}, which forwards TCP {} to the agent through the gateway (inbound traffic is not inspected; stopping the gateway cuts it too)",
+                ports
+                    .iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             Self::HostPath { service, path } => {
                 write!(f, "{service} mounts the host path {path}")

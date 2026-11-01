@@ -74,8 +74,8 @@ services:
         printf 'HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n%s peer=%s\n' "$$1" "$$SOCAT_PEERADDR"
         EOF
         chmod +x /tmp/reply
-        socat TCP-LISTEN:8080,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-a" &
-        exec socat TCP-LISTEN:9000,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-b"
+        socat TCP4-LISTEN:8080,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-a" &
+        exec socat TCP4-LISTEN:9000,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-b"
     ports:
       - "${AFW_IT_PORT_A:-18080}:8080"
       - target: 9000

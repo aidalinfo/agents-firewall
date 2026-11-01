@@ -475,7 +475,10 @@ fn order_is_preserved_and_holder_is_inserted_before_agent() {
         .keys()
         .map(|k| k.as_str().unwrap().to_string())
         .collect();
-    assert_eq!(names, vec!["postgres", "afw-net-daniel", "daniel-bot"]);
+    assert_eq!(
+        names,
+        vec!["postgres", "afw-net-daniel", "daniel-bot", "afw-in-daniel"]
+    );
     let top: Vec<_> = doc
         .as_mapping()
         .unwrap()

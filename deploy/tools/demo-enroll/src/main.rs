@@ -1,7 +1,7 @@
 //! `afw-demo-enroll compose <agents.base.yml>`: enrolls the demo agents with `afw_enroll::enroll_compose`
 //! and prints the Compose overlay used by the demo (demo/docker-compose.agents.yml).
 //! `afw-demo-enroll netinit`: prints `afw_enroll::netinit_script` for the demo spec of laurent-bot.
-//! `afw-demo-enroll enroll <file> <agent> <agent-ip> <gateway-ip> <network> <ca-path> <ingress-network>
+//! `afw-demo-enroll enroll <file|-> <agent> <agent-ip> <gateway-ip> <network> <ca-path> <ingress-network>
 //! <ingress-gateway-ip>`, `unenroll <file> <agent>` and `normalize <file>`: plain `enroll_compose` /
 //! `unenroll_compose` / YAML round trip, for the integration tests (deploy/tests/ingress.sh).
 
@@ -60,7 +60,7 @@ fn main() {
             print!("{}", overlay(&yaml));
         }
         Some("enroll") if args.len() == 10 => {
-            let yaml = std::fs::read_to_string(&args[2]).expect("read compose");
+            let yaml = read_input(&args[2]);
             let gateway: IpAddr = args[5].parse().expect("gateway ip");
             let s = EnrollSpec {
                 agent_name: args[3].clone(),
@@ -84,14 +84,14 @@ fn main() {
             print!("{}", out.yaml);
         }
         Some("unenroll") if args.len() == 4 => {
-            let yaml = std::fs::read_to_string(&args[2]).expect("read compose");
+            let yaml = read_input(&args[2]);
             print!(
                 "{}",
                 unenroll_compose(&yaml, &args[3]).unwrap_or_else(|e| panic!("unenroll: {e}"))
             );
         }
         Some("normalize") if args.len() == 3 => {
-            let yaml = std::fs::read_to_string(&args[2]).expect("read compose");
+            let yaml = read_input(&args[2]);
             let doc: Value = serde_yaml::from_str(&yaml).expect("yaml");
             print!("{}", serde_yaml::to_string(&doc).unwrap());
         }
@@ -101,6 +101,17 @@ fn main() {
             );
             std::process::exit(2);
         }
+    }
+}
+
+/// Contents of `path`, or of the standard input for `-`.
+fn read_input(path: &str) -> String {
+    if path == "-" {
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut s).expect("read stdin");
+        s
+    } else {
+        std::fs::read_to_string(path).expect("read compose")
     }
 }
 

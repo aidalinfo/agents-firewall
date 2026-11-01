@@ -164,7 +164,10 @@ fn spec() -> EnrollSpec {
         ca_path_host: "/etc/afw/ca.crt".into(),
         hermes: None,
         netinit_image: "afw-netinit:local".into(),
-        ingress: None,
+        ingress: Some(IngressSpec {
+            network: "afw-ingress".into(),
+            gateway_ip: "10.81.0.2".parse().unwrap(),
+        }),
     }
 }
 

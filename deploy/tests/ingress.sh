@@ -64,7 +64,7 @@ section "inbound ports"
 check "port A answers on the host (through the relay)" wait_for 30 answers "$AFW_IT_PORT_A" hello-from-agent-a
 check "port B answers on 127.0.0.1 (through the relay)" wait_for 30 answers "$AFW_IT_PORT_B" hello-from-agent-b
 check "the agent sees the gateway as the peer (symmetric return path)" \
-  bash -c '[ "$(curl -s -m 5 "http://127.0.0.1:$1/" | sed -n "s/.* peer=//p")" = "$2" ]' _ "$AFW_IT_PORT_A" "$GW_IP"
+  bash -c 'p=$(curl -s -m 5 "http://127.0.0.1:$1/" | sed -n "s/.* peer=//p"); echo "peer: $p"; [ "$p" = "$2" ]' _ "$AFW_IT_PORT_A" "$GW_IP"
 check "port B keeps its explicit host address (127.0.0.1)" \
   bash -c '[ "$(docker compose -p "$1" --project-directory "$2" -f "$3" port "afw-in-$4" 9000)" = "127.0.0.1:$5" ]' \
   _ "$PROJECT" "$DIR" "$tmp/enrolled.yml" "$AGENT" "$AFW_IT_PORT_B"
@@ -80,7 +80,7 @@ check "agent: a single interface up besides lo" \
   bash -c '[ "$(docker compose -p "$1" --project-directory "$2" -f "$3" exec -T "$4" ip -o link show up | grep -cv ": lo[:@]")" = 1 ]' \
   _ "$PROJECT" "$DIR" "$tmp/enrolled.yml" "$AGENT"
 check "agent: only the default route and the /32 to the gateway" \
-  bash -c 'r=$(docker compose -p "$1" --project-directory "$2" -f "$3" exec -T "$4" ip -4 route); echo "$r"; [ "$(wc -l <<<"$r")" = 2 ] && grep -q "^default via $5 " <<<"$r" && grep -q "^$5 dev " <<<"$r"' \
+  bash -c 'r=$(docker compose -p "$1" --project-directory "$2" -f "$3" exec -T "$4" ip -4 route); echo "$r"; [ "$(grep -c . <<<"$r")" = 2 ] && grep -q "^default via $5 " <<<"$r" && grep -q "^$5 dev " <<<"$r"' \
   _ "$PROJECT" "$DIR" "$tmp/enrolled.yml" "$AGENT" "$GW_IP"
 check "agent: proxy ignored, direct IP -> 403 from the gateway" \
   agent sh -c "out=\$(curl -s -m 8 --noproxy '*' -w ' %{http_code}' http://198.18.99.20/); echo \"\$out\"; case \"\$out\" in *'blocked by agents-firewall'*403) exit 0;; *) exit 1;; esac"

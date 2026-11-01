@@ -1,0 +1,7 @@
+# Standalone pnpm project (not a workspace member list): only declares which
+# dependencies may run install scripts.
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - esbuild
+  - unrs-resolver
+  - vue-demi

@@ -1,0 +1,34 @@
+[package]
+name = "afw-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "agents-firewall administration MCP server (afw-mcp)"
+
+[dependencies]
+afw-core = { workspace = true }
+afw-client = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+axum = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+
+[dev-dependencies]
+# Real API for end-to-end tests (skipped without AFW_TEST_DATABASE_URL).
+afw-api = { path = "../afw-api" }
+sqlx = { workspace = true }
+afw-client = { workspace = true, features = ["fake"] }
+reqwest = { workspace = true }
+
+[[bin]]
+name = "afw-mcp"
+path = "src/main.rs"

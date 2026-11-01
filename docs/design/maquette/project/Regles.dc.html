@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Base de règles — agents-firewall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.afw{--bg:#f6f7f9;--panel:#ffffff;--sub:#f0f2f5;--line:#e4e7ec;--line2:#d0d5dd;--text:#0b1220;--text2:#3e4a5c;--text3:#5a6677;--pri:#0369a1;--pri-bg:#e3f2fb;--pri-fg:#ffffff;--ok:#047857;--ok-bg:#e3f5ec;--ko:#b42318;--ko-bg:#fdeceb;--warn:#8a4b06;--warn-bg:#fdf1dc;--obs:#6d28d9;--obs-bg:#f1ebfd;--code:#f8f9fb}
+.afw.dark{--bg:#090b0f;--panel:#0e1117;--sub:#151a22;--line:#1c222c;--line2:#29313d;--text:#e8edf4;--text2:#a7b1bf;--text3:#7f8a9a;--pri:#5cc8ff;--pri-bg:#0f2533;--pri-fg:#04131c;--ok:#3fdc97;--ok-bg:#0d2a1f;--ko:#ff6b6b;--ko-bg:#331418;--warn:#f6b84b;--warn-bg:#2e220d;--obs:#b79bff;--obs-bg:#231a3a;--code:#0b0e13}
+.afw *{box-sizing:border-box}
+.afw button,.afw input,.afw select{font:inherit;color:inherit}
+.afw button{cursor:pointer}
+.afw .nav:hover,.afw .rrow:hover{background:var(--sub)}
+.afw input::placeholder{color:var(--text3)}
+.afw :focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+a{color:var(--pri)}a:hover{color:var(--text)}
+</style>
+</helmet>
+<div class="afw {{themeClass}}" style="min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap;">
+
+<nav aria-label="Navigation principale" style="flex: 1 1 224px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; padding: 14px 12px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px;">
+<span style="width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path><path d="M8.5 12h7"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.2;"><strong style="font-size: 14px;">agents-firewall</strong><span style="font-size: 11px; color: var(--text3);">Console · Pulse myIT</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Surveiller</span>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Journal</a>
+<a class="nav" href="Agent.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg>Agents</a>
+<a class="nav" href="FluxInternes.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 11l10-5M7 13l10 5"></path></svg><span style="flex: 1;">Flux internes</span><span style="font-size: 11px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 7px;">2</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Politique</span>
+<a class="nav" href="Regles.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--pri); background: var(--pri-bg); text-decoration: none; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg><span style="flex: 1;">Base de règles</span><span style="font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px;">{{navBadge}}</span></a>
+<a class="nav" href="Objets.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect></svg>Objets et zones</a>
+<a class="nav" href="Revisions.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"></path><path d="M3.5 3.5v5h5M12 7.5V12l3 2"></path></svg>Révisions et audit</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Infrastructure</span>
+<a class="nav" href="Passerelles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="7" rx="1.5"></rect><rect x="3.5" y="13" width="17" height="7" rx="1.5"></rect><path d="M7.5 7.5h.01M7.5 16.5h.01"></path></svg>Passerelles</a>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+<a href="Passerelles.dc.html" style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok);"></span>Politique installée</span><strong style="font-size: 13px;">Révision {{installedRev}} · 3/3 passerelles</strong></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px;"><span style="width: 28px; height: 28px; border-radius: 50%; background: var(--sub); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">KS</span><span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600;">Killian Stein</span><span style="font-size: 11px; color: var(--text3);">Administrateur</span></span></div>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<header style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+<h1 style="margin: 0; font-size: 16px; font-weight: 650;">Base de règles</h1>
+<span style="font-size: 12px; color: var(--text3);">Évaluée de haut en bas · première règle correspondante appliquée</span>
+<span style="flex: 1;"></span>
+<label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text3); min-width: 240px;"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Rechercher une règle</span><input type="search" placeholder="Nom, objet, domaine, n°…" style="border: 0; outline: 0; background: transparent; flex: 1; min-width: 0; font-size: 12.5px;"></label>
+<button type="button" onClick="{{toggleTheme}}" aria-label="Basculer clair / sombre" style="width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--line); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></button>
+</header>
+
+<section aria-label="Session de modification" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 16px; background: {{barBg}}; border-bottom: 1px solid var(--line);">
+<span style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+<span style="width: 30px; height: 30px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: {{barColor}};"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.3;"><strong style="font-size: 13px;">{{barTitle}}</strong><span style="font-size: 12px; color: var(--text2);">{{barSub}}</span></span>
+</span>
+<ol aria-label="Étapes" style="list-style: none; margin: 0 auto; padding: 0; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+<sc-for list="{{steps}}" as="st" hint-placeholder-count="3">
+<li style="display: flex; align-items: center; gap: 6px;"><span style="width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: {{st.dotBg}}; color: {{st.dotFg}};">{{st.n}}</span><span style="font-weight: {{st.weight}}; color: {{st.fg}};">{{st.label}}</span><sc-if value="{{st.arrow}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="color: var(--text3); padding: 0 4px;">→</span></sc-if></li>
+</sc-for>
+</ol>
+<span style="display: flex; gap: 8px; flex-wrap: wrap;">
+<sc-if value="{{isDraft}}" hint-placeholder-val="{{ true }}">
+<span style="display: flex; gap: 8px;"><button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); font-weight: 500;">Abandonner</button><button type="button" onClick="{{goPublish}}" style="height: 32px; padding: 0 14px; border-radius: 7px; border: 0; background: var(--pri); color: var(--pri-fg); font-weight: 650;">Vérifier et publier…</button></span>
+</sc-if>
+<sc-if value="{{isPublished}}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{goInstall}}" style="height: 32px; padding: 0 14px; border-radius: 7px; border: 0; background: var(--pri); color: var(--pri-fg); font-weight: 650;">Installer…</button>
+</sc-if>
+<sc-if value="{{isInstalled}}" hint-placeholder-val="{{ false }}">
+<a href="Main.dc.html" style="height: 32px; padding: 0 14px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); color: var(--text); text-decoration: none; font-weight: 600; display: flex; align-items: center;">Voir dans le journal</a>
+</sc-if>
+</span>
+</section>
+
+<sc-if value="{{showPublish}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Publier la session" style="margin: 14px 16px 0; padding: 16px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 20px;">
+<div style="flex: 1 1 360px; display: flex; flex-direction: column; gap: 8px;">
+<h2 style="margin: 0; font-size: 14px; font-weight: 650;">Différences avec la révision 42</h2>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;">
+<li style="display: flex; gap: 8px;"><span style="font-family: 'Geist Mono', monospace; font-weight: 700; color: var(--ok); width: 14px;">+</span><span>Règle <strong>12</strong> « Portail partenaire — api.exemple.com » · zone bots-internes · section Partenaires et portails</span></li>
+<li style="display: flex; gap: 8px;"><span style="font-family: 'Geist Mono', monospace; font-weight: 700; color: var(--ok); width: 14px;">+</span><span>Objet <span style="font-family: 'Geist Mono', monospace; font-size: 12px;">dom-api.exemple.com</span> (domaine exact)</span></li>
+<li style="display: flex; gap: 8px;"><span style="font-family: 'Geist Mono', monospace; font-weight: 700; color: var(--text3); width: 14px;">~</span><span>Règle « Nettoyage — tout refuser » renumérotée 12 → 13</span></li>
+</ul>
+</div>
+<div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 8px;">
+<h2 style="margin: 0; font-size: 14px; font-weight: 650;">Vérifications avant installation</h2>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;">
+<li style="display: flex; gap: 8px; align-items: baseline;"><span style="font-weight: 700; color: var(--ok);">OK</span><span>Aucune règle masquée par une règle plus haute</span></li>
+<li style="display: flex; gap: 8px; align-items: baseline;"><span style="font-weight: 700; color: var(--warn);">1</span><span>Règle expirée encore en place : 25 « Démo salon — temporaire » (zone ops)</span></li>
+<li style="display: flex; gap: 8px; align-items: baseline;"><span style="font-weight: 700; color: var(--warn);">1</span><span>Objet inutilisé : <span style="font-family: 'Geist Mono', monospace; font-size: 12px;">dom-ancien-crm.exemple.fr</span></span></li>
+</ul>
+<span style="font-size: 11.5px; color: var(--text3);">Avertissements non bloquants.</span>
+</div>
+<div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 8px;">
+<label for="afw-pubcomment" style="font-size: 12px; font-weight: 600;">Commentaire de révision</label>
+<input id="afw-pubcomment" type="text" placeholder="Pourquoi ce changement ?" style="height: 34px; border: 1px solid var(--line2); border-radius: 7px; background: var(--panel); padding: 0 10px;">
+<span style="display: flex; gap: 8px; justify-content: flex-end; margin-top: auto;"><button type="button" onClick="{{backDraft}}" style="height: 34px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Annuler</button><button type="button" onClick="{{doPublish}}" style="height: 34px; padding: 0 14px; border-radius: 7px; border: 0; background: var(--pri); color: var(--pri-fg); font-weight: 650;">Publier la révision 43</button></span>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{showInstall}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Installer la politique" style="margin: 14px 16px 0; padding: 16px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;"><h2 style="margin: 0; font-size: 14px; font-weight: 650;">Installer la révision 43</h2><span style="font-size: 12px; color: var(--text3);">Les passerelles qui portent la zone modifiée sont présélectionnées</span></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 10px;">
+<sc-for list="{{gws}}" as="g" hint-placeholder-count="3">
+<div style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;">
+<span style="width: 18px; height: 18px; margin-top: 1px; border-radius: 5px; border: 1.5px solid {{g.boxBorder}}; background: {{g.boxBg}}; color: var(--pri-fg); display: flex; align-items: center; justify-content: center; flex: none;"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg></span>
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12.5px;">{{g.name}}</strong><span style="font-size: 12px; color: var(--text2);">{{g.zones}}</span><span style="font-size: 11.5px; color: var(--text3);">{{g.state}}</span></span>
+</div>
+</sc-for>
+</div>
+<span style="display: flex; gap: 8px; justify-content: flex-end;"><button type="button" onClick="{{backPublished}}" style="height: 34px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Annuler</button><button type="button" onClick="{{doInstall}}" style="height: 34px; padding: 0 14px; border-radius: 7px; border: 0; background: var(--pri); color: var(--pri-fg); font-weight: 650;">Installer sur 3 passerelles</button></span>
+</section>
+</sc-if>
+
+<sc-if value="{{isInstalled}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Résultat de l’installation" style="margin: 14px 16px 0; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;">
+<strong style="font-size: 13px;">Résultat par passerelle</strong>
+<sc-for list="{{gws}}" as="g" hint-placeholder-count="3">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12.5px;"><span style="color: var(--ok); font-weight: 700;">✓</span><span style="font-family: 'Geist Mono', monospace; font-size: 12px;">{{g.name}}</span><span style="color: var(--text3);">{{g.result}}</span></span>
+</sc-for>
+</section>
+</sc-if>
+
+<div style="padding: 14px 16px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+<div role="tablist" aria-label="Zone" style="display: flex; gap: 4px; flex-wrap: wrap;">
+<sc-for list="{{zones}}" as="z" hint-placeholder-count="4">
+<button type="button" role="tab" aria-selected="{{z.on}}" onClick="{{z.pick}}" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid {{z.border}}; background: {{z.bg}}; color: {{z.fg}}; font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 7px;">{{z.name}}<span style="font-family: 'Geist Mono', monospace; font-size: 11px; font-weight: 500; opacity: .8;">{{z.count}}</span><sc-if value="{{z.obs}}" hint-placeholder-val="{{ false }}"><span style="font-size: 10.5px; font-weight: 700; color: var(--obs); background: var(--obs-bg); border-radius: 4px; padding: 0 5px;">observation</span></sc-if></button>
+</sc-for>
+</div>
+<span style="flex: 1;"></span>
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); font-weight: 500; display: flex; align-items: center; gap: 6px;"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Section</button>
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 0; background: var(--text); color: var(--bg); font-weight: 600; display: flex; align-items: center; gap: 6px;"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Règle</button>
+</div>
+
+<sc-if value="{{zoneObs}}" hint-placeholder-val="{{ false }}">
+<div style="margin: 10px 16px 0; padding: 10px 14px; border-radius: 8px; background: var(--obs-bg); color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; font-size: 12.5px;"><strong style="color: var(--obs);">Mode observation</strong><span>Depuis le 27/10 · tout est journalisé, rien n’est refusé (sauf le socle commun). 37 destinations distinctes observées, dont 9 non couvertes par une règle.</span><span style="flex: 1;"></span><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); font-weight: 600;">Proposer des règles depuis le trafic</button><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 0; background: var(--obs); color: #fff; font-weight: 600;">Passer en refus par défaut</button></div>
+</sc-if>
+
+<div style="margin: 10px 16px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;">
+<div style="min-width: 1080px;">
+<div style="display: grid; grid-template-columns: 46px minmax(190px, 1.4fr) 112px minmax(170px, 1fr) 118px 94px 82px 92px 96px 124px; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3);"><span>N°</span><span>Nom</span><span>Source</span><span>Destination</span><span>Service</span><span>Action</span><span>HTTPS</span><span>Trace</span><span>Expiration</span><span>Utilisations</span></div>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="5">
+<div style="display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--sub); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650;"><sc-if value="{{sec.locked}}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></sc-if><span>{{sec.title}}</span><span style="font-weight: 400; color: var(--text3);">{{sec.sub}}</span></div>
+<sc-for list="{{sec.rules}}" as="r" hint-placeholder-count="3">
+<div class="rrow" style="display: grid; grid-template-columns: 46px minmax(190px, 1.4fr) 112px minmax(170px, 1fr) 118px 94px 82px 92px 96px 124px; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); background: {{r.bg}};">
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600; color: {{r.nColor}};">{{r.n}}</span>
+<span style="display: flex; flex-direction: column; min-width: 0; line-height: 1.3;"><span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: {{r.strike}};">{{r.name}}</span><sc-if value="{{r.hasTag}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 5px; color: {{r.tagFg}}; background: {{r.tagBg}};">{{r.tag}}</span></sc-if></span><span style="font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.comment}}</span></span>
+<span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.src}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.dest}}</span>
+<span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.svc}}</span>
+<span><span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: {{r.aColor}}; background: {{r.aBg}};">{{r.action}}</span></span>
+<span style="font-size: 12px; color: var(--text2);">{{r.https}}</span>
+<span style="font-size: 12px; color: var(--text2);">{{r.trace}}</span>
+<span style="font-size: 12px; font-weight: {{r.expWeight}}; color: {{r.expColor}};">{{r.exp}}</span>
+<span style="display: flex; flex-direction: column; gap: 3px;"><span style="display: flex; justify-content: space-between; gap: 6px; font-size: 11.5px;"><span style="font-family: 'Geist Mono', monospace; font-weight: 600;">{{r.hits}}</span><span style="color: var(--text3);">{{r.last}}</span></span><span style="height: 4px; border-radius: 2px; background: var(--sub); overflow: hidden;"><span style="display: block; height: 4px; width: {{r.bar}}; background: {{r.barColor}};"></span></span></span>
+</div>
+</sc-for>
+</sc-for>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"dark","section":"Thème"},"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  state = { phase: 'draft', zone: 'bots-internes', theme: null };
+
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme || this.props.theme || 'dark';
+    const D = 'Détaillé';
+    const rule = (n, name, src, dest, svc, action, https, trace, exp, hits, last, bar, comment, extra) => Object.assign({ n, name, src, dest, svc, action, https, trace, exp, hits, last, bar, comment }, extra || {});
+    const socle = { title: 'Socle commun', sub: '· évalué en premier pour tous les agents · non contournable', locked: true, rules: [
+      rule('S1', 'Métadonnées cloud interdites', 'Toutes', 'grp-metadonnees-cloud', 'Tout', 'Refuser', '—', D, '—', '3', 'il y a 20 s', '4%', '169.254.169.254, metadata.google.internal…'),
+      rule('S2', 'Liste de refus globale', 'Toutes', 'grp-refus-global', 'Tout', 'Refuser', '—', D, '—', '41', 'il y a 6 min', '8%', 'Partage de fichiers anonyme, tunnels, collecteurs'),
+      rule('S3', 'Fournisseurs LLM', 'Toutes', 'grp-fournisseurs-llm', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '48 120', 'il y a 1 s', '100%', 'Journalisé, exempté du blocage par classe de donnée'),
+      rule('S4', 'Un secret ne sort jamais', 'Toutes', 'Toute destination', 'Classe : secret', 'Refuser', 'Déchiffré', D, '—', '7', 'il y a 34 s', '5%', 'Clés, jetons, mots de passe détectés dans le contenu'),
+      rule('S5', 'Inventaire infra vers Internet', 'Toutes', 'grp-internet', 'Classe : infra', 'Refuser', 'Déchiffré', D, '—', '2', 'il y a 3 h', '3%', 'IP internes, noms d’hôtes, fichiers de configuration')
+    ] };
+    const zonesData = {
+      'bots-internes': { count: '13', obs: false, sections: [
+        { title: 'Base', sub: '', rules: [
+          rule('1', 'Résolveur DNS interne', 'bots-internes', 'hote-resolveur-dns', 'DNS', 'Accepter', '—', 'Journal', '—', '22 410', 'il y a 1 s', '92%', ''),
+          rule('2', 'Dépôts de paquets', 'bots-internes', 'grp-depots-paquets', 'HTTPS GET', 'Accepter', 'Déchiffré', 'Journal', '—', '318', 'il y a 4 min', '10%', 'PyPI, npm, apt')
+        ] },
+        { title: 'Collaboration', sub: '', rules: [
+          rule('3', 'Microsoft Teams', 'bots-internes', 'grp-microsoft-teams', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '6 902', 'il y a 3 s', '60%', ''),
+          rule('4', 'Pulse Chat', 'bots-internes', 'hote-pulse-chat', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '1 120', 'il y a 12 s', '22%', '')
+        ] },
+        { title: 'Stockage et documents', sub: '', rules: [
+          rule('5', 'SharePoint et OneDrive', 'bots-internes', 'grp-microsoft-sharepoint', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '1 874', 'il y a 9 s', '30%', ''),
+          rule('6', 'Dépôts GitHub (lecture)', 'bots-internes', 'dom-github.com', 'HTTPS GET', 'Accepter', 'Déchiffré', D, '—', '402', 'il y a 2 min', '12%', 'Lecture seule : méthodes GET et HEAD'),
+          rule('7', 'Stockage S3 — URL présignées', 'bots-internes', 'dom-s3-scaleway-fr-par', 'HTTPS PUT', 'Accepter', 'Déchiffré', D, '—', '612', 'il y a 15 s', '18%', 'Remplace le faux positif de l’egress-guard')
+        ] },
+        { title: 'Messagerie', sub: '', rules: [
+          rule('8', 'Relais SMTP interne', 'bots-internes', 'hote-smtp-relais', 'TCP 587', 'Accepter', '—', 'Journal', '—', '0', 'jamais', '0%', 'Jamais utilisée depuis 30 j', { tag: 'inutilisée', tagFg: 'var(--text2)', tagBg: 'var(--sub)' }),
+          rule('9', 'Microsoft 365 (Graph)', 'bots-internes', 'grp-microsoft-365', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '2 340', 'il y a 46 s', '34%', '')
+        ] },
+        { title: 'Outils internes', sub: '', rules: [
+          rule('10', 'GLPI interne', 'bots-internes', 'hote-glpi', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '880', 'il y a 55 s', '20%', '')
+        ] },
+        { title: 'Partenaires et portails', sub: '', rules: [
+          rule('11', 'Portails partenaires', 'bots-internes', 'grp-portails-partenaires', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '57', 'il y a 18 min', '6%', ''),
+          rule('12', 'Portail partenaire — api.exemple.com', 'bots-internes', 'dom-api.exemple.com', 'HTTPS', 'Accepter', 'Déchiffré', D, '29/11/2026', '—', 'pas encore installée', '0%', 'Ouvert depuis le journal, flux f-8c21e4', { isNew: true, tag: 'session', tagFg: 'var(--pri)', tagBg: 'var(--pri-bg)' })
+        ] },
+        { title: 'Nettoyage', sub: '· obligatoire, toujours en dernier', rules: [
+          rule('13', 'Nettoyage — tout refuser', 'bots-internes', 'Toute destination', 'Tout', 'Refuser', 'Déchiffré', D, '—', '1 902', 'il y a 2 s', '40%', 'Était la règle 12')
+        ] }
+      ] },
+      'ops': { count: '7', obs: false, sections: [
+        { title: 'Administration (surveillée)', sub: '· flux internes autorisés et journalisés', rules: [
+          rule('20', 'Résolveur DNS interne', 'ops', 'hote-resolveur-dns', 'DNS', 'Accepter', '—', 'Journal', '—', '9 220', 'il y a 1 s', '80%', ''),
+          rule('21', 'API Coolify (surveillée)', 'ops', 'hote-coolify', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '96', 'il y a 27 s', '9%', 'Actions journalisées : redéploiement, variables'),
+          rule('22', 'Bases internes (surveillées)', 'ops', 'grp-bases-internes', 'TCP 5432', 'Accepter', '—', 'Journal', '—', '1 233', 'il y a 1 min', '26%', ''),
+          rule('23', 'API Kubernetes (surveillée)', 'ops', 'hote-k8s-api-ecoprod', 'HTTPS 6443', 'Accepter', 'Déchiffré', D, '—', '4 018', 'il y a 4 s', '50%', 'exec, création de pod : alerte si inhabituel'),
+          rule('24', 'SSH vers VM Proxmox', 'ops', 'grp-vm-proxmox', 'SSH', 'Accepter', '—', 'Journal', '31/12/2026', '64', 'il y a 2 h', '7%', 'Hôte, compte, durée, volumes')
+        ] },
+        { title: 'Temporaire', sub: '', rules: [
+          rule('25', 'Démo salon — temporaire', 'ops', 'dom-demo.exemple.org', 'HTTPS', 'Accepter', 'Déchiffré', D, '28/10/2026', '12', 'il y a 3 j', '3%', 'Expirée : n’est plus appliquée', { expired: true, tag: 'expirée', tagFg: 'var(--warn)', tagBg: 'var(--warn-bg)' })
+        ] },
+        { title: 'Nettoyage', sub: '· obligatoire, toujours en dernier', rules: [
+          rule('26', 'Nettoyage — tout refuser', 'ops', 'Toute destination', 'Tout', 'Refuser', 'Déchiffré', D, '—', '88', 'il y a 5 min', '6%', '')
+        ] }
+      ] },
+      'bots-clients': { count: '2', obs: false, sections: [
+        { title: 'Client ACME', sub: '', rules: [
+          rule('30', 'Portail ACME', 'bots-clients', 'dom-portail.acme.example', 'HTTPS', 'Accepter', 'Déchiffré', D, '—', '730', 'il y a 40 s', '30%', '')
+        ] },
+        { title: 'Nettoyage', sub: '· obligatoire, toujours en dernier', rules: [
+          rule('31', 'Nettoyage — tout refuser', 'bots-clients', 'Toute destination', 'Tout', 'Refuser', 'Déchiffré', D, '—', '214', 'il y a 1 min', '14%', '')
+        ] }
+      ] },
+      'nouveaux-bots': { count: '1', obs: true, sections: [
+        { title: 'Nettoyage', sub: '· en observation : journalise sans refuser', rules: [
+          rule('40', 'Nettoyage — tout refuser', 'nouveaux-bots', 'Toute destination', 'Tout', 'Observer', 'Déchiffré', D, '—', '5 410', 'il y a 3 s', '70%', 'hermes-compta · observation depuis le 27/10', { obs: true })
+        ] }
+      ] }
+    };
+    const zd = zonesData[s.zone];
+    const deco = (r) => {
+      const ko = r.action === 'Refuser';
+      const obs = r.action === 'Observer';
+      return Object.assign({}, r, {
+        bg: r.isNew && s.phase !== 'installed' ? 'var(--pri-bg)' : 'transparent',
+        nColor: r.n.charAt(0) === 'S' ? 'var(--obs)' : 'var(--text)',
+        hasTag: !!r.tag && !(r.isNew && s.phase === 'installed'),
+        strike: r.expired ? 'line-through' : 'none',
+        aColor: obs ? 'var(--obs)' : ko ? 'var(--ko)' : 'var(--ok)', aBg: obs ? 'var(--obs-bg)' : ko ? 'var(--ko-bg)' : 'var(--ok-bg)',
+        expColor: r.expired ? 'var(--warn)' : r.exp === '—' ? 'var(--text3)' : 'var(--text)', expWeight: r.expired ? '700' : '400',
+        hits: r.isNew && s.phase === 'installed' ? '3' : r.hits, last: r.isNew && s.phase === 'installed' ? 'il y a 4 s' : r.last,
+        bar: r.isNew && s.phase === 'installed' ? '2%' : r.bar,
+        barColor: ko ? 'var(--ko)' : obs ? 'var(--obs)' : 'var(--ok)'
+      });
+    };
+    const sections = [socle].concat(zd.sections).map((sec) => Object.assign({}, sec, { locked: !!sec.locked, sub: sec.sub || ('· zone ' + s.zone), rules: sec.rules.map(deco) }));
+    const zones = Object.keys(zonesData).map((k) => ({ name: k, count: zonesData[k].count, obs: zonesData[k].obs, on: String(s.zone === k), border: s.zone === k ? 'var(--text)' : 'var(--line2)', bg: s.zone === k ? 'var(--text)' : 'var(--panel)', fg: s.zone === k ? 'var(--bg)' : 'var(--text2)', pick: () => this.setState({ zone: k }) }));
+    const order = ['draft', 'publish', 'published', 'install', 'installed'];
+    const idx = order.indexOf(s.phase);
+    const stepAt = [0, 0, 1, 1, 2][idx];
+    const stepDone = [-1, -1, 0, 0, 2][idx];
+    const steps = ['Modifier', 'Publier', 'Installer'].map((label, i) => ({
+      n: i <= stepDone ? '✓' : String(i + 1), label, arrow: i < 2,
+      dotBg: i <= stepDone ? 'var(--ok)' : i === stepAt ? 'var(--pri)' : 'var(--sub)',
+      dotFg: i <= stepDone || i === stepAt ? 'var(--pri-fg)' : 'var(--text3)',
+      fg: i === stepAt ? 'var(--text)' : 'var(--text2)', weight: i === stepAt ? '650' : '500'
+    }));
+    const bar = {
+      draft: ['Session « Ouverture api.exemple.com » · 1 modification', 'Killian Stein · ouverte il y a 3 min · 1 objet verrouillé pour les autres sessions', 'var(--warn-bg)', 'var(--warn)'],
+      publish: ['Session « Ouverture api.exemple.com » · vérification', 'Relisez les différences, puis publiez', 'var(--warn-bg)', 'var(--warn)'],
+      published: ['Révision 43 publiée · pas encore installée', 'Publiée par Killian Stein à 14:36 · les passerelles appliquent toujours la révision 42', 'var(--pri-bg)', 'var(--pri)'],
+      install: ['Révision 43 publiée · choix des passerelles', 'L’installation est atomique par passerelle ; en cas d’échec la révision 42 reste active', 'var(--pri-bg)', 'var(--pri)'],
+      installed: ['Révision 43 installée sur 3/3 passerelles', 'daniel-bot peut maintenant joindre api.exemple.com · retour arrière possible depuis Révisions', 'var(--ok-bg)', 'var(--ok)']
+    }[s.phase];
+    const gws = [
+      { name: 'gw-hermes-01', zones: 'bots-internes · daniel-bot, laurent-bot', state: 'Docker compose · active : rév. 42', result: 'rév. 43 active · 1,2 s', sel: true },
+      { name: 'gw-hermes-02', zones: 'bots-clients, nouveaux-bots', state: 'Coolify · active : rév. 42', result: 'rév. 43 active · 0,9 s', sel: true },
+      { name: 'gw-ops-01', zones: 'ops · vulcain-bot', state: 'Kubernetes ecoprod · active : rév. 42', result: 'rév. 43 active · 1,6 s', sel: true }
+    ].map((g) => Object.assign(g, { boxBg: g.sel ? 'var(--pri)' : 'transparent', boxBorder: g.sel ? 'var(--pri)' : 'var(--line2)' }));
+    return {
+      themeClass: theme === 'dark' ? 'dark' : 'light',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      navBadge: s.phase === 'installed' ? '0' : '1',
+      installedRev: s.phase === 'installed' ? '43' : '42',
+      barTitle: bar[0], barSub: bar[1], barBg: bar[2], barColor: bar[3], steps,
+      isDraft: s.phase === 'draft' || s.phase === 'publish', isPublished: s.phase === 'published' || s.phase === 'install', isInstalled: s.phase === 'installed',
+      showPublish: s.phase === 'publish', showInstall: s.phase === 'install',
+      goPublish: () => this.setState({ phase: 'publish' }), backDraft: () => this.setState({ phase: 'draft' }),
+      doPublish: () => this.setState({ phase: 'published' }), goInstall: () => this.setState({ phase: 'install' }),
+      backPublished: () => this.setState({ phase: 'published' }), doInstall: () => this.setState({ phase: 'installed' }),
+      zones, sections, gws, zoneObs: zd.obs
+    };
+  }
+}
+</script>
+</body>
+</html>

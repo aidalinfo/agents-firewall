@@ -1,0 +1,78 @@
+Enroll a container agent behind its gateway and create the agent in a zone
+
+Usage: afw enroll [OPTIONS] --zone <ZONE> <TARGET>
+
+Arguments:
+  <TARGET>  Container, compose service or workload of the agent
+
+Options:
+      --json
+          Print JSON instead of tables
+      --name <NAME>
+          Agent name [default: the target]
+      --config <FILE>
+          Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --zone <ZONE>
+          Zone of the agent (name or id)
+      --gateway <GATEWAY>
+          Gateway (name or id) [default: the only gateway]
+      --url <URL>
+          Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>
+          Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --compose <FILE>
+          Docker Compose file to transform
+      --coolify <UUID>
+          Coolify application (or service, with --coolify-service) UUID
+      --session <ID>
+          Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --k8s <FILE>
+          Kubernetes workload manifest to patch
+      --hermes
+          Hermes agent: mount the plugin and create its token
+      --ip <IP>
+          Agent address on the gateway's internal network (its identity)
+      --gateway-ip <GATEWAY_IP>
+          Gateway address on the internal network [default: 10.77.0.2]
+      --network <NETWORK>
+          Internal network of the gateway [default: afw-internal]
+      --proxy-url <PROXY_URL>
+          Explicit proxy URL [default: http://<gateway-ip>:3128]
+      --ca-path <CA_PATH>
+          Host path of the gateway inspection CA certificate [default: /etc/agents-firewall/gateway.crt]
+      --netinit-image <NETINIT_IMAGE>
+          Image of the afw-net-<agent> network container [default: afw-netinit:local]
+      --console-url <CONSOLE_URL>
+          Console URL used by the Hermes plugin [default: the configured URL]
+      --hermes-plugin-dir <HERMES_PLUGIN_DIR>
+          Host directory of the Hermes plugin [default: ./integrations/hermes]
+      --token-env <TOKEN_ENV>
+          Environment variable holding the Hermes plugin token [default: AFW_TOKEN_<AGENT>]
+      --env-file <FILE>
+          File (.env) where the Hermes plugin token is written (mode 0600) instead of printed
+      --coolify-service
+          Coolify: the UUID is a service, not an application
+      --coolify-url <COOLIFY_URL>
+          Coolify URL [env: AFW_COOLIFY_URL=]
+      --namespace <NAMESPACE>
+          Kubernetes: namespace of the agents [default: the workload's, else `default`]
+      --gateway-cluster-ip <GATEWAY_CLUSTER_IP>
+          Kubernetes: fixed ClusterIP of the gateway Service
+      --gateway-image <GATEWAY_IMAGE>
+          Kubernetes: gateway image [default: afw-gateway:local]
+      --registration-secret <REGISTRATION_SECRET>
+          Kubernetes: Secret holding the gateway registration token [default: afw-gateway-registration]
+      --with-gateway
+          Kubernetes: also output the gateway manifests of the namespace
+  -o, --output <OUTPUT>
+          Output file of the transformed manifest [default: compose file in place, k8s to stdout]
+      --apply
+          Docker Compose: run `docker compose up -d` afterwards
+      --publish <COMMENT>
+          Publish the session right away with this comment
+      --dry-run
+          Show the transformation without calling the API nor writing anything
+  -h, --help
+          Print help
+  -V, --version
+          Print version

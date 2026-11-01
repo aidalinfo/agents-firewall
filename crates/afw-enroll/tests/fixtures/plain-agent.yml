@@ -1,0 +1,8 @@
+services:
+  laurent-bot:
+    image: alpine:3.20
+    command: ["sleep", "infinity"]
+    environment:
+      LOG_LEVEL: debug
+    labels:
+      team: ops

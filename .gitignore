@@ -1,24 +1,10 @@
-# Rust
-/target/
-**/target/
-# Node / Nuxt
-node_modules/
-.nuxt/
-.output/
-.nitro/
-dist/
-# Python
-__pycache__/
+/target
+**/node_modules
+**/.nuxt
+**/.output
+**/dist
+**/__pycache__
 *.pyc
-.venv/
-# Env & secrets
+.venv
 .env
-.env.*
-!.env.example
-*.pem
-*.key
-# OS / editors
-.DS_Store
-.idea/
-.vscode/
-*.swp
+/demo/.state

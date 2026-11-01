@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ToolCallEvent",
+  "description": "Tool call reported by the Hermes plugin (`POST /api/v1/ingest/tool-calls`).",
+  "type": "object",
+  "required": [
+    "agent",
+    "args_summary",
+    "conversation_id",
+    "id",
+    "started_at",
+    "tool"
+  ],
+  "properties": {
+    "agent": {
+      "description": "Agent name or id.",
+      "type": "string"
+    },
+    "args_summary": {
+      "type": "string"
+    },
+    "conversation_id": {
+      "type": "string"
+    },
+    "ended_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tool": {
+      "type": "string"
+    }
+  }
+}

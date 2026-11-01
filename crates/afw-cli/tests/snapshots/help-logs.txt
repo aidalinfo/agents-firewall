@@ -1,0 +1,20 @@
+Traffic log: flows, flow detail, DNS, live tail
+
+Usage: afw logs [OPTIONS] <COMMAND>
+
+Commands:
+  flows  Search flows (newest first)
+  stats  Flow counts over time (allowed, denied, observed)
+  show   Flow detail: HTTP exchanges, rule trace, correlated tool call, allow proposal
+  dns    Search DNS queries
+  tail   Follow live events (Ctrl-C to stop)
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --json            Print JSON instead of tables
+      --config <FILE>   Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --url <URL>       Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>  Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --session <ID>    Editing session to use (default: your open session) [env: AFW_SESSION=]
+  -h, --help            Print help
+  -V, --version         Print version

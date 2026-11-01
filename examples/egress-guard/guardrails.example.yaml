@@ -1,0 +1,158 @@
+# Exemple ANONYMISÉ et générique d'une politique egress-guard « v2 egress-first ».
+#
+# Il illustre le format accepté par `afw import egress-guard` (crate `afw-import`, ADR 0026). Aucun nom,
+# hôte ni motif n'est repris d'une politique réelle : les domaines internes sont en `example`, les autres
+# sont des services publics génériques.
+#
+#   afw import egress-guard examples/egress-guard/guardrails.example.yaml --zone assistant
+#
+# Format (tous les blocs sont facultatifs) :
+#   version         2 (« v2 egress-first ») ; une autre valeur est importée avec un avertissement.
+#   senders         expéditeurs autorisés (mail, messagerie) : pas d'équivalent réseau, signalé « non converti ».
+#   tiers           niveaux de confiance des destinations ; `category` facultative : `internal` ou `llm_provider`
+#                   (fournisseur de LLM : journalisé en détail, exempté du blocage par classe de données, EF-25).
+#   data_classes    classes de données détectées par expressions régulières (syntaxe Rust `regex`) ;
+#                   `category` facultative (secret, infra, commercial, personal, custom), sinon déduite du nom.
+#   destinations    `default: deny` (seule valeur possible côté agents-firewall), `allow` (hôtes autorisés,
+#                   avec `tier` et éventuellement `ports`), `deny` (hôtes refusés).
+#                   Hôte : nom exact, joker `*.domaine` (sous-domaines seulement, pas le domaine lui-même),
+#                   adresse IP ou réseau CIDR.
+#   matrix          classe de donnée × tier → allow | log | gate | deny. Tiers spéciaux : `any` (toutes les
+#                   destinations autorisées) et `unlisted` (destinations non listées, déjà refusées).
+#   action_classes  classes d'actions du plugin Hermes : `decision`, `tools` (globs), `patterns` (regex sur
+#                   « nom de l'outil » puis une ligne « clé: valeur » par argument, ADR 0015).
+#   logging         remplacé par le journal de la console.
+# Tout autre champ est signalé dans le rapport d'import (jamais ignoré silencieusement).
+
+version: 2
+profile: egress-first
+description: Assistant interne d'exemple — politique de sortie anonymisée.
+
+senders:
+  allowed:
+    - assistant@example.com
+    - noreply@example.com
+
+tiers:
+  internal:
+    category: internal
+    description: Services internes de l'organisation
+  trusted:
+    description: Services SaaS sous contrat
+  partner:
+    description: Partenaires et clients
+  public:
+    description: Sites publics de documentation
+  llm:
+    category: llm_provider
+    description: Fournisseurs de modèles de langage
+
+data_classes:
+  secrets:
+    description: Clés d'API, jetons, mots de passe
+    patterns:
+      - name: aws_access_key
+        regex: 'AKIA[0-9A-Z]{16}'
+      - name: github_token
+        regex: 'gh[pousr]_[A-Za-z0-9]{36}'
+      - name: bearer_header
+        regex: '(?i)bearer\s+[A-Za-z0-9._\-]{20,}'
+      # Motif historique à l'origine du faux positif quotidien sur les envois S3 présignés (EF-72) :
+      # il est retiré à l'import, la classe intégrée d'afw-dlp couvre les vrais secrets.
+      - name: aws_signature
+        regex: '(?i)x-amz-(?:signature|security-token)=[A-Za-z0-9%/+=]{20,}'
+      - name: example_api_key
+        regex: 'exk_[a-z0-9]{32}'
+  infra_inventory:
+    category: infra
+    description: Adresses et noms internes
+    patterns:
+      - name: private_ipv4
+        regex: '\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+      - name: internal_host
+        regex: '\b[a-z0-9-]+\.corp\.example\b'
+  commercial:
+    description: Prix et références de devis
+    patterns:
+      - name: price_eur
+        regex: '\b\d{1,3}(?:[ .]\d{3})*,\d{2} ?€'
+      - name: quote_ref
+        regex: '\bQUOTE-\d{6}\b'
+
+destinations:
+  default: deny
+  allow:
+    - host: "*.corp.example"
+      tier: internal
+    - host: graph.microsoft.com
+      tier: trusted
+    - host: login.microsoftonline.com
+      tier: trusted
+    - host: "*.s3.eu-west-3.amazonaws.com"
+      tier: trusted
+    - host: api.partner.example
+      tier: partner
+    - host: smtp.partner.example
+      tier: partner
+      ports: [587]
+    - host: docs.python.org
+      tier: public
+    - host: "*.wikipedia.org"
+      tier: public
+    - host: api.anthropic.com
+      tier: llm
+    - host: api.openai.com
+      tier: llm
+  deny:
+    - pastebin.com
+    - "*.ngrok.io"
+    - transfer.sh
+
+matrix:
+  secrets:
+    internal: gate
+    trusted: deny
+    partner: deny
+    public: deny
+    llm: allow
+  infra_inventory:
+    internal: allow
+    trusted: log
+    partner: gate
+    public: deny
+    llm: allow
+  commercial:
+    internal: allow
+    trusted: allow
+    partner: log
+    public: deny
+    llm: allow
+
+action_classes:
+  irreversible:
+    name: Action irréversible
+    decision: gate
+    tools: ["delete_*", "*_delete", "mail_send"]
+    patterns: []
+  access:
+    name: Partage ou élévation d'accès
+    decision: gate
+    tools: ["*_share_*", "*_permission*"]
+    patterns: []
+  infra_destructive:
+    name: Infrastructure destructive
+    decision: gate
+    tools: ["terminal", "shell", "coolify_*"]
+    patterns:
+      - '(?i)\brm\s+-[a-z]*r'
+      - '(?i)\b(?:kubectl|docker|helm|terraform)\b.*\b(?:delete|destroy|rm|prune)\b'
+      - '(?i)\bDROP\s+(?:TABLE|DATABASE)\b'
+  paid_generation:
+    name: Génération payante
+    decision: log
+    tools: ["image_*", "video_*"]
+    patterns: []
+
+logging:
+  path: data/logs/egress-guard.log
+  max_entry_chars: 200

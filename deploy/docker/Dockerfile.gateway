@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+# afw-gateway: data plane of one agents host (plan §4 L6, ADR 0003). Multi-stage build.
+# Build (from the repository root): docker build -t afw-gateway:local -f deploy/docker/Dockerfile.gateway .
+# Runs as root: the entrypoint installs nftables rules (NET_ADMIN) and the gateway binds :53.
+# The inspection CA private key stays in the state volume (/var/lib/afw/ca, 0600); only its
+# public certificate is exported to /var/lib/afw/public/gateway.crt.
+
+FROM rust:1.91-bookworm AS build
+WORKDIR /src
+ENV CARGO_TERM_COLOR=never \
+    CARGO_BUILD_JOBS=3
+COPY . .
+# The base image already pins Rust 1.91; drop the toolchain file so rustup does not fetch components.
+RUN rm -f rust-toolchain.toml
+RUN --mount=type=cache,id=afw-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=afw-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=afw-docker-target,target=/src/target,sharing=locked \
+    set -eux; \
+    locked=""; if [ -f Cargo.lock ]; then locked="--locked"; fi; \
+    cargo build --release -p afw-gateway --bin afw-gateway $locked; \
+    install -D -m 0755 target/release/afw-gateway /out/afw-gateway
+
+FROM debian:bookworm-slim
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl nftables iproute2 procps; \
+    rm -rf /var/lib/apt/lists/*; \
+    install -d -m 0700 /var/lib/afw; \
+    install -d -m 0755 /var/lib/afw/public
+COPY --from=build /out/afw-gateway /usr/local/bin/afw-gateway
+COPY deploy/docker/gateway-entrypoint.sh /usr/local/bin/gateway-entrypoint
+RUN chmod 0755 /usr/local/bin/gateway-entrypoint
+LABEL org.opencontainers.image.title="afw-gateway" \
+      org.opencontainers.image.description="agents-firewall gateway (data plane)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/aidalinfo/agents-firewall"
+ENV AFW_STATE_DIR=/var/lib/afw \
+    AFW_CA_EXPORT=/var/lib/afw/public/gateway.crt \
+    AFW_INTERCEPT=transparent \
+    RUST_LOG=info
+WORKDIR /var/lib/afw
+# 15001: transparent TCP — 3128: explicit proxy — 53: DNS (udp+tcp) — 9090: health/metrics
+EXPOSE 15001 3128 53/udp 53/tcp 9090
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:9090/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/gateway-entrypoint"]

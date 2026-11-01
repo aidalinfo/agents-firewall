@@ -1,0 +1,14 @@
+apiVersion: v2
+name: agents-firewall
+description: Firewall for AI agents — control plane (API, console, PostgreSQL) and optional per-namespace gateways
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+license: Apache-2.0
+home: https://github.com/aidalinfo/agents-firewall
+sources:
+  - https://github.com/aidalinfo/agents-firewall
+keywords: [firewall, egress, ai-agents, security]
+annotations:
+  artifacthub.io/license: Apache-2.0

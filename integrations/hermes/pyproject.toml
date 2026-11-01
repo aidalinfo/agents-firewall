@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "afw-hermes"
+version = "0.1.0"
+description = "agents-firewall plugin for Hermes Agent: tool-call correlation and action-class gating"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+# No runtime dependency outside the standard library (urllib, json, threading, queue, ssl).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+afw-hermes-hook = "afw_hermes.hook:main"
+
+[project.entry-points."hermes_agent.plugins"]
+afw-hermes = "afw_hermes"
+
+[tool.setuptools]
+packages = ["afw_hermes"]
+
+[tool.setuptools.package-data]
+afw_hermes = ["plugin.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

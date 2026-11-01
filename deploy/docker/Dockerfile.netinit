@@ -1,0 +1,18 @@
+# afw-netinit: network-namespace holder of an enrolled agent (ADR 0003 « pause », ADR 0023).
+# Runs afw_enroll::netinit_script (deploy/docker/netinit.sh, kept identical by deploy/tests/enroll-sync.sh).
+# The script needs `ip` (iproute2), `awk` (busybox) and /etc/ssl/certs/ca-certificates.crt (ca-certificates).
+# Build: docker build -t afw-netinit:local -f deploy/docker/Dockerfile.netinit deploy/docker
+FROM alpine:3.20
+RUN apk add --no-cache iproute2 ca-certificates
+COPY netinit.sh /usr/local/bin/afw-netinit
+RUN chmod 0755 /usr/local/bin/afw-netinit
+LABEL org.opencontainers.image.title="afw-netinit" \
+      org.opencontainers.image.description="agents-firewall: network namespace holder of an enrolled agent" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/aidalinfo/agents-firewall"
+# Root inside the container, but deployed with cap_drop: [ALL] + cap_add: [NET_ADMIN] only.
+# Healthy while the routes are correct and the agent CA bundle exists (same test as afw-enroll).
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=12 \
+    CMD test -f /tmp/afw-ready && test -s /afw-ca/bundle.pem
+# afw-enroll passes the script as `command: [sh, -c, <script>]`: no ENTRYPOINT, the default is the copy.
+CMD ["/usr/local/bin/afw-netinit"]

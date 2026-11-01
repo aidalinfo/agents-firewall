@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Flux internes et alertes — agents-firewall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.afw{--bg:#f6f7f9;--panel:#ffffff;--sub:#f0f2f5;--line:#e4e7ec;--line2:#d0d5dd;--text:#0b1220;--text2:#3e4a5c;--text3:#5a6677;--pri:#0369a1;--pri-bg:#e3f2fb;--pri-fg:#ffffff;--ok:#047857;--ok-bg:#e3f5ec;--ko:#b42318;--ko-bg:#fdeceb;--warn:#8a4b06;--warn-bg:#fdf1dc;--obs:#6d28d9;--obs-bg:#f1ebfd;--code:#f8f9fb;--edge:#9aa8bd}
+.afw.dark{--bg:#090b0f;--panel:#0e1117;--sub:#151a22;--line:#1c222c;--line2:#29313d;--text:#e8edf4;--text2:#a7b1bf;--text3:#7f8a9a;--pri:#5cc8ff;--pri-bg:#0f2533;--pri-fg:#04131c;--ok:#3fdc97;--ok-bg:#0d2a1f;--ko:#ff6b6b;--ko-bg:#331418;--warn:#f6b84b;--warn-bg:#2e220d;--obs:#b79bff;--obs-bg:#231a3a;--code:#0b0e13;--edge:#3a4a62}
+.afw *{box-sizing:border-box}
+.afw button,.afw input,.afw select{font:inherit;color:inherit}
+.afw button{cursor:pointer}
+.afw .nav:hover{background:var(--sub)}
+.afw :focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+a{color:var(--pri)}a:hover{color:var(--text)}
+</style>
+</helmet>
+<div class="afw {{themeClass}}" style="min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap;">
+
+<nav aria-label="Navigation principale" style="flex: 1 1 224px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; padding: 14px 12px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px;">
+<span style="width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path><path d="M8.5 12h7"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.2;"><strong style="font-size: 14px;">agents-firewall</strong><span style="font-size: 11px; color: var(--text3);">Console · Pulse myIT</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Surveiller</span>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Journal</a>
+<a class="nav" href="Agent.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg>Agents</a>
+<a class="nav" href="FluxInternes.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--pri); background: var(--pri-bg); text-decoration: none; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 11l10-5M7 13l10 5"></path></svg><span style="flex: 1;">Flux internes</span><span style="font-size: 11px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 7px;">2</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Politique</span>
+<a class="nav" href="Regles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg><span style="flex: 1;">Base de règles</span><span style="font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px;">1</span></a>
+<a class="nav" href="Objets.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect></svg>Objets et zones</a>
+<a class="nav" href="Revisions.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"></path><path d="M3.5 3.5v5h5M12 7.5V12l3 2"></path></svg>Révisions et audit</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Infrastructure</span>
+<a class="nav" href="Passerelles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="7" rx="1.5"></rect><rect x="3.5" y="13" width="17" height="7" rx="1.5"></rect><path d="M7.5 7.5h.01M7.5 16.5h.01"></path></svg>Passerelles</a>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+<a href="Passerelles.dc.html" style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok);"></span>Politique installée</span><strong style="font-size: 13px;">Révision 42 · 3/3 passerelles</strong></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px;"><span style="width: 28px; height: 28px; border-radius: 50%; background: var(--sub); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">KS</span><span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600;">Killian Stein</span><span style="font-size: 11px; color: var(--text3);">Administrateur</span></span></div>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<header style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+<h1 style="margin: 0; font-size: 16px; font-weight: 650;">Flux internes</h1>
+<span style="font-size: 12px; color: var(--text3);">Surveillance : autorisés par défaut, journalisés avec le même détail que les flux sortants</span>
+<span style="flex: 1;"></span>
+<div role="group" aria-label="Période" style="display: flex; border: 1px solid var(--line2); border-radius: 7px; overflow: hidden; height: 32px;"><button type="button" aria-pressed="false" style="border: 0; padding: 0 12px; background: transparent; color: var(--text2); font-weight: 600; font-size: 12.5px;">1 h</button><button type="button" aria-pressed="true" style="border: 0; padding: 0 12px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 12.5px;">24 h</button><button type="button" aria-pressed="false" style="border: 0; padding: 0 12px; background: transparent; color: var(--text2); font-weight: 600; font-size: 12.5px;">7 j</button></div>
+<button type="button" onClick="{{toggleTheme}}" aria-label="Basculer clair / sombre" style="width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--line); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></button>
+</header>
+
+<div style="padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+
+<div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+<section aria-labelledby="map-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;"><h2 id="map-title" style="margin: 0; font-size: 14px; font-weight: 650;">Carte des flux internes</h2><span style="font-size: 12px; color: var(--text3);">Qui parle à quel système interne · épaisseur = volume</span><span style="flex: 1;"></span><span style="display: flex; align-items: center; gap: 14px; font-size: 11.5px; color: var(--text2);"><span style="display: flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 3px; background: var(--edge); border-radius: 2px;"></span>habituel</span><span style="display: flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 0; border-top: 2px dashed var(--warn);"></span>nouveau</span><span style="display: flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 0; border-top: 2px dashed var(--ko);"></span>alerte</span></span></div>
+<div style="overflow-x: auto;">
+<div style="position: relative; width: 820px; height: 450px; margin: 0 auto;">
+<svg aria-hidden="true" width="820" height="450" viewBox="0 0 820 450" fill="none" style="position: absolute; inset: 0;">
+<path d="M210 62 C400 62 410 282 600 282" style="stroke: var(--edge); stroke-width: 2;"></path>
+<path d="M210 62 C400 62 410 342 600 342" style="stroke: var(--edge); stroke-width: 1.5;"></path>
+<path d="M210 132 C400 132 410 282 600 282" style="stroke: var(--edge); stroke-width: 3;"></path>
+<path d="M210 132 C400 132 410 342 600 342" style="stroke: var(--edge); stroke-width: 1.5;"></path>
+<path d="M210 222 C400 222 410 342 600 342" style="stroke: var(--edge); stroke-width: 1.5;"></path>
+<path d="M210 292 C400 292 410 342 600 342" style="stroke: var(--edge); stroke-width: 1.5;"></path>
+<path d="M210 292 C400 292 410 282 600 282" style="stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4;"></path>
+<path d="M210 382 C400 382 410 42 600 42" style="stroke: var(--edge); stroke-width: 6;"></path>
+<path d="M210 382 C400 382 410 102 600 102" style="stroke: var(--edge); stroke-width: 2.5;"></path>
+<path d="M210 382 C400 382 410 162 600 162" style="stroke: var(--edge); stroke-width: 2;"></path>
+<path d="M210 382 C400 382 410 222 600 222" style="stroke: var(--edge); stroke-width: 3.5;"></path>
+<path d="M210 382 C400 382 410 342 600 342" style="stroke: var(--edge); stroke-width: 1.5;"></path>
+<path d="M210 132 C400 132 410 222 600 222" style="stroke: var(--ko); stroke-width: 2.5; stroke-dasharray: 6 4;"></path>
+<path d="M210 382 C400 382 410 412 600 412" style="stroke: var(--ko); stroke-width: 2.5; stroke-dasharray: 6 4;"></path>
+<path d="M40 222 C-2 222 -2 62 40 62" style="stroke: var(--ko); stroke-width: 2; stroke-dasharray: 6 4;"></path>
+</svg>
+<span style="position: absolute; left: 40px; top: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3);">Agents</span>
+<span style="position: absolute; left: 600px; top: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3);">Systèmes internes</span>
+<a href="Agent.dc.html" style="position: absolute; left: 40px; top: 40px; width: 170px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); text-decoration: none; color: var(--text); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">daniel-bot</strong><span style="font-size: 10.5px; color: var(--text3);">bots-internes</span></a>
+<div style="position: absolute; left: 40px; top: 110px; width: 170px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">laurent-bot</strong><span style="font-size: 10.5px; color: var(--text3);">bots-internes</span></div>
+<div style="position: absolute; left: 40px; top: 200px; width: 170px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">hermes-acme</strong><span style="font-size: 10.5px; color: var(--text3);">bots-clients</span></div>
+<div style="position: absolute; left: 40px; top: 270px; width: 170px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">hermes-compta</strong><span style="font-size: 10.5px; color: var(--obs);">nouveaux-bots · observation</span></div>
+<div style="position: absolute; left: 40px; top: 360px; width: 170px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">vulcain-bot</strong><span style="font-size: 10.5px; color: var(--text3);">ops · agent agréé</span></div>
+<span style="position: absolute; left: 0; top: 166px; font-size: 10.5px; font-weight: 600; color: var(--ko); background: var(--panel); padding: 1px 4px; border-radius: 4px; white-space: nowrap;">agent → agent</span>
+<div style="position: absolute; left: 600px; top: 20px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--sub); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">API Kubernetes ecoprod</strong><span style="font-size: 10.5px; color: var(--text3);">6443 · 4 018 requêtes · 2 exec</span></div>
+<div style="position: absolute; left: 600px; top: 80px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--sub); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">API Coolify</strong><span style="font-size: 10.5px; color: var(--text3);">443 · 96 requêtes · 3 redéploiements</span></div>
+<div style="position: absolute; left: 600px; top: 140px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--sub); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">VM Proxmox</strong><span style="font-size: 10.5px; color: var(--text3);">SSH · 4 sessions · 6 Mo</span></div>
+<div style="position: absolute; left: 600px; top: 200px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--ko); background: var(--ko-bg); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">postgres-ha · 5432</strong><span style="font-size: 10.5px; color: var(--ko); font-weight: 600;">port sensible · nouveau pour laurent-bot</span></div>
+<div style="position: absolute; left: 600px; top: 260px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--sub); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">glpi.interne.lan</strong><span style="font-size: 10.5px; color: var(--text3);">443 · 1 184 requêtes · 9 Mo</span></div>
+<div style="position: absolute; left: 600px; top: 320px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--sub); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-size: 12px;">Résolveur DNS</strong><span style="font-size: 10.5px; color: var(--text3);">53 · 41 220 requêtes</span></div>
+<div style="position: absolute; left: 600px; top: 390px; width: 210px; height: 44px; padding: 4px 10px; border-radius: 8px; border: 1.5px dashed var(--ko); background: var(--ko-bg); display: flex; flex-direction: column; justify-content: center; line-height: 1.2;"><strong style="font-family: 'Geist Mono', monospace; font-size: 12px;">10.0.5.23</strong><span style="font-size: 10.5px; color: var(--ko); font-weight: 600;">nouvel hôte · 38 ports essayés</span></div>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="admin-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;">
+<div style="display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 8px;"><h2 id="admin-title" style="margin: 0; font-size: 14px; font-weight: 650;">Appels aux API d’administration</h2><span style="font-size: 12px; color: var(--text3);">Action et ressource visée · sessions SSH au niveau du flux</span></div>
+<div style="min-width: 640px;">
+<div style="display: grid; grid-template-columns: 74px 104px 104px 120px minmax(180px, 1fr) 100px; gap: 10px; padding: 6px 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3);"><span>Heure</span><span>Agent</span><span>API</span><span>Action</span><span>Ressource</span><span>Signal</span></div>
+<sc-for list="{{admin}}" as="a" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 74px 104px 104px 120px minmax(180px, 1fr) 100px; gap: 10px; align-items: center; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12px;">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2);">{{a.time}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px;">{{a.agent}}</span>
+<span>{{a.api}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; font-weight: 600;">{{a.action}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{a.res}}</span>
+<span><sc-if value="{{a.hasSig}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; color: {{a.sigFg}}; background: {{a.sigBg}};">{{a.sig}}</span></sc-if></span>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+
+<section aria-labelledby="alerts-title" style="flex: 1 1 380px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line);"><h2 id="alerts-title" style="margin: 0; font-size: 14px; font-weight: 650;">Alertes</h2><span style="font-size: 11.5px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 8px;">2 hautes</span><span style="flex: 1;"></span><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; font-size: 12px; font-weight: 500;">Canaux : webhook, Teams</button></div>
+<ul style="list-style: none; margin: 0; padding: 0;">
+<sc-for list="{{alerts}}" as="al" hint-placeholder-count="6">
+<li style="padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; opacity: {{al.opacity}};">
+<div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 4px; padding: 1px 6px; color: {{al.sevFg}}; background: {{al.sevBg}};">{{al.sev}}</span><strong style="font-size: 12.5px; flex: 1; min-width: 0;">{{al.title}}</strong><span style="font-size: 11px; color: var(--text3); white-space: nowrap;">{{al.when}}</span></div>
+<span style="font-size: 12.5px; color: var(--text2);">{{al.text}}</span>
+<span style="font-size: 11.5px; color: var(--text3);">{{al.ctx}}</span>
+<sc-if value="{{al.open}}" hint-placeholder-val="{{ true }}"><div style="display: flex; gap: 6px; flex-wrap: wrap;"><a href="Main.dc.html" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); color: var(--text); text-decoration: none; font-size: 12px; font-weight: 600; display: flex; align-items: center;">Voir les flux</a><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; font-size: 12px; font-weight: 500;">Capture pcap</button><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 0; background: transparent; color: var(--text2); font-size: 12px; font-weight: 500;">Acquitter</button></div></sc-if>
+</li>
+</sc-for>
+</ul>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"dark","section":"Thème"},"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  state = { theme: null };
+
+  renderVals() {
+    const theme = this.state.theme || this.props.theme || 'dark';
+    const sev = {
+      haute: ['var(--ko)', 'var(--ko-bg)'], moyenne: ['var(--warn)', 'var(--warn-bg)'], info: ['var(--text2)', 'var(--sub)'], 'résolue': ['var(--ok)', 'var(--ok-bg)']
+    };
+    const alerts = [
+      { sev: 'haute', title: 'Balayage de ports · nouvel hôte', when: 'il y a 3 min', text: 'vulcain-bot a essayé 38 ports sur 10.0.5.23 en 40 s. Hôte jamais contacté par un agent.', ctx: 'Conversation « Diagnostic nœud k8s-ecoprod-2 » · rattachement incertain', open: true },
+      { sev: 'haute', title: 'Port sensible jamais vu', when: 'il y a 9 min', text: 'laurent-bot s’est connecté à postgres-ha.interne.lan:5432 pour la première fois (412 Ko reçus).', ctx: 'Conversation « Ticket GLPI #4830 — accès dépôt » · appel terminal · psql', open: true },
+      { sev: 'moyenne', title: 'Flux agent → agent nouveau', when: 'il y a 22 min', text: 'hermes-acme (bots-clients) a appelé daniel-bot:8080 (API Hermes).', ctx: 'Zones différentes · aucune règle ne l’interdit', open: true },
+      { sev: 'moyenne', title: 'Action d’administration inhabituelle', when: 'il y a 41 min', text: 'vulcain-bot : Kubernetes exec dans le pod erp/erp-api-7c9. Première fois dans ce namespace.', ctx: 'Action journalisée, non bloquée (surveillance)', open: true },
+      { sev: 'info', title: 'Tentative vers les métadonnées cloud', when: 'il y a 4 min', text: 'vulcain-bot → 169.254.169.254 refusé par la règle S1.', ctx: 'Source probable : page web consultée', open: false },
+      { sev: 'résolue', title: 'Secret détecté', when: 'il y a 5 min', text: 'laurent-bot → webhook.site : jeton GitHub, refusé par S4.', ctx: 'Acquittée par Killian Stein · jeton révoqué', open: false }
+    ].map((a) => Object.assign(a, { sevFg: sev[a.sev][0], sevBg: sev[a.sev][1], opacity: a.sev === 'résolue' ? '0.75' : '1' }));
+    const admin = [
+      { time: '14:33:10', agent: 'vulcain-bot', api: 'Kubernetes', action: 'pods/exec', res: 'erp/erp-api-7c9 · sh -c "env"', sig: 'inhabituel', hasSig: true, sigFg: 'var(--warn)', sigBg: 'var(--warn-bg)' },
+      { time: '14:31:40', agent: 'vulcain-bot', api: 'Coolify', action: 'deploy', res: 'studio-preprod', hasSig: false },
+      { time: '14:20:02', agent: 'vulcain-bot', api: 'Kubernetes', action: 'pods/create', res: 'agents-ops/diag-net-x1', hasSig: false },
+      { time: '13:58:44', agent: 'vulcain-bot', api: 'Proxmox · SSH', action: 'session', res: 'root@pve-02 · 4 min · ↑ 1,2 Mo', hasSig: false },
+      { time: '13:12:19', agent: 'vulcain-bot', api: 'Docker', action: 'container/restart', res: 'hermes-01/glpi-sync', hasSig: false }
+    ];
+    return {
+      themeClass: theme === 'dark' ? 'dark' : 'light',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      alerts, admin
+    };
+  }
+}
+</script>
+</body>
+</html>

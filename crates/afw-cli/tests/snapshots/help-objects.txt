@@ -1,0 +1,20 @@
+Network objects (destinations)
+
+Usage: afw objects [OPTIONS] <COMMAND>
+
+Commands:
+  list    
+  show    
+  create  Creation/update input: a JSON or YAML file (`-` for stdin), completed or overridden by flags
+  update  Creation/update input: a JSON or YAML file (`-` for stdin), completed or overridden by flags
+  delete  
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json            Print JSON instead of tables
+      --config <FILE>   Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --url <URL>       Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>  Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --session <ID>    Editing session to use (default: your open session) [env: AFW_SESSION=]
+  -h, --help            Print help
+  -V, --version         Print version

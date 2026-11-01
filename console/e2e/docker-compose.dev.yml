@@ -1,0 +1,6 @@
+# Local development only: publishes the API on 127.0.0.1:18080 and the console on 127.0.0.1:13000.
+services:
+  afw-api:
+    ports: ["127.0.0.1:18080:8080"]
+  console:
+    ports: ["127.0.0.1:13000:3000"]

@@ -1,0 +1,28 @@
+Prepare an accept rule in your session from a denied flow of the log
+
+Usage: afw allow [OPTIONS] <FLOW_ID>
+
+Arguments:
+  <FLOW_ID>  Id of the denied flow (see `afw logs flows --verdict deny`)
+
+Options:
+      --destination <DESTINATION>
+          Destination of the rule [possible values: exact, wildcard, group]
+      --json
+          Print JSON instead of tables
+      --config <FILE>
+          Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --expires-in-days <EXPIRES_IN_DAYS>
+          Rule expiry, in days
+      --track <TRACK>
+          [possible values: none, log, detailed, capture]
+      --url <URL>
+          Console URL (overrides the configuration) [env: AFW_URL=]
+      --ca-cert <FILE>
+          Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --session <ID>
+          Editing session to use (default: your open session) [env: AFW_SESSION=]
+  -h, --help
+          Print help
+  -V, --version
+          Print version

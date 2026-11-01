@@ -1,0 +1,52 @@
+# Deployment files: compose, Helm chart, netinit isolation (bypass tests), demo world, shell scripts.
+# House CI model (ADR 0002): full run on PRs to main and nightly on dev; manual trigger available.
+name: deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [deploy/**, demo/**, crates/afw-enroll/**, docs/api/openapi.yaml, .github/workflows/deploy.yml]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: compose, helm, shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - run: deploy/tests/run.sh static
+
+  enroll-sync:
+    name: netinit and demo agents match afw-enroll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - run: deploy/tests/run.sh enroll
+
+  isolation:
+    name: netinit bypass tests and demo world
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - run: deploy/tests/run.sh netinit
+      - run: deploy/tests/run.sh world
+
+  images:
+    name: build images (local only, never pushed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - run: deploy/tests/run.sh images

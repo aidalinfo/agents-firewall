@@ -1,0 +1,27 @@
+Creation/update input: a JSON or YAML file (`-` for stdin), completed or overridden by flags
+
+Usage: afw rules create [OPTIONS]
+
+Options:
+  -f, --file <FILE>                 JSON or YAML body (`-` = stdin); flags override its fields
+      --json                        Print JSON instead of tables
+      --config <FILE>               Configuration file [default: ~/.config/afw/config.toml] [env: AFW_CONFIG=]
+      --name <NAME>                 
+      --url <URL>                   Console URL (overrides the configuration) [env: AFW_URL=]
+      --zone <ZONE>                 Zone layer of the rule (name or id); also its default source
+      --baseline                    Baseline layer (shared by every zone)
+      --ca-cert <FILE>              Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
+      --section <SECTION>           
+      --session <ID>                Editing session to use (default: your open session) [env: AFW_SESSION=]
+      --position <POSITION>         Position in the layer (default: last)
+      --source <SOURCES>            Source zone (name or id); repeatable; replaces the list
+      --destination <DESTINATIONS>  Destination object (name or id); repeatable; replaces the list (none = any)
+      --service <SERVICES>          Service (name or id); repeatable; replaces the list (none = any)
+      --data-class <DATA_CLASSES>   Data class (name or id); repeatable; replaces the list
+      --action <ACTION>             [possible values: accept, deny]
+      --track <TRACK>               [possible values: none, log, detailed, capture]
+      --expires <EXPIRES>           Expiry: RFC 3339 time, duration from now (`7d`, `12h`) or `never`
+      --comment <COMMENT>           
+      --enabled <ENABLED>           [possible values: true, false]
+  -h, --help                        Print help
+  -V, --version                     Print version

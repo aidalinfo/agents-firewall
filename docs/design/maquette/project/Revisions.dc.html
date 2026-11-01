@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Révisions et audit — agents-firewall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.afw{--bg:#f6f7f9;--panel:#ffffff;--sub:#f0f2f5;--line:#e4e7ec;--line2:#d0d5dd;--text:#0b1220;--text2:#3e4a5c;--text3:#5a6677;--pri:#0369a1;--pri-bg:#e3f2fb;--pri-fg:#ffffff;--ok:#047857;--ok-bg:#e3f5ec;--ko:#b42318;--ko-bg:#fdeceb;--warn:#8a4b06;--warn-bg:#fdf1dc;--obs:#6d28d9;--obs-bg:#f1ebfd;--code:#f8f9fb}
+.afw.dark{--bg:#090b0f;--panel:#0e1117;--sub:#151a22;--line:#1c222c;--line2:#29313d;--text:#e8edf4;--text2:#a7b1bf;--text3:#7f8a9a;--pri:#5cc8ff;--pri-bg:#0f2533;--pri-fg:#04131c;--ok:#3fdc97;--ok-bg:#0d2a1f;--ko:#ff6b6b;--ko-bg:#331418;--warn:#f6b84b;--warn-bg:#2e220d;--obs:#b79bff;--obs-bg:#231a3a;--code:#0b0e13}
+.afw *{box-sizing:border-box}
+.afw button,.afw input,.afw select{font:inherit;color:inherit}
+.afw button{cursor:pointer}
+.afw .nav:hover,.afw .rev:hover{background:var(--sub)}
+.afw .rev[aria-current="true"],.afw .rev[aria-current="true"]:hover{background:var(--pri-bg)}
+.afw :focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+a{color:var(--pri)}a:hover{color:var(--text)}
+</style>
+</helmet>
+<div class="afw {{themeClass}}" style="min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap;">
+
+<nav aria-label="Navigation principale" style="flex: 1 1 224px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; padding: 14px 12px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px;">
+<span style="width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path><path d="M8.5 12h7"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.2;"><strong style="font-size: 14px;">agents-firewall</strong><span style="font-size: 11px; color: var(--text3);">Console · Pulse myIT</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Surveiller</span>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Journal</a>
+<a class="nav" href="Agent.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg>Agents</a>
+<a class="nav" href="FluxInternes.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 11l10-5M7 13l10 5"></path></svg><span style="flex: 1;">Flux internes</span><span style="font-size: 11px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 7px;">2</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Politique</span>
+<a class="nav" href="Regles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg><span style="flex: 1;">Base de règles</span><span style="font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px;">1</span></a>
+<a class="nav" href="Objets.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect></svg>Objets et zones</a>
+<a class="nav" href="Revisions.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--pri); background: var(--pri-bg); text-decoration: none; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"></path><path d="M3.5 3.5v5h5M12 7.5V12l3 2"></path></svg>Révisions et audit</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Infrastructure</span>
+<a class="nav" href="Passerelles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="7" rx="1.5"></rect><rect x="3.5" y="13" width="17" height="7" rx="1.5"></rect><path d="M7.5 7.5h.01M7.5 16.5h.01"></path></svg>Passerelles</a>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+<a href="Passerelles.dc.html" style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok);"></span>Politique installée</span><strong style="font-size: 13px;">Révision 42 · 3/3 passerelles</strong></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px;"><span style="width: 28px; height: 28px; border-radius: 50%; background: var(--sub); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">KS</span><span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600;">Killian Stein</span><span style="font-size: 11px; color: var(--text3);">Administrateur</span></span></div>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<header style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+<h1 style="margin: 0; font-size: 16px; font-weight: 650;">Révisions et audit</h1>
+<span style="font-size: 12px; color: var(--text3);">Chaque publication crée une révision · chaque modification est auditée</span>
+<span style="flex: 1;"></span>
+<button type="button" onClick="{{toggleTheme}}" aria-label="Basculer clair / sombre" style="width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--line); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></button>
+</header>
+
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+
+<section aria-labelledby="revs-title" style="flex: 1 1 360px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line);"><h2 id="revs-title" style="margin: 0; font-size: 14px; font-weight: 650;">Révisions</h2><span style="font-size: 12px; color: var(--text3);">43 au total</span></div>
+<a href="Regles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--warn-bg); text-decoration: none; color: var(--text);"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 700; color: var(--warn); width: 34px;">—</span><span style="display: flex; flex-direction: column; line-height: 1.3;"><strong style="font-size: 12.5px;">Session en cours · non publiée</strong><span style="font-size: 11.5px; color: var(--text2);">Killian Stein · 1 modification · Ouverture api.exemple.com</span></span></a>
+<sc-for list="{{revs}}" as="v" hint-placeholder-count="7">
+<button type="button" class="rev" onClick="{{v.pick}}" aria-current="{{v.cur}}" style="display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left;">
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 700; width: 34px; flex: none;">{{v.n}}</span>
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.3; flex: 1;">
+<span style="display: flex; align-items: center; gap: 6px;"><strong style="font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{v.title}}</strong><sc-if value="{{v.active}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 5px; color: var(--ok); background: var(--ok-bg);">installée</span></sc-if></span>
+<span style="font-size: 11.5px; color: var(--text2);">{{v.author}} · {{v.via}}</span>
+<span style="font-size: 11px; color: var(--text3);">{{v.when}} · {{v.count}}</span>
+</span>
+</button>
+</sc-for>
+<span style="padding: 10px 14px; font-size: 12px; color: var(--text3);">… 36 révisions plus anciennes · révision 1 : import de la politique egress-guard</span>
+</section>
+
+<section aria-labelledby="diff-title" style="flex: 999 1 560px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;">
+<div style="padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-start;">
+<div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 320px;">
+<h2 id="diff-title" style="margin: 0; font-size: 15px; font-weight: 650;">Révision {{cur.n}} · {{cur.title}}</h2>
+<span style="font-size: 12.5px; color: var(--text2);">{{cur.author}} · {{cur.via}} · {{cur.when}} · session {{cur.session}}</span>
+<span style="font-size: 12.5px; color: var(--text);">« {{cur.comment}} »</span>
+<sc-if value="{{cur.hasApproval}}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; font-size: 11.5px; font-weight: 600; color: var(--obs); background: var(--obs-bg); border-radius: 5px; padding: 2px 8px;">{{cur.approval}}</span></sc-if>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap;">
+<button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Comparer avec…</button>
+<sc-if value="{{cur.canRollback}}" hint-placeholder-val="{{ true }}"><button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 0; background: var(--text); color: var(--bg); font-weight: 600;">Installer cette révision (retour arrière)</button></sc-if>
+</div>
+</div>
+<div style="padding: 12px 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: grid; grid-template-columns: 26px 150px minmax(0, 1fr) minmax(0, 1fr); gap: 10px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3); padding: 0 10px;"><span></span><span>Élément</span><span>Avant</span><span>Après</span></div>
+<sc-for list="{{cur.diff}}" as="d" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 26px 150px minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 10px; border-radius: 7px; background: {{d.bg}}; font-size: 12.5px;">
+<span style="font-family: 'Geist Mono', monospace; font-weight: 700; color: {{d.fg}};">{{d.sign}}</span>
+<span style="display: flex; flex-direction: column; line-height: 1.3;"><strong style="font-size: 12px;">{{d.kind}}</strong><span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2);">{{d.target}}</span></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2); text-decoration: {{d.strike}}; white-space: pre-line;">{{d.before}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; white-space: pre-line;">{{d.after}}</span>
+</div>
+</sc-for>
+</div>
+<div style="margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; font-size: 12px;">
+<strong style="font-size: 12px;">Installation</strong>
+<sc-for list="{{cur.gws}}" as="g" hint-placeholder-count="3"><span style="display: flex; align-items: center; gap: 6px;"><span style="font-weight: 700; color: {{g.fg}};">{{g.mark}}</span><span style="font-family: 'Geist Mono', monospace; font-size: 11.5px;">{{g.name}}</span><span style="color: var(--text3);">{{g.res}}</span></span></sc-for>
+</div>
+</section>
+</div>
+
+<section aria-labelledby="audit-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;">
+<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px;"><h2 id="audit-title" style="margin: 0; font-size: 14px; font-weight: 650;">Journal d’audit</h2><span style="font-size: 12px; color: var(--text3);">Ajout seul · chaîné par empreinte</span><span style="flex: 1;"></span><span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ok);"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>Chaîne intègre · ancre exportée à 14:00</span><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; font-size: 12px; font-weight: 500;">Auteur</button><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; font-size: 12px; font-weight: 500;">Interface</button><button type="button" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; font-size: 12px; font-weight: 500;">Exporter</button></div>
+<div style="min-width: 900px;">
+<div style="display: grid; grid-template-columns: 80px 150px 92px 70px 170px minmax(200px, 1fr) 100px; gap: 10px; padding: 6px 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3);"><span>Heure</span><span>Auteur</span><span>Interface</span><span>Session</span><span>Action</span><span>Objet</span><span>Empreinte</span></div>
+<sc-for list="{{audit}}" as="a" hint-placeholder-count="9">
+<div style="display: grid; grid-template-columns: 80px 150px 92px 70px 170px minmax(200px, 1fr) 100px; gap: 10px; align-items: center; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12px; background: {{a.bg}};">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2);">{{a.time}}</span>
+<span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; border-radius: 4px; padding: 0 5px; color: {{a.kindFg}}; background: {{a.kindBg}};">{{a.kind}}</span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{a.who}}</span></span>
+<span style="color: var(--text2);">{{a.via}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text3);">{{a.session}}</span>
+<span style="font-weight: 600; color: {{a.actFg}};">{{a.action}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{a.target}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text3);">{{a.hash}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"dark","section":"Thème"},"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  state = { sel: '42', theme: null };
+
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme || this.props.theme || 'dark';
+    const ch = (sign, kind, target, before, after) => ({ sign, kind, target, before, after });
+    const allOk = (date) => [['gw-hermes-01', date], ['gw-hermes-02', date], ['gw-ops-01', date]];
+    const R = [
+      { n: '42', title: 'daniel-bot en refus par défaut', author: 'Killian Stein', via: 'Console', when: '30/10 11:02', session: 's-7c1', comment: 'Fin de l’observation de daniel-bot (3 jours), egress-guard retiré.', active: true, gws: allOk('installée 30/10 11:04'), diff: [
+        ch('~', 'Zone', 'bots-internes', 'mode : observation', 'mode : refus par défaut'),
+        ch('~', 'Règle 7', 'Stockage S3 — URL présignées', 'service : HTTPS', 'service : HTTPS PUT\ncommentaire : remplace le faux positif egress-guard'),
+        ch('~', 'Objet', 'dom-s3-scaleway-fr-par', '*.scw.cloud', 's3.fr-par.scw.cloud'),
+        ch('+', 'Règle 11', 'Portails partenaires', '', 'bots-internes → grp-portails-partenaires · HTTPS · accepter')
+      ] },
+      { n: '41', title: 'Portail ACME pour hermes-acme', author: 'vulcain-bot', via: 'MCP · agent agréé', when: '29/10 17:40', session: 's-7b8', comment: 'Demande du client ACME : accès à son portail.', approval: 'Zone déléguée · pas d’élargissement · publiée sans validation', gws: allOk('installée 29/10 17:41'), diff: [
+        ch('+', 'Objet', 'dom-portail.acme.example', '', 'portail.acme.example'),
+        ch('+', 'Règle 30', 'Portail ACME', '', 'bots-clients → dom-portail.acme.example · HTTPS · accepter')
+      ] },
+      { n: '40', title: 'Microsoft 365 : *.office.net', author: 'vulcain-bot', via: 'MCP · agent agréé', when: '29/10 09:15', session: 's-7b2', comment: 'Chargement des pièces jointes Outlook en échec.', approval: 'Joker sur Internet · validée par Killian Stein le 29/10 09:31', gws: allOk('installée 29/10 09:33'), diff: [
+        ch('~', 'Groupe', 'grp-microsoft-365', '5 membres', '6 membres\n+ *.office.net')
+      ] },
+      { n: '39', title: 'Nettoyage des objets', author: 'Killian Stein', via: 'CLI afw', when: '28/10 18:05', session: 's-7a9', comment: 'Retrait de l’ancien CRM.', gws: allOk('installée 28/10 18:06'), diff: [
+        ch('−', 'Règle 8', 'Ancien CRM', 'bots-internes → dom-ancien-crm.exemple.fr · HTTPS', ''),
+        ch('~', 'Règle 8', 'Relais SMTP interne', 'n° 9', 'n° 8')
+      ] },
+      { n: '38', title: 'Groupe portails partenaires', author: 'Killian Stein', via: 'Console', when: '14/10 10:20', session: 's-6f0', comment: 'Regroupe les portails fournisseurs.', gws: allOk('installée 14/10 10:22'), diff: [
+        ch('+', 'Groupe', 'grp-portails-partenaires', '', '4 domaines')
+      ] },
+      { n: '37', title: 'Zone nouveaux-bots en observation', author: 'Killian Stein', via: 'CLI afw', when: '13/10 16:48', session: 's-6e4', comment: 'Accueil de hermes-compta.', gws: allOk('installée 13/10 16:49'), diff: [
+        ch('+', 'Zone', 'nouveaux-bots', '', 'mode : observation'),
+        ch('+', 'Règle 40', 'Nettoyage — tout refuser', '', 'nouveaux-bots → toute destination')
+      ] }
+    ];
+    const revs = R.map((r) => ({ n: r.n, title: r.title, author: r.author, via: r.via, when: r.when, active: !!r.active, count: r.diff.length + (r.diff.length > 1 ? ' modifications' : ' modification'), cur: String(r.n === s.sel), pick: () => this.setState({ sel: r.n }) }));
+    const c = R.find((r) => r.n === s.sel) || R[0];
+    const tone = { '+': ['var(--ok)', 'var(--ok-bg)'], '−': ['var(--ko)', 'var(--ko-bg)'], '~': ['var(--warn)', 'var(--sub)'] };
+    const cur = Object.assign({}, c, {
+      hasApproval: !!c.approval, canRollback: !c.active,
+      diff: c.diff.map((d) => Object.assign({}, d, { fg: tone[d.sign][0], bg: tone[d.sign][1], strike: d.sign === '−' ? 'line-through' : 'none', before: d.before || '—', after: d.after || '—' })),
+      gws: c.gws.map(([name, res]) => ({ name, res: c.active ? res : res.replace('installée', 'remplacée, installée'), mark: '✓', fg: 'var(--ok)' }))
+    });
+    const K = { humain: ['var(--pri)', 'var(--pri-bg)'], agent: ['var(--obs)', 'var(--obs-bg)'], système: ['var(--text2)', 'var(--sub)'] };
+    const audit = [
+      ['14:36:12', 'humain', 'Killian Stein', 'Console', 's-7f2', 'Consultation de contenu', 'flux f-8c21e4 · corps HTTP', '9c1f…0a2e'],
+      ['14:35:40', 'humain', 'Killian Stein', 'Console', 's-7f2', 'Création de règle', 'bots-internes / règle 12', '41ad…7c90'],
+      ['14:35:40', 'humain', 'Killian Stein', 'Console', 's-7f2', 'Création d’objet', 'dom-api.exemple.com', 'e07b…19f3'],
+      ['14:35:02', 'humain', 'Killian Stein', 'Console', 's-7f2', 'Ouverture de session', '« Ouverture api.exemple.com »', '5b22…c4d1'],
+      ['14:12:44', 'agent', 'vulcain-bot', 'MCP', 's-7e9', 'Demande refusée', 'zone ops : s’applique à l’agent lui-même', '0f6e…a8b4', true],
+      ['13:40:03', 'humain', 'Killian Stein', 'CLI afw', '—', 'Enrôlement', 'hermes-compta → zone nouveaux-bots', 'b39c…2e17'],
+      ['11:04:30', 'système', 'console', '—', '—', 'Installation', 'révision 42 → 3/3 passerelles', '7da0…e55c'],
+      ['11:02:10', 'humain', 'Killian Stein', 'Console', 's-7c1', 'Publication', 'révision 42', 'c8e4…f001'],
+      ['09:31:47', 'humain', 'Killian Stein', 'Console', 's-7b2', 'Validation humaine', 'révision 40 · joker *.office.net', '2a7f…6be9']
+    ].map(([time, kind, who, via, session, action, target, hash, refused]) => ({ time, kind, who, via, session, action, target, hash, kindFg: K[kind][0], kindBg: K[kind][1], actFg: refused ? 'var(--ko)' : 'var(--text)', bg: refused ? 'var(--ko-bg)' : 'transparent' }));
+    return {
+      themeClass: theme === 'dark' ? 'dark' : 'light',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      revs, cur, audit
+    };
+  }
+}
+</script>
+</body>
+</html>

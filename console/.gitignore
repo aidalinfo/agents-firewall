@@ -1,0 +1,8 @@
+node_modules
+.nuxt
+.output
+.data
+coverage
+*.log
+e2e/test-results
+playwright-report

@@ -1,0 +1,36 @@
+name: afw-hermes
+label: agents-firewall
+kind: general
+version: 0.1.0
+description: >
+  Plugin agents-firewall pour Hermes Agent. Envoie le debut et la fin de chaque
+  appel d'outil a la console agents-firewall (correlation intention <-> flux
+  reseau) et applique les classes d'actions servies par la console
+  (suppression, acces, infrastructure, generation payante) avec leur « gate » :
+  l'action est bloquee et l'agent recoit un message lui demandant une validation
+  humaine. Bibliotheque standard Python uniquement.
+author: agents-firewall
+
+requires_env:
+  - name: AFW_CONSOLE_URL
+    description: "URL de la console agents-firewall (ex: https://afw.example.org)"
+    prompt: "URL de la console agents-firewall"
+    password: false
+  - name: AFW_AGENT_TOKEN
+    description: "Jeton d'agent emis par la console a l'enrolement (afw enroll --hermes)"
+    prompt: "Jeton d'agent agents-firewall"
+    password: true
+
+optional_env:
+  - name: AFW_AGENT_NAME
+    description: "Nom de l'agent tel que connu de la console (defaut: nom d'hote)"
+    prompt: "Nom de l'agent (ou vide)"
+    password: false
+  - name: AFW_CA_FILE
+    description: "Certificat d'autorite (PEM) de la console, si elle n'utilise pas une CA publique"
+    prompt: "Chemin du certificat d'autorite de la console (ou vide)"
+    password: false
+  - name: AFW_STATE_DIR
+    description: "Repertoire d'etat (cache de politique, file disque). Defaut: $HERMES_HOME/afw"
+    prompt: "Repertoire d'etat (ou vide)"
+    password: false

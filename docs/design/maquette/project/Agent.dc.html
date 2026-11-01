@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Agent daniel-bot — agents-firewall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.afw{--bg:#f6f7f9;--panel:#ffffff;--sub:#f0f2f5;--line:#e4e7ec;--line2:#d0d5dd;--text:#0b1220;--text2:#3e4a5c;--text3:#5a6677;--pri:#0369a1;--pri-bg:#e3f2fb;--pri-fg:#ffffff;--ok:#047857;--ok-bg:#e3f5ec;--ko:#b42318;--ko-bg:#fdeceb;--warn:#8a4b06;--warn-bg:#fdf1dc;--obs:#6d28d9;--obs-bg:#f1ebfd;--code:#f8f9fb;--bar:#9fb8cc}
+.afw.dark{--bg:#090b0f;--panel:#0e1117;--sub:#151a22;--line:#1c222c;--line2:#29313d;--text:#e8edf4;--text2:#a7b1bf;--text3:#7f8a9a;--pri:#5cc8ff;--pri-bg:#0f2533;--pri-fg:#04131c;--ok:#3fdc97;--ok-bg:#0d2a1f;--ko:#ff6b6b;--ko-bg:#331418;--warn:#f6b84b;--warn-bg:#2e220d;--obs:#b79bff;--obs-bg:#231a3a;--code:#0b0e13;--bar:#2b5470}
+.afw *{box-sizing:border-box}
+.afw button,.afw input,.afw select{font:inherit;color:inherit}
+.afw button{cursor:pointer}
+.afw .nav:hover,.afw .drow:hover{background:var(--sub)}
+.afw :focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+a{color:var(--pri)}a:hover{color:var(--text)}
+</style>
+</helmet>
+<div class="afw {{themeClass}}" style="min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap;">
+
+<nav aria-label="Navigation principale" style="flex: 1 1 224px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; padding: 14px 12px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px;">
+<span style="width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path><path d="M8.5 12h7"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.2;"><strong style="font-size: 14px;">agents-firewall</strong><span style="font-size: 11px; color: var(--text3);">Console · Pulse myIT</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Surveiller</span>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Journal</a>
+<a class="nav" href="Agent.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--pri); background: var(--pri-bg); text-decoration: none; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg>Agents</a>
+<a class="nav" href="FluxInternes.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 11l10-5M7 13l10 5"></path></svg><span style="flex: 1;">Flux internes</span><span style="font-size: 11px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 7px;">2</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Politique</span>
+<a class="nav" href="Regles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg><span style="flex: 1;">Base de règles</span><span style="font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px;">1</span></a>
+<a class="nav" href="Objets.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect></svg>Objets et zones</a>
+<a class="nav" href="Revisions.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"></path><path d="M3.5 3.5v5h5M12 7.5V12l3 2"></path></svg>Révisions et audit</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Infrastructure</span>
+<a class="nav" href="Passerelles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="7" rx="1.5"></rect><rect x="3.5" y="13" width="17" height="7" rx="1.5"></rect><path d="M7.5 7.5h.01M7.5 16.5h.01"></path></svg>Passerelles</a>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+<a href="Passerelles.dc.html" style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok);"></span>Politique installée</span><strong style="font-size: 13px;">Révision 42 · 3/3 passerelles</strong></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px;"><span style="width: 28px; height: 28px; border-radius: 50%; background: var(--sub); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">KS</span><span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600;">Killian Stein</span><span style="font-size: 11px; color: var(--text3);">Administrateur</span></span></div>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<header style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+<span style="font-size: 13px; color: var(--text3);">Agents</span><span aria-hidden="true" style="color: var(--text3);">/</span>
+<div role="tablist" aria-label="Agent" style="display: flex; gap: 4px; flex-wrap: wrap;">
+<button type="button" role="tab" aria-selected="true" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 0; background: var(--text); color: var(--bg); font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">daniel-bot</button>
+<button type="button" role="tab" aria-selected="false" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text2); font-family: 'Geist Mono', monospace; font-size: 12px;">laurent-bot</button>
+<button type="button" role="tab" aria-selected="false" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text2); font-family: 'Geist Mono', monospace; font-size: 12px;">vulcain-bot</button>
+<button type="button" role="tab" aria-selected="false" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text2); font-family: 'Geist Mono', monospace; font-size: 12px;">hermes-acme</button>
+<button type="button" role="tab" aria-selected="false" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text2); font-family: 'Geist Mono', monospace; font-size: 12px;">hermes-compta</button>
+</div>
+<span style="flex: 1;"></span>
+<button type="button" onClick="{{toggleTheme}}" aria-label="Basculer clair / sombre" style="width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--line); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></button>
+</header>
+
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+
+<section aria-label="Identité" style="display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;">
+<span style="width: 44px; height: 44px; border-radius: 10px; background: var(--sub); display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg></span>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<div style="display: flex; align-items: center; gap: 8px;"><h1 style="margin: 0; font-family: 'Geist Mono', monospace; font-size: 19px; font-weight: 600;">daniel-bot</h1><span style="display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 650; color: var(--ok); background: var(--ok-bg); padding: 1px 8px; border-radius: 999px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--ok);"></span>actif · dernier flux il y a 2 s</span></div>
+<span style="font-size: 12.5px; color: var(--text2);">Bot Hermes · comptes rendus, mails, documents</span>
+</div>
+<dl style="margin: 0; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12px;">
+<div style="display: flex; flex-direction: column;"><dt style="color: var(--text3);">Zone</dt><dd style="margin: 0; font-weight: 600;"><a href="Objets.dc.html">bots-internes</a></dd></div>
+<div style="display: flex; flex-direction: column;"><dt style="color: var(--text3);">Passerelle</dt><dd style="margin: 0; font-family: 'Geist Mono', monospace;">gw-hermes-01</dd></div>
+<div style="display: flex; flex-direction: column;"><dt style="color: var(--text3);">Enrôlement</dt><dd style="margin: 0;">Docker compose · 30/10</dd></div>
+<div style="display: flex; flex-direction: column;"><dt style="color: var(--text3);">Plugin Hermes</dt><dd style="margin: 0; color: var(--ok); font-weight: 600;">corrélation active</dd></div>
+<div style="display: flex; flex-direction: column;"><dt style="color: var(--text3);">egress-guard</dt><dd style="margin: 0;">retiré le 30/10</dd></div>
+</dl>
+<span style="flex: 1;"></span>
+<div style="display: flex; gap: 8px; flex-wrap: wrap;"><a href="Main.dc.html" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); color: var(--text); text-decoration: none; display: flex; align-items: center; font-weight: 500;">Voir son journal</a><button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Capture pcap 15 min</button><button type="button" style="height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Changer de zone…</button></div>
+</section>
+
+<section aria-label="Chiffres clés" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px;">
+<div style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 12px; color: var(--text3);">Flux · 24 h</span><strong style="font-size: 22px; font-weight: 650;">3 412</strong><span style="font-size: 11.5px; color: var(--text3);">dont 1 940 vers un fournisseur LLM</span></div>
+<div style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 12px; color: var(--text3);">Envoyé · 24 h</span><strong style="font-size: 22px; font-weight: 650;">182 Mo</strong><span style="font-size: 11.5px; color: var(--text3);">reçu : 96 Mo</span></div>
+<div style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 12px; color: var(--text3);">Refus · 24 h</span><strong style="font-size: 22px; font-weight: 650; color: var(--ko);">9</strong><span style="font-size: 11.5px; color: var(--text3);">3 destinations distinctes</span></div>
+<div style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 12px; color: var(--text3);">Destinations · 7 j</span><strong style="font-size: 22px; font-weight: 650;">23</strong><span style="font-size: 11.5px; color: var(--warn); font-weight: 600;">2 nouvelles cette semaine</span></div>
+</section>
+
+<section aria-labelledby="vol-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;"><h2 id="vol-title" style="margin: 0; font-size: 14px; font-weight: 650;">Volume émis par heure</h2><span style="font-size: 12px; color: var(--text3);">24 dernières heures · hors fournisseurs LLM</span><span style="flex: 1;"></span><span style="display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--text2);"><span style="display: flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: var(--bar);"></span>accepté</span><span style="display: flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: var(--ko);"></span>refusé</span></span></div>
+<div role="img" aria-label="Histogramme du volume émis par heure : régulier entre 2 et 9 Mo, pic de 31 Mo à 14 h dont 12 Mo refusés." style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px;">
+<div style="display: flex; flex-direction: column; justify-content: space-between; height: 140px; font-size: 10.5px; color: var(--text3); text-align: right; font-family: 'Geist Mono', monospace;"><span>30 Mo</span><span>15 Mo</span><span>0</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<div style="height: 140px; display: flex; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--line2); background-image: linear-gradient(var(--line) 1px, transparent 1px); background-size: 100% 70px;">
+<sc-for list="{{bars}}" as="b" hint-placeholder-count="24">
+<div title="{{b.tip}}" style="flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 140px;"><div style="height: {{b.ko}}; background: var(--ko); border-radius: 2px 2px 0 0;"></div><div style="height: {{b.ok}}; background: var(--bar); border-radius: {{b.okRadius}};"></div></div>
+</sc-for>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text3); font-family: 'Geist Mono', monospace;"><span>hier 15 h</span><span>21 h</span><span>03 h</span><span>09 h</span><span>14 h</span></div>
+</div>
+</div>
+<span style="font-size: 12px; color: var(--text2);">Pic à 14 h : 19 Mo vers <span style="font-family: 'Geist Mono', monospace;">s3.fr-par.scw.cloud</span> (accepté) et 12 Mo vers <span style="font-family: 'Geist Mono', monospace;">api.exemple.com</span> (refusé, conversation « CR comité projet — ACME »).</span>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+<section aria-labelledby="dest-title" style="flex: 999 1 560px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;">
+<div style="display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 8px;"><h2 id="dest-title" style="margin: 0; font-size: 14px; font-weight: 650;">Destinations habituelles</h2><span style="font-size: 12px; color: var(--text3);">7 jours · par nombre de flux</span></div>
+<div style="min-width: 620px;">
+<div style="display: grid; grid-template-columns: minmax(200px, 1.4fr) 70px minmax(120px, 1fr) 80px 96px; gap: 10px; padding: 6px 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3);"><span>Destination</span><span>Règle</span><span>Flux</span><span>Émis</span><span>Dernière fois</span></div>
+<sc-for list="{{dests}}" as="d" hint-placeholder-count="8">
+<div class="drow" style="display: grid; grid-template-columns: minmax(200px, 1.4fr) 70px minmax(120px, 1fr) 80px 96px; gap: 10px; align-items: center; padding: 7px 14px; border-bottom: 1px solid var(--line);">
+<span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{d.dest}}</span><sc-if value="{{d.hasTag}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 5px; color: {{d.tagFg}}; background: {{d.tagBg}};">{{d.tag}}</span></sc-if></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: {{d.ruleFg}};">{{d.rule}}</span>
+<span style="display: flex; align-items: center; gap: 8px;"><span style="flex: 1; height: 6px; border-radius: 3px; background: var(--sub); overflow: hidden;"><span style="display: block; height: 6px; width: {{d.w}}; background: {{d.barBg}};"></span></span><span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; width: 48px; text-align: right;">{{d.n}}</span></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px;">{{d.vol}}</span>
+<span style="font-size: 12px; color: var(--text3);">{{d.last}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+<section aria-labelledby="ko-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between;"><h2 id="ko-title" style="margin: 0; font-size: 14px; font-weight: 650;">Refus récents</h2><a href="Main.dc.html" style="font-size: 12px;">Tout voir</a></div>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
+<sc-for list="{{refus}}" as="k" hint-placeholder-count="4">
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line);">
+<span style="display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.35;"><span style="display: flex; align-items: center; gap: 6px;"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{k.dest}}</span><span style="font-size: 11px; color: var(--text3);">×{{k.n}}</span></span><span style="font-size: 11.5px; color: var(--text3);">{{k.when}} · règle {{k.rule}} · {{k.why}}</span></span>
+<sc-if value="{{k.can}}" hint-placeholder-val="{{ true }}"><a href="Main.dc.html" style="flex: none; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line2); color: var(--text); text-decoration: none; font-size: 12px; font-weight: 600; display: flex; align-items: center;">Autoriser…</a></sc-if>
+<sc-if value="{{k.locked}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 11px; color: var(--text3);">socle</span></sc-if>
+</li>
+</sc-for>
+</ul>
+</section>
+<section aria-labelledby="tools-title" style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between;"><h2 id="tools-title" style="margin: 0; font-size: 14px; font-weight: 650;">Outils qui sortent le plus</h2><span style="font-size: 12px; color: var(--text3);">24 h</span></div>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+<li style="display: flex; justify-content: space-between; gap: 10px;"><span style="font-family: 'Geist Mono', monospace;">upload_document</span><span style="color: var(--text2);">212 flux · 96 Mo</span></li>
+<li style="display: flex; justify-content: space-between; gap: 10px;"><span style="font-family: 'Geist Mono', monospace;">send_mail</span><span style="color: var(--text2);">148 flux · 31 Mo</span></li>
+<li style="display: flex; justify-content: space-between; gap: 10px;"><span style="font-family: 'Geist Mono', monospace;">terminal</span><span style="color: var(--text2);">64 flux · 14 Mo · <span style="color: var(--ko); font-weight: 600;">6 refus</span></span></li>
+<li style="display: flex; justify-content: space-between; gap: 10px;"><span style="font-family: 'Geist Mono', monospace;">web_request</span><span style="color: var(--text2);">51 flux · 2 Mo</span></li>
+</ul>
+</section>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"dark","section":"Thème"},"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  state = { theme: null };
+
+  renderVals() {
+    const theme = this.state.theme || this.props.theme || 'dark';
+    const hours = ['15', '16', '17', '18', '19', '20', '21', '22', '23', '00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14'];
+    const ok = [6, 8, 7, 5, 3, 2, 2, 1, 1, 0.5, 0.4, 0.4, 0.3, 0.3, 0.5, 1, 4, 9, 8, 7, 6, 5, 8, 19];
+    const ko = [0, 0, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 12];
+    const px = (mo) => Math.round(mo / 32 * 140) + 'px';
+    const bars = hours.map((h, i) => ({ ok: px(ok[i]), ko: px(ko[i]), okRadius: ko[i] > 0 ? '0' : '2px 2px 0 0', tip: h + ' h · ' + ok[i] + ' Mo acceptés' + (ko[i] ? ' · ' + ko[i] + ' Mo refusés' : '') }));
+    const D = [
+      ['api.anthropic.com', 'S3', 1940, '—', 'il y a 2 s', ''],
+      ['graph.microsoft.com', '9', 612, '31 Mo', 'il y a 46 s', ''],
+      ['s3.fr-par.scw.cloud', '7', 212, '96 Mo', 'il y a 15 s', ''],
+      ['teams.microsoft.com', '3', 188, '4 Mo', 'il y a 3 min', ''],
+      ['glpi.interne.lan', '10', 96, '1 Mo', 'il y a 20 min', 'interne'],
+      ['pypi.org', '2', 41, '0,2 Mo', 'il y a 5 h', ''],
+      ['api.exemple.com', '13', 9, '12 Mo', 'il y a 2 min', 'nouvelle · refusée'],
+      ['extranet.fournisseur-b.example', '11', 4, '3 Mo', 'il y a 2 j', 'nouvelle']
+    ];
+    const max = 1940;
+    const dests = D.map(([dest, rule, n, vol, last, tag]) => ({
+      dest, rule, vol, last, tag, hasTag: !!tag, n: n.toLocaleString('fr-FR'),
+      w: Math.max(2, Math.round(Math.sqrt(n / max) * 100)) + '%',
+      barBg: rule === '13' ? 'var(--ko)' : 'var(--bar)',
+      ruleFg: rule === '13' ? 'var(--ko)' : rule.charAt(0) === 'S' ? 'var(--obs)' : 'var(--text2)',
+      tagFg: tag.indexOf('refus') >= 0 ? 'var(--ko)' : tag === 'interne' ? 'var(--text2)' : 'var(--warn)',
+      tagBg: tag.indexOf('refus') >= 0 ? 'var(--ko-bg)' : tag === 'interne' ? 'var(--sub)' : 'var(--warn-bg)'
+    }));
+    const refus = [
+      { dest: 'api.exemple.com', n: 6, when: 'il y a 2 min', rule: '13', why: 'aucune règle', can: true, locked: false },
+      { dest: 'transfer.sh', n: 2, when: 'il y a 3 h', rule: 'S2', why: 'liste de refus globale', can: false, locked: true },
+      { dest: 'docs.google.com', n: 1, when: 'hier 17:42', rule: '13', why: 'aucune règle', can: true, locked: false }
+    ];
+    return {
+      themeClass: theme === 'dark' ? 'dark' : 'light',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      bars, dests, refus
+    };
+  }
+}
+</script>
+</body>
+</html>

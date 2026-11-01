@@ -1,0 +1,185 @@
+{{- /*
+Per-namespace gateways (ADR 0003, Kubernetes), aligned with afw-enroll's Kubernetes manifests:
+the enrolled pods (label afw.enrolled=true) of the namespace may only reach their gateway — explicit
+proxy, transparent listener and DNS — and are patched by afw-enroll (proxy variables, dnsConfig pointing
+to the gateway service, CA from ConfigMap afw-gateway-ca).
+*/ -}}
+{{- $root := . -}}
+{{- $fullname := include "afw.fullname" . -}}
+{{- range $i, $gw := .Values.gateway.instances }}
+{{- $name := required "gateway.instances[].name is required" $gw.name }}
+{{- $ns := required "gateway.instances[].namespace is required" $gw.namespace }}
+{{- $sel := dict "app.kubernetes.io/name" (include "afw.name" $root) "app.kubernetes.io/instance" $root.Release.Name "app.kubernetes.io/component" "gateway" "afw.gateway" $name }}
+{{- $tokenSecret := default (printf "%s-registration" $name) $gw.existingSecret }}
+{{- $p := $root.Values.gateway.ports }}
+{{- if $gw.registrationToken }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-registration
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: gateway
+type: Opaque
+data:
+  registration-token: {{ $gw.registrationToken | b64enc }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-state
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  annotations:
+    # Gateway identity and inspection CA private key: never deleted by helm uninstall.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $root.Values.gateway.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $root.Values.gateway.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    afw.gateway: {{ $name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- toYaml $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $sel | nindent 8 }}
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: {{ include "afw.image" $root.Values.gateway.image }}
+          imagePullPolicy: {{ $root.Values.gateway.image.pullPolicy }}
+          # Runs as root (no runAsNonRoot): the gateway image needs root for its network capabilities
+          # (NET_ADMIN in Docker mode, port 53 here). Mitigations: every other capability dropped, no
+          # privilege escalation, read-only root filesystem; state on its PVC, scratch on /tmp.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+          env:
+            - { name: AFW_CONSOLE_URL, value: {{ include "afw.gatewayEndpoint" $root | quote }} }
+            - { name: AFW_GATEWAY_NAME, value: {{ $name | quote }} }
+            - { name: AFW_STATE_DIR, value: /var/lib/afw }
+            - { name: AFW_CA_EXPORT, value: /var/lib/afw/public/gateway.crt }
+            # Kubernetes mode: no nftables interception, isolation comes from the NetworkPolicy.
+            - { name: AFW_INTERCEPT, value: "proxy-dns" }
+            - name: AFW_REGISTRATION_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ $tokenSecret }}, key: registration-token, optional: true } }
+            {{- with $gw.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - { name: proxy, containerPort: {{ $p.proxy }}, protocol: TCP }
+            - { name: transparent, containerPort: {{ $p.transparent }}, protocol: TCP }
+            - { name: dns-udp, containerPort: {{ $p.dns }}, protocol: UDP }
+            - { name: dns-tcp, containerPort: {{ $p.dns }}, protocol: TCP }
+            - { name: health, containerPort: {{ $p.health }}, protocol: TCP }
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml $root.Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/afw }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ $name }}-state
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    {{- toYaml $sel | nindent 4 }}
+  ports:
+    - { name: proxy, port: {{ $p.proxy }}, targetPort: proxy, protocol: TCP }
+    - { name: dns-udp, port: 53, targetPort: dns-udp, protocol: UDP }
+    - { name: dns-tcp, port: 53, targetPort: dns-tcp, protocol: TCP }
+    {{- range $root.Values.gateway.transparentPorts }}
+    - { name: {{ printf "t-%v" . }}, port: {{ . }}, targetPort: transparent, protocol: TCP }
+    {{- end }}
+{{- with $gw.caCertificate }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: afw-gateway-ca
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: gateway
+data:
+  ca.crt: |
+    {{- . | nindent 4 }}
+{{- end }}
+---
+# Enrolled pods (afw.enrolled=true) may only talk to their gateway: no other egress at all, DNS included.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: afw-enrolled-egress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "afw.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: enrolled-egress
+spec:
+  podSelector:
+    matchLabels:
+      afw.enrolled: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $sel | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $p.proxy }} }
+        - { protocol: TCP, port: {{ $p.transparent }} }
+        - { protocol: UDP, port: {{ $p.dns }} }
+        - { protocol: TCP, port: {{ $p.dns }} }
+{{- end }}

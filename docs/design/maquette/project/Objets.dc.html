@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Objets et zones — agents-firewall</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.afw{--bg:#f6f7f9;--panel:#ffffff;--sub:#f0f2f5;--line:#e4e7ec;--line2:#d0d5dd;--text:#0b1220;--text2:#3e4a5c;--text3:#5a6677;--pri:#0369a1;--pri-bg:#e3f2fb;--pri-fg:#ffffff;--ok:#047857;--ok-bg:#e3f5ec;--ko:#b42318;--ko-bg:#fdeceb;--warn:#8a4b06;--warn-bg:#fdf1dc;--obs:#6d28d9;--obs-bg:#f1ebfd;--code:#f8f9fb}
+.afw.dark{--bg:#090b0f;--panel:#0e1117;--sub:#151a22;--line:#1c222c;--line2:#29313d;--text:#e8edf4;--text2:#a7b1bf;--text3:#7f8a9a;--pri:#5cc8ff;--pri-bg:#0f2533;--pri-fg:#04131c;--ok:#3fdc97;--ok-bg:#0d2a1f;--ko:#ff6b6b;--ko-bg:#331418;--warn:#f6b84b;--warn-bg:#2e220d;--obs:#b79bff;--obs-bg:#231a3a;--code:#0b0e13}
+.afw *{box-sizing:border-box}
+.afw button,.afw input,.afw select{font:inherit;color:inherit}
+.afw button{cursor:pointer}
+.afw .nav:hover,.afw .orow:hover{background:var(--sub)}
+.afw .orow[aria-current="true"],.afw .orow[aria-current="true"]:hover{background:var(--pri-bg)}
+.afw input::placeholder{color:var(--text3)}
+.afw :focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+a{color:var(--pri)}a:hover{color:var(--text)}
+</style>
+</helmet>
+<div class="afw {{themeClass}}" style="min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap;">
+
+<nav aria-label="Navigation principale" style="flex: 1 1 224px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; padding: 14px 12px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 8px;">
+<span style="width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path><path d="M8.5 12h7"></path></svg></span>
+<span style="display: flex; flex-direction: column; line-height: 1.2;"><strong style="font-size: 14px;">agents-firewall</strong><span style="font-size: 11px; color: var(--text3);">Console · Pulse myIT</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Surveiller</span>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Journal</a>
+<a class="nav" href="Agent.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 13v2M15 13v2"></path></svg>Agents</a>
+<a class="nav" href="FluxInternes.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 11l10-5M7 13l10 5"></path></svg><span style="flex: 1;">Flux internes</span><span style="font-size: 11px; font-weight: 700; color: var(--ko); background: var(--ko-bg); border-radius: 999px; padding: 0 7px;">2</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Politique</span>
+<a class="nav" href="Regles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg><span style="flex: 1;">Base de règles</span><span style="font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px;">1</span></a>
+<a class="nav" href="Objets.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--pri); background: var(--pri-bg); text-decoration: none; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect></svg>Objets et zones</a>
+<a class="nav" href="Revisions.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"></path><path d="M3.5 3.5v5h5M12 7.5V12l3 2"></path></svg>Révisions et audit</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); padding: 0 10px 4px;">Infrastructure</span>
+<a class="nav" href="Passerelles.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--text2); text-decoration: none; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="7" rx="1.5"></rect><rect x="3.5" y="13" width="17" height="7" rx="1.5"></rect><path d="M7.5 7.5h.01M7.5 16.5h.01"></path></svg>Passerelles</a>
+</div>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+<a href="Passerelles.dc.html" style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok);"></span>Politique installée</span><strong style="font-size: 13px;">Révision 42 · 3/3 passerelles</strong></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 6px;"><span style="width: 28px; height: 28px; border-radius: 50%; background: var(--sub); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">KS</span><span style="display: flex; flex-direction: column; line-height: 1.25;"><span style="font-weight: 600;">Killian Stein</span><span style="font-size: 11px; color: var(--text3);">Administrateur</span></span></div>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<header style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+<h1 style="margin: 0; font-size: 16px; font-weight: 650;">Objets et zones</h1>
+<span style="font-size: 12px; color: var(--text3);">Briques nommées et réutilisables de la politique</span>
+<span style="flex: 1;"></span>
+<a href="Regles.dc.html" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 7px; background: var(--warn-bg); text-decoration: none; color: var(--warn); font-size: 12.5px; font-weight: 600;"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>Session · 1 modification</a>
+<button type="button" onClick="{{toggleTheme}}" aria-label="Basculer clair / sombre" style="width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--line); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--text2);"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></button>
+</header>
+
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+
+<section aria-labelledby="zones-title" style="display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;"><h2 id="zones-title" style="margin: 0; font-size: 14px; font-weight: 650;">Zones</h2><span style="font-size: 12px; color: var(--text3);">Un agent appartient à une seule zone · une zone = des autorisations identiques</span><span style="flex: 1;"></span><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel); font-weight: 500; font-size: 12.5px;">Nouvelle zone</button></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 10px;">
+<sc-for list="{{zones}}" as="z" hint-placeholder-count="4">
+<article style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: center; gap: 8px;"><strong style="font-size: 14px;">{{z.name}}</strong><span style="font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; color: {{z.modeFg}}; background: {{z.modeBg}};">{{z.mode}}</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px;"><sc-for list="{{z.agents}}" as="ag" hint-placeholder-count="2"><a href="Agent.dc.html" style="font-family: 'Geist Mono', monospace; font-size: 11.5px; padding: 1px 7px; border-radius: 5px; background: var(--sub); color: var(--text); text-decoration: none;">{{ag}}</a></sc-for></div>
+<dl style="margin: 0; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 3px 8px; font-size: 12px;">
+<dt style="color: var(--text3);">Règles</dt><dd style="margin: 0;">{{z.rules}}</dd>
+<dt style="color: var(--text3);">Passerelle</dt><dd style="margin: 0; font-family: 'Geist Mono', monospace; font-size: 11.5px;">{{z.gw}}</dd>
+<dt style="color: var(--text3);">Délégation</dt><dd style="margin: 0; color: {{z.delegFg}};">{{z.deleg}}</dd>
+</dl>
+</article>
+</sc-for>
+</div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+<section aria-labelledby="obj-title" style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+<h2 id="obj-title" style="margin: 0 6px 0 0; font-size: 14px; font-weight: 650;">Objets</h2>
+<div role="group" aria-label="Type d’objet" style="display: flex; gap: 4px; flex-wrap: wrap;">
+<sc-for list="{{types}}" as="t" hint-placeholder-count="6">
+<button type="button" onClick="{{t.pick}}" aria-pressed="{{t.on}}" style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid {{t.border}}; background: {{t.bg}}; color: {{t.fg}}; font-size: 12px; font-weight: 600;">{{t.label}}</button>
+</sc-for>
+</div>
+<span style="flex: 1;"></span>
+<label style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 7px; background: var(--panel); color: var(--text3); min-width: 200px;"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Rechercher un objet</span><input type="search" placeholder="Nom ou valeur…" style="border: 0; outline: 0; background: transparent; flex: 1; min-width: 0; font-size: 12.5px;"></label>
+<button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 0; background: var(--text); color: var(--bg); font-weight: 600; font-size: 12.5px;">Nouvel objet</button>
+</div>
+<div style="background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto;">
+<div style="min-width: 600px;">
+<div style="display: grid; grid-template-columns: 112px minmax(190px, 1fr) minmax(180px, 1.2fr) 92px; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text3);"><span>Type</span><span>Nom</span><span>Valeur</span><span style="text-align: right;">Utilisé dans</span></div>
+<sc-for list="{{objs}}" as="o" hint-placeholder-count="14">
+<button type="button" class="orow" onClick="{{o.pick}}" aria-current="{{o.cur}}" style="display: grid; grid-template-columns: 112px minmax(190px, 1fr) minmax(180px, 1.2fr) 92px; gap: 10px; align-items: center; width: 100%; padding: 8px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left;">
+<span style="font-size: 11.5px; color: var(--text2);">{{o.type}}</span>
+<span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{o.id}}</span><sc-if value="{{o.hasTag}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 5px; color: {{o.tagFg}}; background: {{o.tagBg}};">{{o.tag}}</span></sc-if></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{o.value}}</span>
+<span style="text-align: right; font-size: 12px; font-weight: 600; color: {{o.useFg}};">{{o.useLabel}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</section>
+
+<aside aria-label="Détail de l’objet" style="flex: 1 1 380px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;">
+<div style="padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px;">
+<span style="font-size: 12px; color: var(--text3);">{{cur.type}}</span>
+<h2 style="margin: 0; font-family: 'Geist Mono', monospace; font-size: 16px; font-weight: 600; word-break: break-all;">{{cur.id}}</h2>
+<span style="font-size: 12.5px; color: var(--text2);">{{cur.note}}</span>
+<div style="display: flex; gap: 8px; padding-top: 4px; flex-wrap: wrap;"><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Modifier</button><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line2); background: transparent; font-weight: 500;">Cloner</button><sc-if value="{{cur.unused}}" hint-placeholder-val="{{ false }}"><button type="button" style="height: 30px; padding: 0 12px; border-radius: 7px; border: 0; background: var(--ko-bg); color: var(--ko); font-weight: 600;">Supprimer (inutilisé)</button></sc-if></div>
+</div>
+<sc-if value="{{cur.hasMembers}}" hint-placeholder-val="{{ true }}">
+<div style="padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px;">
+<strong style="font-size: 12px;">{{cur.membersTitle}}</strong>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px;">
+<sc-for list="{{cur.members}}" as="m" hint-placeholder-count="4"><li style="font-family: 'Geist Mono', monospace; font-size: 12px;">{{m}}</li></sc-for>
+</ul>
+</div>
+</sc-if>
+<div style="padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;"><strong style="font-size: 13px;">Où est-il utilisé ?</strong><span style="font-size: 12px; color: var(--text3);">{{cur.useLabel}}</span></div>
+<sc-if value="{{cur.unused}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12.5px; color: var(--warn); background: var(--warn-bg); border-radius: 7px; padding: 8px 10px;">Nulle part. Signalé par la vérification avant installation.</span></sc-if>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px;">
+<sc-for list="{{cur.used}}" as="u" hint-placeholder-count="3">
+<li><a href="{{u.href}}" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text);"><span style="flex: none; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); width: 64px;">{{u.kind}}</span><span style="display: flex; flex-direction: column; min-width: 0; line-height: 1.3;"><span style="font-weight: 600; font-size: 12.5px;">{{u.what}}</span><span style="font-size: 11.5px; color: var(--text3);">{{u.ctx}}</span></span></a></li>
+</sc-for>
+</ul>
+<span style="font-size: 11.5px; color: var(--text3);">{{cur.history}}</span>
+</div>
+</aside>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"dark","section":"Thème"},"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  state = { sel: 'grp-portails-partenaires', type: 'tous', theme: null };
+
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme || this.props.theme || 'dark';
+    const ruleRef = (n, name, zone, hits) => ({ kind: 'Règle ' + n, what: name, ctx: zone + ' · ' + hits, href: 'Regles.dc.html' });
+    const O = [
+      { id: 'dom-api.exemple.com', t: 'dom', type: 'Domaine', value: 'api.exemple.com', note: 'Créé depuis le journal (flux f-8c21e4), dans votre session.', tag: 'session', tagFg: 'var(--pri)', tagBg: 'var(--pri-bg)', used: [ruleRef('12', 'Portail partenaire — api.exemple.com', 'bots-internes', 'pas encore installée')], history: 'Verrouillé par votre session · invisible des autres administrateurs jusqu’à publication.' },
+      { id: 'grp-portails-partenaires', t: 'grp', type: 'Groupe', value: '4 domaines', note: 'Portails fournisseurs et extranets où les bots déposent des documents.', members: ['portail.fournisseur-a.example', 'extranet.fournisseur-b.example', '*.support.fournisseur-c.example', 'docs.fournisseur-d.example'], used: [ruleRef('11', 'Portails partenaires', 'bots-internes', '57 utilisations · il y a 18 min'), { kind: 'Inspection', what: 'Politique d’inspection HTTPS', ctx: 'déchiffré (défaut) · aucun contournement', href: 'Regles.dc.html' }, { kind: 'Alerte', what: 'Nouvelle destination pour un agent', ctx: 'exclut les membres de ce groupe', href: 'FluxInternes.dc.html' }], history: 'Modifié en révision 38 par Killian Stein · 14/10/2026.' },
+      { id: 'grp-fournisseurs-llm', t: 'grp', type: 'Groupe', value: 'catégorie fournisseur LLM · 3', note: 'Trafic journalisé en détail, exempté du blocage par classe de donnée. Secrets masqués dans les journaux.', members: ['api.anthropic.com', 'api.openai.com', 'api.mistral.ai'], used: [ruleRef('S3', 'Fournisseurs LLM', 'socle commun', '48 120 utilisations · il y a 1 s')], history: 'Créé en révision 1 · import egress-guard.' },
+      { id: 'grp-metadonnees-cloud', t: 'grp', type: 'Groupe', value: '3 adresses', note: 'Services de métadonnées des clouds. Toute tentative déclenche une alerte.', members: ['169.254.169.254', 'fd00:ec2::254', 'metadata.google.internal'], used: [ruleRef('S1', 'Métadonnées cloud interdites', 'socle commun', '3 utilisations · il y a 20 s'), { kind: 'Alerte', what: 'Tentative vers les métadonnées cloud', ctx: 'webhook + Pulse Chat', href: 'FluxInternes.dc.html' }], history: 'Fourni par défaut · non supprimable.' },
+      { id: 'dom-s3-scaleway-fr-par', t: 'dom', type: 'Domaine', value: 's3.fr-par.scw.cloud', note: 'Envois par URL présignée. Remplace le faux positif quotidien de l’egress-guard.', used: [ruleRef('7', 'Stockage S3 — URL présignées', 'bots-internes', '612 utilisations · il y a 15 s')], history: 'Créé en révision 3 · migration de Daniel.' },
+      { id: 'grp-microsoft-365', t: 'grp', type: 'Groupe', value: '6 domaines', note: 'Graph, Outlook et ressources Microsoft 365.', members: ['graph.microsoft.com', 'login.microsoftonline.com', 'outlook.office365.com', '*.sharepoint.com', 'teams.microsoft.com', '*.office.net'], used: [ruleRef('9', 'Microsoft 365 (Graph)', 'bots-internes', '2 340 utilisations · il y a 46 s')], history: 'Modifié en révision 40 par l’agent agréé (zone déléguée), validé par Killian Stein.' },
+      { id: 'hote-glpi', t: 'host', type: 'Hôte', value: '10.0.4.12 · glpi.interne.lan', note: 'Serveur de tickets.', used: [ruleRef('10', 'GLPI interne', 'bots-internes', '880 utilisations · il y a 55 s'), { kind: 'Carte', what: 'Carte des flux internes', ctx: 'système interne suivi', href: 'FluxInternes.dc.html' }], history: 'Créé en révision 2.' },
+      { id: 'grp-bases-internes', t: 'grp', type: 'Groupe', value: '2 hôtes', note: 'Bases de données. Accès signalés comme port sensible.', members: ['postgres-ha.interne.lan · 10.0.6.30', 'clickhouse.interne.lan · 10.0.6.40'], used: [ruleRef('22', 'Bases internes (surveillées)', 'ops', '1 233 utilisations · il y a 1 min'), { kind: 'Alerte', what: 'Accès à un port sensible', ctx: 'mouvement latéral', href: 'FluxInternes.dc.html' }], history: 'Créé en révision 12.' },
+      { id: 'net-lan-bureaux', t: 'net', type: 'Réseau', value: '10.0.0.0/16', note: 'LAN et VM internes.', used: [{ kind: 'Alerte', what: 'Nouvel hôte interne contacté', ctx: 'périmètre surveillé', href: 'FluxInternes.dc.html' }, { kind: 'Carte', what: 'Carte des flux internes', ctx: 'regroupement « LAN »', href: 'FluxInternes.dc.html' }], history: 'Créé en révision 12.' },
+      { id: 'svc-https-get', t: 'svc', type: 'Service', value: 'TCP 443 · GET, HEAD', note: 'HTTPS en lecture seule (méthode HTTP vérifiée après déchiffrement).', used: [ruleRef('2', 'Dépôts de paquets', 'bots-internes', '318 utilisations'), ruleRef('6', 'Dépôts GitHub (lecture)', 'bots-internes', '402 utilisations')], history: 'Créé en révision 5.' },
+      { id: 'cls-secret', t: 'cls', type: 'Classe de donnée', value: '14 motifs', note: 'Détectée dans le contenu sortant. Les valeurs sont masquées avant stockage (type + empreinte).', members: ['Clés d’accès cloud (AWS, Scaleway, OVH)', 'Jetons GitHub, GitLab, npm', 'JWT, en-têtes Authorization', 'Clés privées PEM / OpenSSH', '… 10 autres motifs'], used: [ruleRef('S4', 'Un secret ne sort jamais', 'socle commun', '7 utilisations · il y a 34 s'), { kind: 'Masquage', what: 'Masquage avant stockage', ctx: 'tous les journaux', href: 'Main.dc.html' }, { kind: 'Alerte', what: 'Secret détecté', ctx: 'webhook + Teams', href: 'FluxInternes.dc.html' }], history: 'Import egress-guard (classe « secrets ») · révision 1.' },
+      { id: 'daniel-bot', t: 'agent', type: 'Agent', value: 'conteneur hermes-daniel', note: 'Bot Hermes · plugin de corrélation actif.', used: [{ kind: 'Zone', what: 'bots-internes', ctx: 'source des règles 1 à 13', href: 'Objets.dc.html' }, { kind: 'Passerelle', what: 'gw-hermes-01', ctx: 'enrôlé le 30/10 · afw enroll', href: 'Passerelles.dc.html' }], history: 'Les règles ne citent jamais un agent : elles portent sur sa zone.' },
+      { id: 'dom-ancien-crm.exemple.fr', t: 'dom', type: 'Domaine', value: 'ancien-crm.exemple.fr', note: 'Ancien CRM, décommissionné.', tag: 'inutilisé', tagFg: 'var(--warn)', tagBg: 'var(--warn-bg)', used: [], history: 'Plus référencé depuis la révision 39.' }
+    ];
+    const typeDefs = [['tous', 'Tous'], ['dom', 'Domaines'], ['host', 'Hôtes'], ['net', 'Réseaux'], ['grp', 'Groupes'], ['svc', 'Services'], ['cls', 'Classes de données'], ['agent', 'Agents']];
+    const types = typeDefs.map(([k, label]) => ({ label, on: String(s.type === k), border: s.type === k ? 'var(--text)' : 'var(--line2)', bg: s.type === k ? 'var(--text)' : 'transparent', fg: s.type === k ? 'var(--bg)' : 'var(--text2)', pick: () => this.setState({ type: k }) }));
+    const deco = (o) => Object.assign({}, o, {
+      hasTag: !!o.tag, unused: o.used.length === 0, hasMembers: !!o.members, membersTitle: o.t === 'cls' ? 'Motifs détectés' : 'Membres',
+      useLabel: o.used.length === 0 ? 'inutilisé' : o.used.length + (o.used.length > 1 ? ' endroits' : ' endroit'),
+      useFg: o.used.length === 0 ? 'var(--warn)' : 'var(--text2)'
+    });
+    const objs = O.filter((o) => s.type === 'tous' || o.t === s.type).map((o) => Object.assign(deco(o), { cur: String(o.id === s.sel), pick: () => this.setState({ sel: o.id }) }));
+    const cur = deco(O.find((o) => o.id === s.sel) || O[0]);
+    const zones = [
+      { name: 'bots-internes', mode: 'refus par défaut', agents: ['daniel-bot', 'laurent-bot'], rules: '13 règles · 1 en session', gw: 'gw-hermes-01', deleg: 'Déléguée à l’agent agréé', ok: true },
+      { name: 'bots-clients', mode: 'refus par défaut', agents: ['hermes-acme'], rules: '2 règles', gw: 'gw-hermes-02', deleg: 'Déléguée à l’agent agréé', ok: true },
+      { name: 'nouveaux-bots', mode: 'observation', agents: ['hermes-compta'], rules: '1 règle · depuis le 27/10', gw: 'gw-hermes-02', deleg: 'Non déléguée', ok: false, obs: true },
+      { name: 'ops', mode: 'refus par défaut', agents: ['vulcain-bot'], rules: '7 règles · 1 expirée', gw: 'gw-ops-01', deleg: 'Non délégable : zone de l’agent agréé', ok: false, self: true }
+    ].map((z) => Object.assign(z, { modeFg: z.obs ? 'var(--obs)' : 'var(--ok)', modeBg: z.obs ? 'var(--obs-bg)' : 'var(--ok-bg)', delegFg: z.self ? 'var(--warn)' : z.ok ? 'var(--text)' : 'var(--text3)' }));
+    return {
+      themeClass: theme === 'dark' ? 'dark' : 'light',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      types, objs, cur, zones
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -357,7 +357,7 @@ async fn apply_infra(
             write_atomic(path, yaml.as_bytes())?;
             writeln!(ctx.err, "Wrote {}.", path.display())?;
             if a.apply {
-                docker_compose_up(ctx, path)?;
+                docker_compose_up(ctx, path, false)?;
             }
         }
         Prepared::Coolify => {
@@ -403,14 +403,17 @@ fn coolify_client(ctx: &Ctx<'_>, url: Option<&str>) -> Result<CoolifyClient> {
     Ok(CoolifyClient::new(url, token)?)
 }
 
-fn docker_compose_up(ctx: &mut Ctx<'_>, file: &Path) -> Result<()> {
-    let args = [
+fn docker_compose_up(ctx: &mut Ctx<'_>, file: &Path, remove_orphans: bool) -> Result<()> {
+    let mut args = vec![
         "compose".to_string(),
         "-f".into(),
         file.display().to_string(),
         "up".into(),
         "-d".into(),
     ];
+    if remove_orphans {
+        args.push("--remove-orphans".into());
+    }
     writeln!(ctx.err, "Running: {} {}", ctx.docker, shell_line(&args))?;
     let status = std::process::Command::new(&ctx.docker)
         .args(&args)
@@ -447,7 +450,9 @@ pub async fn unenroll(ctx: &mut Ctx<'_>, a: UnenrollArgs) -> Result<()> {
         write_atomic(path, restored.as_bytes())?;
         writeln!(ctx.err, "Restored {}.", path.display())?;
         if a.apply {
-            docker_compose_up(ctx, path)?;
+            // The afw-net and afw-in containers are now orphans: the relay would keep the host
+            // ports the restored agent publishes again.
+            docker_compose_up(ctx, path, true)?;
         }
     } else if let Some(uuid) = &a.coolify {
         let client = coolify_client(ctx, a.coolify_url.as_deref())?;

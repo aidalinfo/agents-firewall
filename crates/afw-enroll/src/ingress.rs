@@ -63,7 +63,9 @@ pub(crate) fn container_ports(service: &str, ports: &Value) -> Result<Vec<u16>, 
         if !proto.eq_ignore_ascii_case("tcp") {
             return Err(unsupported(format!("`{target}/{proto}`")));
         }
-        let (start, end) = target.split_once('-').unwrap_or((&target, &target));
+        let (start, end) = target
+            .split_once('-')
+            .unwrap_or((target.as_str(), target.as_str()));
         let parse = |p: &str| p.trim().parse::<u16>().ok().filter(|&p| p > 0);
         let (Some(start), Some(end)) = (parse(start), parse(end)) else {
             return Err(unsupported(format!("container port `{target}`")));

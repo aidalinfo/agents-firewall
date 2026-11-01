@@ -18,6 +18,7 @@ fn spec() -> EnrollSpec {
             plugin_dir_container: Some("/home/hermes/.hermes/plugins/afw".into()),
         }),
         netinit_image: "afw-netinit:local".into(),
+        ingress: None,
     }
 }
 

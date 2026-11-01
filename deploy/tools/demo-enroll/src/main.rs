@@ -27,6 +27,7 @@ fn spec(agent: &str, ip: &str, hermes: bool) -> EnrollSpec {
             plugin_dir_container: None,
         }),
         netinit_image: "afw-netinit:local".into(),
+        ingress: None,
     }
 }
 

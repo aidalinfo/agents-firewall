@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use afw_enroll::{
     CA_BUNDLE_PATH, CA_CERT_PATH, CA_DIR, EnrollError, EnrollSpec, EnrollWarning, HermesSpec,
-    ORIGINAL_KEY, enroll_compose, netinit_script, unenroll_compose,
+    IngressSpec, ORIGINAL_KEY, enroll_compose, netinit_script, unenroll_compose,
 };
 use serde_yaml::Value;
 
@@ -27,6 +27,10 @@ fn spec(agent: &str, service: &str) -> EnrollSpec {
         ca_path_host: "/etc/afw/gateway-ca.crt".into(),
         hermes: None,
         netinit_image: "afw-netinit:local".into(),
+        ingress: Some(IngressSpec {
+            network: "afw-ingress".into(),
+            gateway_ip: "10.81.0.2".parse().unwrap(),
+        }),
     }
 }
 
@@ -146,8 +150,8 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
         agent["depends_on"]["postgres"]["condition"].as_str(),
         Some("service_started")
     );
-    // The holder alone has NET_ADMIN (and nothing else), the fixed IP, the gateway DNS and
-    // the published ports.
+    // The holder alone has NET_ADMIN (and nothing else), the fixed IP and the gateway DNS. The
+    // published ports are not on the holder (its internal network publishes nothing).
     let net = service(&doc, "afw-net-daniel");
     assert_eq!(strings(&net["cap_drop"]), vec!["ALL"]);
     assert_eq!(strings(&net["cap_add"]), vec!["NET_ADMIN"]);
@@ -174,7 +178,7 @@ fn enrolled_agent_cannot_reach_network_except_through_netns_holder() {
         "only the internal network"
     );
     assert_eq!(strings(&net["dns"]), vec!["10.80.0.2"]);
-    assert_eq!(strings(&net["ports"]), vec!["8080:8080"]);
+    assert!(net.get("ports").is_none());
     assert_eq!(net["hostname"].as_str(), Some("daniel"));
     assert_eq!(net["restart"].as_str(), Some("unless-stopped"));
     assert_eq!(net["image"].as_str(), Some("afw-netinit:local"));
@@ -442,6 +446,7 @@ fn ipv6_agent_gets_ipv6_address() {
     s.gateway_ip = "fd00:80::2".parse().unwrap();
     s.agent_ip = "fd00:80::11".parse().unwrap();
     s.proxy_url = "http://[fd00:80::2]:3128".into();
+    s.ingress = None;
     let out = enroll_compose(&fixture("plain-agent.yml"), &s).unwrap();
     let doc = parse(&out.yaml);
     let net = service(&doc, "afw-net-laurent");
@@ -470,7 +475,10 @@ fn order_is_preserved_and_holder_is_inserted_before_agent() {
         .keys()
         .map(|k| k.as_str().unwrap().to_string())
         .collect();
-    assert_eq!(names, vec!["postgres", "afw-net-daniel", "daniel-bot"]);
+    assert_eq!(
+        names,
+        vec!["postgres", "afw-net-daniel", "daniel-bot", "afw-in-daniel"]
+    );
     let top: Vec<_> = doc
         .as_mapping()
         .unwrap()
@@ -694,12 +702,245 @@ fn net_sysctls_are_removed_and_others_kept() {
     );
 }
 
+// ---------------------------------------------------------------- inbound ports (issue #22)
+
+const PORTS_COMPOSE: &str = r#"services:
+  bot:
+    image: bot
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:9000:90"
+      - "${CALLBACK_PORT:-7000}:7000/tcp"
+      - target: 443
+        published: "8443"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      front:
+        aliases: [bot.local]
+networks:
+  front: {}
+  afw-ingress:
+    name: shared-ingress
+"#;
+
 #[test]
-fn moved_ports_are_reported_as_not_published() {
-    let out = enroll_compose(&fixture("hermes-bot.yml"), &hermes_spec()).unwrap();
-    assert!(out.warnings.contains(&EnrollWarning::PortsNotPublished {
-        service: "daniel-bot".into()
+fn published_ports_go_to_a_relay_routed_through_the_gateway() {
+    let out = enroll_compose(PORTS_COMPOSE, &spec("bot", "bot")).unwrap();
+    let doc = parse(&out.yaml);
+    let original = parse(PORTS_COMPOSE);
+    // Neither the agent nor its namespace holder publish anything; the holder stays on the
+    // internal network only (no second interface in the agent namespace).
+    assert!(service(&doc, "bot").get("ports").is_none());
+    let holder = service(&doc, "afw-net-bot");
+    assert!(holder.get("ports").is_none());
+    assert_eq!(
+        holder["networks"]
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["afw-internal"]
+    );
+    // The relay publishes the original ports verbatim, on the original networks of the agent
+    // plus the gateway ingress network, never on the internal network.
+    let relay = service(&doc, "afw-in-bot");
+    assert_eq!(relay["ports"], original["services"]["bot"]["ports"]);
+    let nets = relay["networks"].as_mapping().unwrap();
+    assert_eq!(
+        nets.keys().collect::<Vec<_>>(),
+        vec!["front", "afw-ingress"]
+    );
+    assert_eq!(
+        relay["networks"]["front"],
+        original["services"]["bot"]["networks"]["front"]
+    );
+    assert_eq!(strings(&relay["cap_drop"]), vec!["ALL"]);
+    assert_eq!(
+        strings(&relay["cap_add"]),
+        vec!["NET_ADMIN", "NET_BIND_SERVICE"]
+    );
+    assert!(relay.get("network_mode").is_none());
+    assert_eq!(
+        relay["depends_on"]["bot"]["condition"].as_str(),
+        Some("service_started")
+    );
+    assert_eq!(relay["labels"]["afw.agent"].as_str(), Some("bot"));
+    let cmd = strings(&relay["command"])[2].replace("$$", "$");
+    assert!(
+        cmd.contains("GW='10.81.0.2'") && cmd.contains("AGENT='10.80.0.11'"),
+        "{cmd}"
+    );
+    assert!(
+        cmd.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#),
+        "{cmd}"
+    );
+    assert!(cmd.contains("PORTS='90 443 7000 8080'"), "{cmd}");
+    assert!(
+        strings(&relay["healthcheck"]["test"])
+            .join(" ")
+            .contains("/tmp/afw-ready")
+    );
+    // The ingress network keeps its declaration key, now external (created by the gateway).
+    assert_eq!(
+        doc["networks"]["afw-ingress"]["external"].as_bool(),
+        Some(true)
+    );
+    // The dry run states the mechanism.
+    assert!(out.warnings.contains(&EnrollWarning::PortsRelayed {
+        service: "bot".into(),
+        relay: "afw-in-bot".into(),
+        ports: vec![90, 443, 7000, 8080],
     }));
+    let text = out
+        .warnings
+        .iter()
+        .map(ToString::to_string)
+        .collect::<String>();
+    assert!(text.contains("through the gateway"), "{text}");
+    // Exact inverse: ports, networks and the ingress declaration are restored.
+    let back = unenroll_compose(&out.yaml, "bot").unwrap();
+    assert_eq!(parse(&back), original, "back:\n{back}");
+}
+
+#[test]
+fn relay_order_and_default_network() {
+    let y = "services:
+  bot:
+    image: bot
+    ports: [\"80\"]
+  other:
+    image: x
+";
+    let out = enroll_compose(y, &spec("bot", "bot")).unwrap();
+    let doc = parse(&out.yaml);
+    let names: Vec<_> = doc["services"]
+        .as_mapping()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["afw-net-bot", "bot", "afw-in-bot", "other"]);
+    let relay = service(&doc, "afw-in-bot");
+    assert_eq!(
+        relay["networks"]
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["default", "afw-ingress"]
+    );
+    let back = unenroll_compose(&out.yaml, "bot").unwrap();
+    assert_eq!(parse(&back), parse(y));
+}
+
+#[test]
+fn published_ports_without_ingress_or_unsupported_are_refused() {
+    let mut s = spec("bot", "bot");
+    s.ingress = None;
+    let err = enroll_compose(PORTS_COMPOSE, &s).unwrap_err();
+    assert!(
+        matches!(&err, EnrollError::Unsupported(m) if m.contains("publishes ports")),
+        "{err}"
+    );
+    for y in [
+        "services:
+  bot:
+    image: bot
+    ports: [\"53:53/udp\"]
+",
+        "services:
+  bot:
+    image: bot
+    ports: [\"8080:${PORT}\"]
+",
+        "services:
+  bot:
+    image: bot
+    ports: [\"1000-2000:1000-2000\"]
+",
+        "services:
+  bot:
+    image: bot
+    ports: [\"80\"]
+    networks: [afw-ingress]
+",
+    ] {
+        let err = enroll_compose(y, &spec("bot", "bot")).unwrap_err();
+        assert!(matches!(err, EnrollError::Unsupported(_)), "{y}: {err}");
+    }
+    // Without ports, no ingress is needed and nothing is added.
+    let out = enroll_compose(
+        "services:
+  bot:
+    image: bot
+",
+        &s,
+    )
+    .unwrap();
+    let doc = parse(&out.yaml);
+    assert!(doc["services"].get("afw-in-bot").is_none());
+    assert!(doc["networks"].get("afw-ingress").is_none());
+}
+
+#[test]
+fn two_agents_sharing_the_ingress_network_unenroll_exactly() {
+    let original = "services:
+  a:
+    image: x
+    ports: [\"80:80\"]
+  b:
+    image: y
+    ports: [\"81:81\"]
+networks:
+  afw-ingress:
+    name: shared
+";
+    let sa = spec("a", "a");
+    let sb = EnrollSpec {
+        agent_ip: "10.80.0.12".parse().unwrap(),
+        ..spec("b", "b")
+    };
+    let both = enroll_compose(&enroll_compose(original, &sa).unwrap().yaml, &sb)
+        .unwrap()
+        .yaml;
+    let doc = parse(&both);
+    assert!(doc["services"].get("afw-in-a").is_some() && doc["services"].get("afw-in-b").is_some());
+    for order in [["a", "b"], ["b", "a"]] {
+        let step = unenroll_compose(&both, order[0]).unwrap();
+        // Still used by the other agent: stays external.
+        assert_eq!(
+            parse(&step)["networks"]["afw-ingress"]["external"].as_bool(),
+            Some(true),
+            "{order:?}"
+        );
+        let back = unenroll_compose(&step, order[1]).unwrap();
+        assert_eq!(parse(&back), parse(original), "{order:?}");
+    }
+}
+
+#[test]
+fn enrolling_over_an_existing_relay_name_is_refused() {
+    let y = "services:
+  bot:
+    image: bot
+  afw-in-bot:
+    image: x
+";
+    assert!(matches!(
+        enroll_compose(y, &spec("bot", "bot")).unwrap_err(),
+        EnrollError::AlreadyEnrolled(_)
+    ));
+}
+
+#[test]
+fn ingress_spec_is_validated() {
+    let mut s = spec("bot", "bot");
+    s.ingress.as_mut().unwrap().network = "afw-internal".into();
+    assert!(matches!(s.validate(), Err(EnrollError::InvalidSpec(_))));
+    let mut s = spec("bot", "bot");
+    s.ingress.as_mut().unwrap().gateway_ip = "fd00:81::2".parse().unwrap();
+    assert!(matches!(s.validate(), Err(EnrollError::InvalidSpec(_))));
 }
 
 #[test]

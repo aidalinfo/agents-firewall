@@ -132,6 +132,7 @@ Le fichier `deploy/compose/gateway.yml` définit :
 
 - le conteneur de la passerelle, avec `cap_add: [NET_ADMIN]` ;
 - le réseau **interne** `afw-internal`, déclaré `internal: true` avec un sous-réseau fixe : les agents y sont attachés et n'ont aucune autre sortie ;
+- le réseau **d'entrée** `afw-ingress`, déclaré `internal: true` : les relais `afw-in-<agent>` des agents qui publient des ports y joignent la passerelle, qui transfère ces seules connexions TCP entrantes vers l'agent (voir [enrolement.md](enrolement.md#ports-publiés-flux-entrants)) ;
 - le réseau **de sortie** `afw-egress`, par lequel la passerelle joint Internet et la console ;
 - un volume d'état monté sur `/var/lib/afw` : politique installée (`/var/lib/afw/policy.json`), clé et certificat de la passerelle (`identity/`), autorité d'inspection, tampon d'événements ;
 - un répertoire de l'hôte (`AFW_CA_PUBLIC_DIR`, défaut `/etc/agents-firewall`) monté sur `/var/lib/afw/public`, où la passerelle exporte le certificat public de son autorité d'inspection (`gateway.crt`), monté ensuite en lecture seule par les agents enrôlés.
@@ -145,6 +146,7 @@ Copiez `gateway.env.example` en `gateway.env` et renseignez :
 | `AFW_REGISTRATION_TOKEN` | le jeton de l'étape 3.1 |
 | `AFW_GATEWAY_NAME` | nom affiché dans la console |
 | `AFW_INTERNAL_NETWORK`, `AFW_INTERNAL_SUBNET`, `AFW_GATEWAY_IP` | réseau interne des agents (défaut `afw-internal`, `10.77.0.0/24`, `10.77.0.2`) |
+| `AFW_INGRESS_NETWORK`, `AFW_INGRESS_SUBNET`, `AFW_INGRESS_GATEWAY_IP` | réseau d'entrée des ports publiés (défaut `afw-ingress`, `10.78.0.0/24`, `10.78.0.2` ; à reprendre dans `afw enroll --ingress-network --ingress-gateway-ip` si vous les changez) |
 | `AFW_UPSTREAM_DNS`, `AFW_UPSTREAM_CA_FILE` | résolveur amont et CA amont supplémentaires (vide : valeurs du système) |
 
 puis :

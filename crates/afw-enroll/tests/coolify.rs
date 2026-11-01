@@ -3,8 +3,8 @@
 use std::sync::{Arc, Mutex};
 
 use afw_enroll::{
-    CoolifyClient, CoolifyKind, EnrollError, EnrollSpec, enroll_compose, enroll_coolify,
-    unenroll_coolify,
+    CoolifyClient, CoolifyKind, EnrollError, EnrollSpec, IngressSpec, enroll_compose,
+    enroll_coolify, unenroll_coolify,
 };
 use axum::{
     Json, Router,
@@ -164,6 +164,10 @@ fn spec() -> EnrollSpec {
         ca_path_host: "/etc/afw/ca.crt".into(),
         hermes: None,
         netinit_image: "afw-netinit:local".into(),
+        ingress: Some(IngressSpec {
+            network: "afw-ingress".into(),
+            gateway_ip: "10.81.0.2".parse().unwrap(),
+        }),
     }
 }
 

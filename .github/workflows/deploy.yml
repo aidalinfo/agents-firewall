@@ -33,13 +33,14 @@ jobs:
       - run: deploy/tests/run.sh enroll
 
   isolation:
-    name: netinit bypass tests and demo world
+    name: netinit bypass tests, inbound ports of an enrolled agent, demo world
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh netinit
+      - run: deploy/tests/run.sh ingress
       - run: deploy/tests/run.sh world
 
   images:

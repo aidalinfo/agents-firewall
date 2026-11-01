@@ -129,6 +129,10 @@ Par décision, les flux vers les réseaux internes et les autres agents sont **a
 
 Jusqu'à `max_buffered_body` (1 Mio par défaut), un corps est analysé en entier **avant** d'être envoyé. Au-delà, et pour les WebSocket et le streaming, l'analyse se fait au fil de l'eau : la connexion est coupée dès la détection, mais **la partie déjà transmise est partie**. Un secret placé après un long préambule peut donc sortir en partie avant la coupure ; l'événement est journalisé et une alerte est levée. Augmentez `max_buffered_body` pour les zones sensibles si la mémoire le permet.
 
+### Flux entrants des agents enrôlés
+
+Les ports publiés d'un agent enrôlé sont servis par un relais `afw-in-<agent>` et transférés par la passerelle au niveau TCP ([enrolement.md](enrolement.md#ports-publiés-flux-entrants)). Ce trafic entrant **n'est ni inspecté ni journalisé** : seules les sorties de l'agent le sont. La passerelle n'accepte que les nouvelles connexions du réseau d'entrée vers le réseau interne (jamais l'inverse), donc ce chemin n'offre aucune sortie à l'agent, mais **tout conteneur relié au réseau `afw-ingress` peut joindre n'importe quel agent de l'hôte** : n'y branchez que les relais. UDP n'est pas pris en charge (refusé à l'enrôlement).
+
 ### Exfiltration lente par DNS
 
 La passerelle filtre les noms demandés, mais si un domaine est autorisé avec un joker (par exemple `*.exemple.com`), un agent peut encoder des données dans des sous-domaines (`c2VjcmV0.exemple.com`) et les faire sortir lentement, requête après requête, vers le serveur qui fait autorité pour ce domaine. Chaque requête est journalisée, mais les détecteurs de classes de données ne voient que des fragments courts. Préférez des domaines exacts aux jokers et surveillez les alertes « nouvelle destination » et le volume de requêtes DNS par agent.

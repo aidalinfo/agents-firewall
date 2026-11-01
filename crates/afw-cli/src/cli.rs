@@ -829,6 +829,12 @@ pub struct EnrollArgs {
     /// Internal network of the gateway.
     #[arg(long, default_value = "afw-internal")]
     pub network: String,
+    /// Ingress network of the gateway (published ports are relayed to the agent through it).
+    #[arg(long = "ingress-network", default_value = "afw-ingress")]
+    pub ingress_network: String,
+    /// Gateway address on the ingress network.
+    #[arg(long = "ingress-gateway-ip", default_value = "10.78.0.2")]
+    pub ingress_gateway_ip: String,
     /// Explicit proxy URL [default: http://<gateway-ip>:3128].
     #[arg(long = "proxy-url")]
     pub proxy_url: Option<String>,

@@ -908,7 +908,7 @@ pub struct UnenrollArgs {
     pub coolify_service: bool,
     #[arg(long = "coolify-url", env = "AFW_COOLIFY_URL")]
     pub coolify_url: Option<String>,
-    /// Docker Compose: run `docker compose up -d --remove-orphans` afterwards.
+    /// Docker Compose: run `docker compose up -d` afterwards.
     #[arg(long)]
     pub apply: bool,
     /// Keep the agent in the policy (only undo the network changes).

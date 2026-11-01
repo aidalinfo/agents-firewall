@@ -14,7 +14,7 @@ Options:
       --url <URL>                  Console URL (overrides the configuration) [env: AFW_URL=]
       --ca-cert <FILE>             Extra trusted CA certificate, PEM (overrides the configuration) [env: AFW_CA_CERT=]
       --coolify-url <COOLIFY_URL>  [env: AFW_COOLIFY_URL=]
-      --apply                      Docker Compose: run `docker compose up -d --remove-orphans` afterwards
+      --apply                      Docker Compose: run `docker compose up -d` afterwards
       --session <ID>               Editing session to use (default: your open session) [env: AFW_SESSION=]
       --keep-agent                 Keep the agent in the policy (only undo the network changes)
       --publish <COMMENT>          Publish the session right away with this comment

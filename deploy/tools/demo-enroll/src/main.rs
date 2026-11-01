@@ -46,7 +46,10 @@ const AGENTS: [(&str, &str, bool); 3] = [
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("netinit") => print!("{}", netinit_script(&spec("laurent-bot", "10.77.0.11", false))),
+        Some("netinit") => print!(
+            "{}",
+            netinit_script(&spec("laurent-bot", "10.77.0.11", false))
+        ),
         Some("compose") => {
             let mut yaml = std::fs::read_to_string(&args[2]).expect("read base compose");
             for (agent, ip, hermes) in AGENTS {

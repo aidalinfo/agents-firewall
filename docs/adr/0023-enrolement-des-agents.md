@@ -44,11 +44,34 @@ ses tests sont gardés comme tests de non-régression (`tests/review_bypass.rs`)
 - `network_mode: service:afw-net-<agent>`, **`cap_drop: [NET_RAW]`** ajouté (ARP/IP spoofing sur
   le réseau interne), aucune capacité ajoutée, `depends_on: afw-net-<agent>: service_healthy`
   (une liste `depends_on` existante devient un dictionnaire `service_started`).
-- Les clés que Docker refuse avec ce mode sont **déplacées** sur `afw-net` (`ports`, `expose`,
+- Les clés que Docker refuse avec ce mode sont **déplacées** sur `afw-net` (`expose`,
   `hostname`, `domainname`, `mac_address`, `extra_hosts`, `dns_search`, `dns_opt`) ; `networks`,
   `dns`, `links` et les `sysctls` `net.*` sont retirés (avertissements `LinksRemoved`,
-  `NetSysctlsRemoved`). Les ports déplacés sont sur un réseau `internal` : **Docker ne les publie
-  plus** (avertissement `PortsNotPublished`) ; l'accès entrant se fait par la passerelle.
+  `NetSysctlsRemoved`).
+- **Ports publiés (révision, issue #22).** La première version déplaçait `ports` sur `afw-net`
+  avec un simple avertissement : sur un réseau `internal`, Docker garde le `PortBindings` dans les
+  métadonnées mais **ne crée aucun écouteur** sur l'hôte ; les rappels entrants étaient coupés en
+  silence. Ajouter un second réseau à `afw-net` est exclu (netinit le coupe ; actif, il
+  contournerait la passerelle). Décision : un **relais d'entrée** `afw-in-<agent>` (image netinit,
+  `cap_drop: [ALL]`, `cap_add: [NET_ADMIN, NET_BIND_SERVICE]`, `depends_on` l'agent) reprend
+  `ports` **à l'identique** et les réseaux d'origine de l'agent, plus le réseau d'entrée
+  `afw-ingress` (`internal: true`) de la passerelle ; il pose `ip route replace <agent>/32 via
+  <passerelle côté entrée>` et lance un `socat` par port de conteneur vers le même port de l'agent.
+  La passerelle (`AFW_INGRESS_SUBNETS`/`AFW_INGRESS_IFACE`) n'accepte en `forward` que les
+  **nouvelles connexions TCP entrée → interne**, plus `ct state established,related`, et les
+  **masque** (`masquerade`) : l'agent voit la passerelle comme pair et répond par sa route unique,
+  le trajet retour est symétrique. Aucune nouvelle connexion de l'entrée vers la passerelle
+  elle-même. L'agent garde une interface et deux routes ; passerelle arrêtée, sorties et entrées
+  sont coupées. Avertissement `PortsRelayed` (décrit le mécanisme au `--dry-run`). Refus
+  explicites : UDP, port de conteneur non littéral, plus de 64 ports, spec sans `ingress`.
+  Le transfert DNAT par la passerelle seule a été écarté : il imposerait de republier les ports
+  sur la passerelle (redémarrage commun à tous les agents) et une table de correspondance par
+  agent ; le proxy transparent a aussi été écarté (source inconnue refusée, TLS entrant intercepté).
+  Limites : flux entrants ni inspectés ni journalisés, l'agent ne voit pas l'adresse du client,
+  tout conteneur du réseau `afw-ingress` peut joindre les agents. Vérifié par
+  `deploy/tests/ingress.sh` (Docker réel : ports joignables avant/après, pair = passerelle,
+  adresse d'hôte conservée, aucune sortie de contournement, passerelle arrêtée, désenrôlement
+  identique au fichier d'origine).
 - Variables : `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` et leurs formes minuscules,
   `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` → `…/afw/bundle.pem` (paquet complet :
   les destinations exemptées d'inspection restent vérifiables), `NODE_EXTRA_CA_CERTS` →

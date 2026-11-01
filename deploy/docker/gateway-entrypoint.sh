@@ -10,6 +10,12 @@
 #   - every other TCP connection is redirected to the transparent listener (:15001);
 #   - UDP 53 (any resolver, e.g. dig @8.8.8.8) is redirected to the gateway DNS;
 #   - nothing is forwarded (chain forward policy drop): agents only get what the gateway relays.
+# Ingress side (optional, issue #22): AFW_INGRESS_IFACE, or the interface(s) holding the
+# AFW_INGRESS_SUBNETS. The afw-in-<agent> relays route the published ports of their agent through it:
+#   - new TCP connections ingress -> internal are forwarded and masqueraded (the agent sees the gateway
+#     as the peer and answers through its only route), replies follow the conntrack entry;
+#   - nothing else crosses: no forward from the internal side, nothing towards other interfaces, no new
+#     connection to the gateway itself from the ingress side.
 # Any failure here stops the container: never run without interception (fail closed).
 set -eu
 
@@ -59,6 +65,52 @@ set_list=""
 for i in $ifaces; do set_list="$set_list\"$i\", "; done
 set_list="{ ${set_list%, } }"
 
+# Ingress interfaces: same resolution, optional (no ingress = no forwarding at all).
+in_ifaces="${AFW_INGRESS_IFACE:-}"
+if [ -z "$in_ifaces" ] && [ -n "${AFW_INGRESS_SUBNETS:-}" ]; then
+  for net in $(printf '%s' "$AFW_INGRESS_SUBNETS" | tr ',' ' '); do
+    if ! printf '%s' "$net" | grep -Eq '^[0-9a-fA-F:.]+/[0-9]{1,3}$'; then
+      log "invalid ingress subnet: $net"
+      exit 64
+    fi
+    dev="$(ip -o route show "$net" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
+    if [ -z "$dev" ]; then
+      log "no interface holds the ingress subnet $net"
+      exit 65
+    fi
+    in_ifaces="$in_ifaces $dev"
+  done
+fi
+in_ifaces="$(printf '%s' "$in_ifaces" | tr ',' ' ' | xargs -n1 | sort -u | xargs)"
+in_list=""
+for i in $in_ifaces; do
+  if ! printf '%s' "$i" | grep -Eq '^[A-Za-z0-9_.@-]{1,15}$'; then
+    log "invalid ingress interface name: $i"
+    exit 64
+  fi
+  for j in $ifaces; do
+    if [ "$i" = "$j" ]; then log "$i is both internal and ingress"; exit 64; fi
+  done
+  in_list="$in_list\"$i\", "
+done
+ingress_rules=""
+if [ -n "$in_list" ]; then
+  in_list="{ ${in_list%, } }"
+  ingress_rules="
+table inet afw {
+  chain forward {
+    iifname $in_list oifname $set_list meta l4proto tcp ct state new accept
+  }
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    iifname $in_list oifname $set_list masquerade
+  }
+  chain input {
+    iifname $in_list ct state new drop
+  }
+}"
+fi
+
 # Forwarding (also set by the compose sysctls) and no ICMP redirects towards agents: a redirect
 # would tell an agent about a direct path to another agent.
 sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
@@ -84,6 +136,7 @@ table inet afw {
   }
   chain forward {
     type filter hook forward priority filter; policy drop;
+    ct state established,related accept
   }
   chain output {
     type filter hook output priority filter; policy accept;
@@ -96,6 +149,8 @@ table inet afw {
     iifname $set_list tcp dport $hport drop
   }
 }
+$ingress_rules
 NFT
 log "interception active on: $ifaces (tcp -> :$tport, udp/53 -> :$dport, forward drop)"
+[ -z "$in_ifaces" ] || log "ingress active on: $in_ifaces (new tcp -> internal side only, masqueraded)"
 exec /usr/local/bin/afw-gateway "$@"

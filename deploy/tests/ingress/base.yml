@@ -1,0 +1,100 @@
+# Integration test of the inbound path of an enrolled agent (issue #22), run by deploy/tests/ingress.sh.
+# This is the compose file BEFORE enrollment: the test enrolls `test-bot` with afw_enroll::enroll_compose
+# (deploy/tools/demo-enroll), runs the result, then unenrolls it and runs the restored file.
+# Topology: the gateway is on the internal agents network, the ingress network and a fake "wan"; test-bot
+# serves two TCP ports (published with the short and the long syntax, one bound to 127.0.0.1).
+# The external networks are created by the test (enrollment declares them `external`, as on a real host).
+name: afw-ingress-test
+
+services:
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/Dockerfile.gateway
+    image: afw-gateway:local
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.send_redirects: "0"
+      net.ipv4.conf.default.send_redirects: "0"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - afw-gateway seal-policy /policy/document.json --out /tmp/policy.json && exec gateway-entrypoint --standalone-policy /tmp/policy.json
+    environment:
+      AFW_INTERNAL_SUBNETS: 10.99.0.0/24
+      AFW_INGRESS_SUBNETS: 10.98.0.0/24
+      AFW_STATE_DIR: /var/lib/afw
+      AFW_CA_EXPORT: /var/lib/afw/public/gateway.crt
+      RUST_LOG: info
+    volumes:
+      # Same policy as the isolation test: test-bot (10.99.0.10) may reach allowed.example only.
+      - ../../docker/isolation-test/policy-document.json:/policy/document.json:ro
+      - gateway-public:/var/lib/afw/public
+    networks:
+      afw-it-internal:
+        ipv4_address: 10.99.0.2
+      afw-it-ingress:
+        ipv4_address: 10.98.0.2
+      wan:
+        ipv4_address: 198.18.99.2
+
+  web:
+    build:
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN apk add --no-cache busybox-extras socat
+    image: afw-isolation-web:local
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /www && echo hello-from-web > /www/index.html
+        socat TCP-LISTEN:4444,fork,reuseaddr EXEC:/bin/cat &
+        exec busybox-extras httpd -f -v -p 80 -h /www
+    networks:
+      wan:
+        ipv4_address: 198.18.99.20
+        aliases: [allowed.example, denied.example]
+
+  test-bot:
+    build:
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN apk add --no-cache curl bind-tools netcat-openbsd iproute2 socat
+    image: afw-ingress-agent:local
+    # Two tiny HTTP servers answering with their name and the peer address they see.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat > /tmp/reply <<'EOF'
+        #!/bin/sh
+        IFS= read -r _ || true
+        printf 'HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n%s peer=%s\n' "$$1" "$$SOCAT_PEERADDR"
+        EOF
+        chmod +x /tmp/reply
+        socat TCP4-LISTEN:8080,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-a" &
+        exec socat TCP4-LISTEN:9000,fork,reuseaddr EXEC:"/tmp/reply hello-from-agent-b"
+    ports:
+      - "${AFW_IT_PORT_A:-18080}:8080"
+      - target: 9000
+        published: "${AFW_IT_PORT_B:-18090}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks: [front]
+
+networks:
+  afw-it-internal:
+    external: true
+  afw-it-ingress:
+    external: true
+  wan:
+    internal: true
+    ipam:
+      config:
+        - subnet: 198.18.99.0/24
+  front: {}
+
+volumes:
+  gateway-public:

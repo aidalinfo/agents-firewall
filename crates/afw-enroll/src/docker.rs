@@ -68,8 +68,9 @@ pub fn netinit_command(spec: &EnrollSpec) -> Vec<String> {
 }
 
 /// Arguments to add to the agent's `docker run`, before its image. The agent joins the
-/// holder's namespace without `NET_RAW`; published ports belong on the holder. Start it once
-/// the holder is healthy.
+/// holder's namespace without `NET_RAW`. Start it once the holder is healthy. Ports cannot be
+/// published here (nor on the holder, which sits on an `internal` network): an inbound path needs
+/// the `afw-in-<agent>` relay of the Compose enrollment.
 pub fn docker_run_args(spec: &EnrollSpec) -> Vec<String> {
     let mut args = vec![
         "--network".into(),

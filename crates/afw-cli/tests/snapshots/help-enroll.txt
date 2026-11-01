@@ -36,6 +36,10 @@ Options:
           Gateway address on the internal network [default: 10.77.0.2]
       --network <NETWORK>
           Internal network of the gateway [default: afw-internal]
+      --ingress-network <INGRESS_NETWORK>
+          Ingress network of the gateway (published ports are relayed to the agent through it) [default: afw-ingress]
+      --ingress-gateway-ip <INGRESS_GATEWAY_IP>
+          Gateway address on the ingress network [default: 10.78.0.2]
       --proxy-url <PROXY_URL>
           Explicit proxy URL [default: http://<gateway-ip>:3128]
       --ca-path <CA_PATH>

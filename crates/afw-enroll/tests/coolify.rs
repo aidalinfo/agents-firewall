@@ -3,8 +3,8 @@
 use std::sync::{Arc, Mutex};
 
 use afw_enroll::{
-    CoolifyClient, CoolifyKind, EnrollError, EnrollSpec, enroll_compose, enroll_coolify,
-    unenroll_coolify,
+    CoolifyClient, CoolifyKind, EnrollError, EnrollSpec, IngressSpec, enroll_compose,
+    enroll_coolify, unenroll_coolify,
 };
 use axum::{
     Json, Router,

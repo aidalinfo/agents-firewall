@@ -829,8 +829,7 @@ pub struct EnrollArgs {
     /// Internal network of the gateway.
     #[arg(long, default_value = "afw-internal")]
     pub network: String,
-    /// Ingress network of the gateway: published ports are served by an afw-in-<agent> relay
-    /// that reaches the agent through the gateway on this network.
+    /// Ingress network of the gateway (published ports are relayed to the agent through it).
     #[arg(long = "ingress-network", default_value = "afw-ingress")]
     pub ingress_network: String,
     /// Gateway address on the ingress network.

@@ -8,10 +8,11 @@
 use serde_yaml::{Mapping, Value};
 
 use crate::error::EnrollError;
+use crate::ingress::{INGRESS_READY_FILE, container_ports, ingress_script};
 use crate::netinit::{HOLDER_CA_DIR, HOLDER_CA_SRC, READY_FILE, script};
 use crate::spec::{
     CA_DIR, EnrollOutcome, EnrollSpec, EnrollWarning, LABEL_AGENT, LABEL_ENROLLED,
-    is_dangerous_cap, is_runtime_socket,
+    ingress_service_name, is_dangerous_cap, is_runtime_socket,
 };
 
 /// Top-level extension holding the original state of every enrolled service.
@@ -23,15 +24,23 @@ const MOVED_TO_HOLDER: &[&str] = &[
     "hostname",
     "domainname",
     "mac_address",
-    "ports",
     "expose",
     "extra_hosts",
     "dns_search",
     "dns_opt",
 ];
 
-/// Agent-service keys that are dropped (they are replaced by the gateway network and DNS).
-const DROPPED: &[&str] = &["networks", "dns", "links"];
+/// Agent-service keys that are dropped (they are replaced by the gateway network and DNS; the
+/// published `ports` move, verbatim, to the `afw-in-<agent>` ingress relay).
+const DROPPED: &[&str] = &["networks", "dns", "links", "ports"];
+
+/// Top-level networks an enrollment declares `external`, with the annotation key holding the
+/// original declaration: the gateway internal network and, for an agent publishing ports, the
+/// gateway ingress network.
+const NETWORK_FIELDS: &[(&str, &str)] = &[
+    ("network", "network_declaration"),
+    ("ingress_network", "ingress_network_declaration"),
+];
 
 /// Name of the per-agent volume holding the CA bundle built by the holder.
 pub(crate) fn ca_volume_name(agent: &str) -> String {
@@ -42,6 +51,8 @@ pub(crate) fn ca_volume_name(agent: &str) -> String {
 ///
 /// Adds the `afw-net-<agent>` network-namespace holder (only `NET_ADMIN`, fixed address, routes
 /// and DNS to the gateway, CA bundle), moves the agent into its namespace without `NET_RAW`,
+/// moves published `ports` to an `afw-in-<agent>` relay that reaches the agent through the
+/// gateway (see [`crate::ingress`]; refused without [`EnrollSpec::ingress`]),
 /// sets proxy and CA variables, mounts the CA directory (and the Hermes plugin if requested),
 /// declares the gateway network as external and records the original state under
 /// [`ORIGINAL_KEY`] so that [`unenroll_compose`] is an exact inverse.
@@ -49,6 +60,7 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
     spec.validate()?;
     let mut doc = parse_document(yaml)?;
     let net_name = spec.net_service_name();
+    let relay_name = ingress_service_name(&spec.agent_name);
     let agent = spec.agent_name.as_str();
     let volume = ca_volume_name(agent);
 
@@ -69,7 +81,7 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
         .get("services")
         .and_then(Value::as_mapping)
         .ok_or_else(|| EnrollError::ServiceNotFound(spec.service.clone()))?;
-    if services.contains_key(net_name.as_str()) {
+    if services.contains_key(net_name.as_str()) || services.contains_key(relay_name.as_str()) {
         return Err(EnrollError::AlreadyEnrolled(agent.into()));
     }
     let original = services
@@ -196,18 +208,34 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
             holder.insert((*key).into(), v.clone());
         }
     }
-    if svc.contains_key("ports") {
-        warnings.push(EnrollWarning::PortsNotPublished {
-            service: spec.service.clone(),
-        });
-    }
-    holder.insert(
-        "labels".into(),
-        map([
-            (LABEL_ENROLLED, "true".to_string()),
-            (LABEL_AGENT, spec.agent_name.clone()),
-        ]),
-    );
+    holder.insert("labels".into(), enrolled_labels(agent));
+
+    // --- ingress relay: the published ports, never on the holder (issue #22).
+    let relay = match svc.get("ports") {
+        Some(ports) => {
+            let ingress = spec.ingress.as_ref().ok_or_else(|| {
+                EnrollError::Unsupported(format!(
+                    "service `{}` publishes ports: the inbound path needs the gateway ingress network (--ingress-network, --ingress-gateway-ip)",
+                    spec.service
+                ))
+            })?;
+            let targets = container_ports(&spec.service, ports)?;
+            warnings.push(EnrollWarning::PortsRelayed {
+                service: spec.service.clone(),
+                relay: relay_name.clone(),
+                ports: targets.clone(),
+            });
+            Some(relay_service(
+                spec,
+                svc,
+                ports,
+                &targets,
+                &ingress.network,
+                ingress.gateway_ip,
+            )?)
+        }
+        None => None,
+    };
 
     // --- agent service.
     let mut agent_svc = svc.clone();
@@ -249,6 +277,9 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
     let mut entry = Mapping::new();
     entry.insert("service".into(), spec.service.clone().into());
     entry.insert("network".into(), spec.network.clone().into());
+    if let (Some(_), Some(ingress)) = (&relay, &spec.ingress) {
+        entry.insert("ingress_network".into(), ingress.network.clone().into());
+    }
     entry.insert("definition".into(), original.clone());
     let existing: Vec<Value> = root
         .get(ORIGINAL_KEY)
@@ -281,26 +312,30 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
             }
         }
     }
-    let same_net = existing
-        .iter()
-        .find(|e| e.get("network").and_then(Value::as_str) == Some(spec.network.as_str()));
-    match same_net {
-        Some(other) => {
-            if let Some(v) = other.get("network_declaration") {
-                entry.insert("network_declaration".into(), v.clone());
-            }
-        }
-        None => {
-            if let Some(decl) = root
+    for (field, decl_key) in NETWORK_FIELDS {
+        let Some(name) = entry.get(*field).and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        // Already declared `external` by another enrollment: inherit the recorded original.
+        let recorded = existing.iter().find_map(|e| {
+            NETWORK_FIELDS
+                .iter()
+                .find(|(f, _)| e.get(*f).and_then(Value::as_str) == Some(name.as_str()))
+                .map(|(_, d)| e.get(*d).cloned())
+        });
+        let decl = match recorded {
+            Some(decl) => decl,
+            None => root
                 .get("networks")
-                .and_then(|n| n.get(spec.network.as_str()))
-            {
-                entry.insert("network_declaration".into(), decl.clone());
-            }
+                .and_then(|n| n.get(name.as_str()))
+                .cloned(),
+        };
+        if let Some(v) = decl {
+            entry.insert((*decl_key).into(), v);
         }
     }
 
-    // --- services: holder inserted right before the agent.
+    // --- services: holder inserted right before the agent, relay right after.
     let services = root
         .get_mut("services")
         .and_then(Value::as_mapping_mut)
@@ -310,14 +345,21 @@ pub fn enroll_compose(yaml: &str, spec: &EnrollSpec) -> Result<EnrollOutcome, En
         if k.as_str() == Some(spec.service.as_str()) {
             rebuilt.insert(net_name.clone().into(), Value::Mapping(holder.clone()));
             rebuilt.insert(k, Value::Mapping(agent_svc.clone()));
+            if let Some(r) = &relay {
+                rebuilt.insert(relay_name.clone().into(), Value::Mapping(r.clone()));
+            }
         } else {
             rebuilt.insert(k, v);
         }
     }
     *services = rebuilt;
 
-    // --- top level: gateway network (external) and CA volume.
+    // --- top level: gateway networks (external) and CA volume.
     top_map(root, "networks")?.insert(spec.network.clone().into(), map([("external", true)]));
+    if let (Some(_), Some(ingress)) = (&relay, &spec.ingress) {
+        top_map(root, "networks")?
+            .insert(ingress.network.clone().into(), map([("external", true)]));
+    }
     top_map(root, "volumes")?.insert(volume.into(), Value::Mapping(Mapping::new()));
 
     let ann = root
@@ -364,7 +406,16 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
             .ok_or_else(|| broken(&format!("missing `{k}`")))
     };
     let service = text("service")?;
-    let network = text("network")?;
+    let mut own_networks = vec![(text("network")?, entry.get("network_declaration").cloned())];
+    if let Some(n) = entry.get("ingress_network") {
+        let n = n
+            .as_str()
+            .ok_or_else(|| broken("`ingress_network` is not a string"))?;
+        own_networks.push((
+            n.to_string(),
+            entry.get("ingress_network_declaration").cloned(),
+        ));
+    }
     let definition = entry
         .get("definition")
         .filter(|d| d.is_mapping())
@@ -372,7 +423,6 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
         .clone();
     let (networks_key, networks_null) = (flag("networks_key")?, flag("networks_null")?);
     let (volumes_key, volumes_null) = (flag("volumes_key")?, flag("volumes_null")?);
-    let declaration = entry.get("network_declaration").cloned();
 
     // --- services.
     let services = root
@@ -384,6 +434,7 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
     }
     services.insert(service.into(), definition);
     services.shift_remove(crate::spec::net_service_name(agent_name).as_str());
+    services.shift_remove(ingress_service_name(agent_name).as_str());
 
     // --- annotation.
     let ann = root
@@ -391,23 +442,33 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
         .and_then(Value::as_mapping_mut)
         .expect("read above");
     ann.shift_remove(agent_name);
-    let still_used = ann
-        .values()
-        .any(|e| e.get("network").and_then(Value::as_str) == Some(network.as_str()));
+    let still_used: Vec<bool> = own_networks
+        .iter()
+        .map(|(name, _)| {
+            ann.values().any(|e| {
+                NETWORK_FIELDS
+                    .iter()
+                    .any(|(f, _)| e.get(*f).and_then(Value::as_str) == Some(name.as_str()))
+            })
+        })
+        .collect();
     if ann.is_empty() {
         root.shift_remove(ORIGINAL_KEY);
     }
 
-    // --- network declaration, restored by the last agent using it; CA volume.
-    if let Some(Value::Mapping(nets)) = root.get_mut("networks")
-        && !still_used
-    {
-        match declaration {
-            Some(decl) => {
-                nets.insert(network.into(), decl);
+    // --- network declarations, restored by the last agent using them; CA volume.
+    if let Some(Value::Mapping(nets)) = root.get_mut("networks") {
+        for ((name, declaration), used) in own_networks.into_iter().zip(still_used) {
+            if used {
+                continue;
             }
-            None => {
-                nets.shift_remove(network.as_str());
+            match declaration {
+                Some(decl) => {
+                    nets.insert(name.into(), decl);
+                }
+                None => {
+                    nets.shift_remove(name.as_str());
+                }
             }
         }
     }
@@ -418,6 +479,76 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
     restore_top(root, "volumes", volumes_key, volumes_null);
 
     Ok(serde_yaml::to_string(&doc)?)
+}
+
+/// The `afw-in-<agent>` relay: the original `ports` verbatim, the original networks of the
+/// agent (where Docker publishes them) plus the gateway ingress network, and a route to the agent
+/// through the gateway only. `NET_ADMIN` sets that route, `NET_BIND_SERVICE` binds ports < 1024.
+fn relay_service(
+    spec: &EnrollSpec,
+    svc: &Mapping,
+    ports: &Value,
+    targets: &[u16],
+    ingress_network: &str,
+    ingress_gateway_ip: std::net::IpAddr,
+) -> Result<Mapping, EnrollError> {
+    let mut relay = Mapping::new();
+    relay.insert("image".into(), spec.netinit_image.clone().into());
+    relay.insert("restart".into(), "unless-stopped".into());
+    relay.insert("cap_drop".into(), seq(["ALL"]));
+    relay.insert("cap_add".into(), seq(["NET_ADMIN", "NET_BIND_SERVICE"]));
+    relay.insert(
+        "command".into(),
+        seq([
+            "sh".to_string(),
+            "-c".to_string(),
+            ingress_script(ingress_gateway_ip, spec.agent_ip, targets).replace('$', "$$"),
+        ]),
+    );
+    let mut nets = match svc.get("networks") {
+        Some(Value::Mapping(m)) => m.clone(),
+        Some(Value::Sequence(list)) => list
+            .iter()
+            .map(|n| (n.clone(), Value::Null))
+            .collect::<Mapping>(),
+        Some(Value::Null) | None => map([("default", Value::Null)])
+            .as_mapping()
+            .cloned()
+            .expect("mapping"),
+        Some(_) => {
+            return Err(EnrollError::InvalidYaml(format!(
+                "service `{}`: `networks` is neither a list nor a mapping",
+                spec.service
+            )));
+        }
+    };
+    if nets.contains_key(ingress_network) {
+        return Err(EnrollError::Unsupported(format!(
+            "service `{}` is already attached to the ingress network `{ingress_network}`",
+            spec.service
+        )));
+    }
+    nets.insert(ingress_network.into(), Value::Null);
+    relay.insert("networks".into(), Value::Mapping(nets));
+    relay.insert("ports".into(), ports.clone());
+    relay.insert(
+        "healthcheck".into(),
+        serde_yaml::to_value(serde_json::json!({
+            "test": ["CMD-SHELL", format!("test -f {INGRESS_READY_FILE}")],
+            "interval": "5s",
+            "timeout": "3s",
+            "retries": 12,
+        }))?,
+    );
+    relay.insert("labels".into(), enrolled_labels(&spec.agent_name));
+    Ok(relay)
+}
+
+fn enrolled_labels(agent: &str) -> Value {
+    map([
+        (LABEL_ENROLLED, "true".to_string()),
+        (LABEL_AGENT, agent.to_string()),
+    ])
 }
 
 fn restore_top(root: &mut Mapping, key: &str, had_key: bool, was_null: bool) {

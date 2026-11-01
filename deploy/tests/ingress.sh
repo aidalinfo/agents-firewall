@@ -38,7 +38,6 @@ tool() { AFW_DOCKER_ARGS="-i -e CARGO_TARGET_DIR=/w/target/demo-enroll" scripts/
 get() { curl -s -m 5 "http://127.0.0.1:$1/"; }
 wait_for() { for _ in $(seq 1 "$1"); do "${@:2}" >/dev/null 2>&1 && return 0; sleep 1; done; "${@:2}"; }
 answers() { get "$1" | grep -q "^$2 peer="; }
-peer_of() { get "$1" | sed -n 's/.* peer=//p'; }
 agent() { dc "$tmp/enrolled.yml" exec -T "$AGENT" "$@"; }
 
 section "networks, images, original stack"
@@ -115,7 +114,6 @@ check "restored: port A answers directly (peer is not the gateway)" \
   _ "$AFW_IT_PORT_A" "$GW_IP"
 check "restored: port B answers on 127.0.0.1" wait_for 20 answers "$AFW_IT_PORT_B" hello-from-agent-b
 check "restored: no afw-in or afw-net container left" \
-  bash -c '[ -z "$(docker compose -p "$1" --project-directory "$2" -f "$3" ps -a -q "afw-in-$4" "afw-net-$4" 2>/dev/null)" ]' \
-  _ "$PROJECT" "$DIR" "$tmp/restored.yml" "$AGENT"
+  bash -c '[ -z "$(docker ps -a -q --filter "label=com.docker.compose.project=$1" --filter "label=afw.agent=$2")" ]' _ "$PROJECT" "$AGENT"
 
 finish

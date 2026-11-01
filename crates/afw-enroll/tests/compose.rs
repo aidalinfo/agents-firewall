@@ -758,6 +758,10 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
         vec!["NET_ADMIN", "NET_BIND_SERVICE"]
     );
     assert!(relay.get("network_mode").is_none());
+    assert_eq!(
+        relay["depends_on"]["bot"]["condition"].as_str(),
+        Some("service_started")
+    );
     assert_eq!(relay["labels"]["afw.agent"].as_str(), Some("bot"));
     let cmd = strings(&relay["command"])[2].replace("$$", "$");
     assert!(cmd.contains("GW='10.81.0.2'") && cmd.contains("AGENT='10.80.0.11'"), "{cmd}");

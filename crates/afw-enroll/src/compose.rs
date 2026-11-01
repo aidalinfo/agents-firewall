@@ -531,6 +531,14 @@ fn relay_service(
     nets.insert(ingress_network.into(), Value::Null);
     relay.insert("networks".into(), Value::Mapping(nets));
     relay.insert("ports".into(), ports.clone());
+    // Started after the agent: on enrollment, Compose recreates the agent (freeing its host ports)
+    // before the relay binds them.
+    let mut deps = Mapping::new();
+    deps.insert(
+        spec.service.clone().into(),
+        map([("condition", "service_started")]),
+    );
+    relay.insert("depends_on".into(), Value::Mapping(deps));
     relay.insert(
         "healthcheck".into(),
         serde_yaml::to_value(serde_json::json!({

@@ -13,7 +13,8 @@ use afw_client::{AfwClient, PolicyKind, PublishOutcome};
 use afw_core::api::EnrollmentRequest;
 use afw_core::policy::AgentKind;
 use afw_enroll::{
-    CoolifyClient, CoolifyKind, EnrollSpec, EnrollWarning, HermesSpec, K8sSpec, docker_run_args,
+    CoolifyClient, CoolifyKind, EnrollSpec, EnrollWarning, HermesSpec, IngressSpec, K8sSpec,
+    docker_run_args,
     enroll_compose, enroll_coolify, k8s_manifests, netinit_run_args, patch_pod_template,
     unenroll_compose, unenroll_coolify, validate_agent_name,
 };
@@ -98,6 +99,10 @@ fn spec(ctx: &Ctx<'_>, a: &EnrollArgs, agent: &str) -> Result<EnrollSpec> {
         ca_path_host: a.ca_path.clone(),
         hermes,
         netinit_image: a.netinit_image.clone(),
+        ingress: Some(IngressSpec {
+            network: a.ingress_network.clone(),
+            gateway_ip: parse_ip("--ingress-gateway-ip", &a.ingress_gateway_ip)?,
+        }),
     };
     s.validate()?;
     Ok(s)

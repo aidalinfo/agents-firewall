@@ -84,8 +84,6 @@ services:
       - test -f /tmp/afw-ready && test -s /afw-ca/bundle.pem
       timeout: 3s
     hostname: daniel
-    ports:
-    - 8080:8080
     labels:
       afw.enrolled: 'true'
       afw.agent: daniel
@@ -122,9 +120,63 @@ services:
     labels:
       afw.enrolled: 'true'
       afw.agent: daniel
+  afw-in-daniel:
+    image: afw-netinit:local
+    restart: unless-stopped
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - NET_BIND_SERVICE
+    command:
+    - sh
+    - -c
+    - |
+      set -u
+      GW='10.81.0.2'
+      AGENT='10.80.0.11'
+      PORTS='8080'
+      READY='/tmp/afw-ready'
+      PIDS=''
+      log() { echo "afw-in: $$*" >&2; }
+      route() { ip -4 route replace "$$AGENT/32" via "$$GW"; }
+      trap 'kill $$PIDS 2>/dev/null; exit 0' TERM INT
+      rm -f "$$READY"
+      until route; do log "no route to $$AGENT via $$GW yet"; sleep 2 & wait $$!; done
+      for p in $$PORTS; do
+        socat TCP-LISTEN:"$$p",fork,reuseaddr TCP4:10.80.0.11:"$$p" &
+        PIDS="$$PIDS $$!"
+      done
+      touch "$$READY"
+      while :; do
+        sleep 10 & wait $$!
+        if ! route; then log "cannot route $$AGENT via $$GW"; rm -f "$$READY"; continue; fi
+        for pid in $$PIDS; do
+          if ! kill -0 "$$pid" 2>/dev/null; then log "a listener exited"; kill $$PIDS 2>/dev/null; exit 1; fi
+        done
+        [ -f "$$READY" ] || touch "$$READY"
+      done
+    networks:
+      backend: null
+      default: null
+      afw-ingress: null
+    ports:
+    - 8080:8080
+    healthcheck:
+      interval: 5s
+      retries: 12
+      test:
+      - CMD-SHELL
+      - test -f /tmp/afw-ready
+      timeout: 3s
+    labels:
+      afw.enrolled: 'true'
+      afw.agent: daniel
 networks:
   backend: {}
   afw-internal:
+    external: true
+  afw-ingress:
     external: true
 volumes:
   pgdata: {}
@@ -133,6 +185,7 @@ x-afw-original:
   daniel:
     service: daniel-bot
     network: afw-internal
+    ingress_network: afw-ingress
     definition:
       image: nousresearch/hermes-agent:latest
       restart: unless-stopped

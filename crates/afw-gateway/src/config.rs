@@ -21,7 +21,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Cmd {
     /// Run the gateway (default).
-    Run(RunArgs),
+    Run(Box<RunArgs>),
     /// Register with the console using a one-time token, then exit.
     Register(RegisterArgs),
     /// Wraps a PolicyDocument (JSON) into a sealed InstalledPolicy for `--standalone-policy`
@@ -102,6 +102,13 @@ pub struct RunArgs {
     pub health_ip: Option<IpAddr>,
     #[arg(long, env = "AFW_HEALTH_PORT", default_value_t = 9090)]
     pub health_port: u16,
+    /// Port of the inbound relay listener (issues #22, #24). Set by the entrypoint only when an
+    /// ingress network is configured, which also restricts it to that network.
+    #[arg(long, env = "AFW_INGRESS_PORT")]
+    pub ingress_port: Option<u16>,
+    /// Destinations of the inbound relay listener: the internal subnets (comma separated CIDRs).
+    #[arg(long, env = "AFW_INGRESS_TARGETS", value_delimiter = ',')]
+    pub ingress_targets: Vec<ipnet::IpNet>,
     /// Install this InstalledPolicy file at start-up (tests, recette without console).
     #[arg(long, env = "AFW_STANDALONE_POLICY")]
     pub standalone_policy: Option<PathBuf>,

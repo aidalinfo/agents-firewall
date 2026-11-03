@@ -52,20 +52,21 @@ pub struct EnrollSpec {
     /// Image of the `afw-net-<agent>` container (alpine + iproute2 + socat), also used by the
     /// `afw-in-<agent>` ingress relay.
     pub netinit_image: String,
-    /// Inbound path for the published ports of the agent (`afw-in-<agent>` relay routed through
+    /// Inbound path for the published ports of the agent (`afw-in-<agent>` relay relayed by
     /// the gateway), `None` = a service that publishes ports is refused.
     #[serde(default)]
     pub ingress: Option<IngressSpec>,
 }
 
-/// Ingress network of the gateway: the `afw-in-<agent>` relay reaches the agent through it, the
-/// gateway forwards to the internal network and masquerades, so that the agent answers to the
-/// gateway (its only route) and keeps no other interface or route (issue #22).
+/// Ingress network of the gateway: the `afw-in-<agent>` relay asks the gateway's inbound relay
+/// listener on it to connect to the agent; the gateway connects from its internal address, so
+/// that the agent answers to the gateway (its only route) and keeps no other interface or route
+/// (issues #22, #24).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IngressSpec {
     /// Ingress network of the gateway (`internal: true`), declared `external` in the agent compose.
     pub network: String,
-    /// Gateway address on the ingress network (next hop of the relay towards the agent).
+    /// Gateway address on the ingress network (where the relay reaches the gateway listener).
     pub gateway_ip: IpAddr,
 }
 

@@ -116,6 +116,10 @@ pub struct GatewayOptions {
     pub proxy: Option<SocketAddr>,
     pub dns: Option<SocketAddr>,
     pub health: Option<SocketAddr>,
+    /// Inbound relay listener (`CONNECT` from the `afw-in-<agent>` relays, see [`crate::ingress`]).
+    pub ingress: Option<SocketAddr>,
+    /// Destinations the inbound relay listener may connect to (the internal subnets).
+    pub ingress_targets: Vec<ipnet::IpNet>,
     pub resolver: Arc<dyn Resolver>,
     pub orig_dst: Arc<dyn OrigDst>,
     /// Extra trusted roots (PEM) for upstream TLS.
@@ -139,6 +143,8 @@ impl GatewayOptions {
             proxy: Some("0.0.0.0:3128".parse().unwrap()),
             dns: Some("0.0.0.0:53".parse().unwrap()),
             health: Some("0.0.0.0:9090".parse().unwrap()),
+            ingress: None,
+            ingress_targets: vec![],
             resolver: Arc::new(SystemResolver),
             orig_dst: Arc::new(SoOriginalDst),
             extra_roots: vec![],
@@ -245,6 +251,7 @@ pub struct BoundAddrs {
     pub proxy: Option<SocketAddr>,
     pub dns: Option<SocketAddr>,
     pub health: Option<SocketAddr>,
+    pub ingress: Option<SocketAddr>,
 }
 
 pub struct RunningGateway {
@@ -369,6 +376,21 @@ impl Gateway {
                 .with_context(|| format!("bind health {a}"))?;
             addrs.health = Some(l.local_addr()?);
             tasks.push(tokio::spawn(crate::health::serve(state.clone(), l)));
+        }
+        if let Some(a) = opts.ingress {
+            anyhow::ensure!(
+                !opts.ingress_targets.is_empty(),
+                "the inbound relay listener needs the internal subnets (AFW_INGRESS_TARGETS)"
+            );
+            let l = TcpListener::bind(a)
+                .await
+                .with_context(|| format!("bind ingress {a}"))?;
+            addrs.ingress = Some(l.local_addr()?);
+            tasks.push(tokio::spawn(crate::ingress::serve(
+                state.clone(),
+                l,
+                Arc::new(opts.ingress_targets.clone()),
+            )));
         }
         match &opts.console_url {
             Some(url) => tasks.push(tokio::spawn(crate::console_client::run(

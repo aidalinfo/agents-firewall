@@ -10,12 +10,14 @@
 #   - every other TCP connection is redirected to the transparent listener (:15001);
 #   - UDP 53 (any resolver, e.g. dig @8.8.8.8) is redirected to the gateway DNS;
 #   - nothing is forwarded (chain forward policy drop): agents only get what the gateway relays.
-# Ingress side (optional, issue #22): AFW_INGRESS_IFACE, or the interface(s) holding the
-# AFW_INGRESS_SUBNETS. The afw-in-<agent> relays route the published ports of their agent through it:
-#   - new TCP connections ingress -> internal are forwarded and masqueraded (the agent sees the gateway
-#     as the peer and answers through its only route), replies follow the conntrack entry;
-#   - nothing else crosses: no forward from the internal side, nothing towards other interfaces, no new
-#     connection to the gateway itself from the ingress side.
+# Ingress side (optional, issues #22, #24): AFW_INGRESS_IFACE, or the interface(s) holding the
+# AFW_INGRESS_SUBNETS. The afw-in-<agent> relays reach the published ports of their agent through the
+# gateway's inbound relay listener (AFW_INGRESS_PORT, default 15002: `CONNECT <agent ip>:<port>`, internal
+# subnets only, exported as AFW_INGRESS_TARGETS). Every hop stays inside its own subnet (relay -> gateway
+# ingress address, gateway internal address -> agent): Docker's isolation rules for `internal` networks
+# drop any packet whose source or destination is outside the network's subnet.
+#   - from the ingress side, only TCP to that listener is accepted; nothing is forwarded (no routed path);
+#   - the listener is unreachable from any other interface (agents' attempts are redirected anyway).
 # Any failure here stops the container: never run without interception (fail closed).
 set -eu
 
@@ -65,7 +67,7 @@ set_list=""
 for i in $ifaces; do set_list="$set_list\"$i\", "; done
 set_list="{ ${set_list%, } }"
 
-# Ingress interfaces: same resolution, optional (no ingress = no forwarding at all).
+# Ingress interfaces: same resolution, optional (no ingress = no inbound relay listener).
 in_ifaces="${AFW_INGRESS_IFACE:-}"
 if [ -z "$in_ifaces" ] && [ -n "${AFW_INGRESS_SUBNETS:-}" ]; then
   for net in $(printf '%s' "$AFW_INGRESS_SUBNETS" | tr ',' ' '); do
@@ -94,21 +96,36 @@ for i in $in_ifaces; do
   in_list="$in_list\"$i\", "
 done
 ingress_rules=""
+unset AFW_INGRESS_TARGETS
 if [ -n "$in_list" ]; then
   in_list="{ ${in_list%, } }"
+  iport="${AFW_INGRESS_PORT:-15002}"
+  case "$iport" in '' | *[!0-9]*) log "invalid ingress port: $iport"; exit 64 ;; esac
+  # Destinations of the listener: the internal subnets (given, or read from the internal interfaces).
+  targets="${AFW_INTERNAL_SUBNETS:-}"
+  if [ -z "$targets" ]; then
+    for i in $ifaces; do
+      for net in $(ip -o route show dev "$i" proto kernel scope link 2>/dev/null | awk '{print $1}'); do
+        targets="$targets,$net"
+      done
+    done
+    targets="${targets#,}"
+  fi
+  if [ -z "$targets" ]; then
+    log "no internal subnet found for the inbound relay listener"
+    exit 65
+  fi
+  export AFW_INGRESS_PORT="$iport" AFW_INGRESS_TARGETS="$targets"
   ingress_rules="
 table inet afw {
-  chain forward {
-    iifname $in_list oifname $set_list meta l4proto tcp ct state new accept
-  }
-  chain postrouting {
-    type nat hook postrouting priority srcnat; policy accept;
-    iifname $in_list oifname $set_list masquerade
-  }
   chain input {
+    iifname $in_list tcp dport $iport counter accept
     iifname $in_list ct state new drop
+    tcp dport $iport drop
   }
 }"
+else
+  unset AFW_INGRESS_PORT
 fi
 
 # Forwarding (also set by the compose sysctls) and no ICMP redirects towards agents: a redirect
@@ -152,5 +169,5 @@ table inet afw {
 $ingress_rules
 NFT
 log "interception active on: $ifaces (tcp -> :$tport, udp/53 -> :$dport, forward drop)"
-[ -z "$in_ifaces" ] || log "ingress active on: $in_ifaces (new tcp -> internal side only, masqueraded)"
+[ -z "$in_ifaces" ] || log "ingress active on: $in_ifaces (relay listener :$AFW_INGRESS_PORT -> $AFW_INGRESS_TARGETS, nothing forwarded)"
 exec /usr/local/bin/afw-gateway "$@"

@@ -1,14 +1,17 @@
-//! Inbound path of an enrolled agent that publishes ports (issue #22).
+//! Inbound path of an enrolled agent that publishes ports (issues #22 and #24).
 //!
 //! The agent shares the namespace of `afw-net-<agent>`, which sits on the `internal` gateway
 //! network only: Docker keeps `ports` there in the container metadata but creates no listener.
 //! Adding a second network to that namespace is not an option (netinit sets it down, and kept up
 //! it would be a way around the gateway). Instead, a separate `afw-in-<agent>` relay publishes the
 //! original `ports` verbatim and forwards each container port to the agent **through the
-//! gateway**: its only route to the agent goes via the gateway's ingress network; the gateway
-//! forwards ingress → internal (TCP, new connections in that direction only) and masquerades, so
-//! the agent sees the gateway as the peer and answers through its single route. The agent keeps
-//! one interface and two routes; stopping the gateway cuts the inbound path as well.
+//! gateway**: it asks the gateway's inbound relay listener, on the ingress network, for
+//! `CONNECT <agent>:<port>`, and the gateway opens the connection from its internal address. Every
+//! hop stays inside its own subnet, so Docker's isolation rules for `internal` networks (which
+//! drop any bridged packet whose source or destination is outside the network's subnet) let it
+//! through, and nothing is routed between the two networks (issue #24). The agent sees the gateway
+//! as the peer and keeps one interface and two routes; stopping the gateway cuts the inbound path
+//! as well.
 
 use std::net::IpAddr;
 
@@ -18,6 +21,9 @@ use crate::error::EnrollError;
 
 /// File created by the relay once its route and listeners are in place (healthcheck).
 pub const INGRESS_READY_FILE: &str = "/tmp/afw-ready";
+
+/// Port of the gateway's inbound relay listener (`AFW_INGRESS_PORT` of the gateway entrypoint).
+pub const INGRESS_RELAY_PORT: u16 = 15002;
 
 /// Maximum number of relayed ports per agent (one `socat` listener each).
 pub const MAX_INGRESS_PORTS: usize = 64;
@@ -86,18 +92,20 @@ pub(crate) fn container_ports(service: &str, ports: &Value) -> Result<Vec<u16>, 
     Ok(out)
 }
 
-/// POSIX `sh` script of the `afw-in-<agent>` relay (needs `ip` and `socat`).
+/// POSIX `sh` script of the `afw-in-<agent>` relay (needs `socat`).
 ///
-/// 1. `ip route replace <agent>/32 via <gateway ingress address>`: the agent is only reached
-///    through the gateway (never directly over the internal network, the relay is not on it);
-/// 2. one `socat` listener per container port, forwarding to the same port of the agent;
-/// 3. every 10 s: route put back, listeners checked (one exits → the container exits and Docker
-///    restarts it). [`INGRESS_READY_FILE`] exists only while the route and listeners are up.
+/// 1. one `socat` listener per container port, each connection relayed by the gateway's inbound
+///    relay listener (`CONNECT <agent>:<port>` to `<gateway ingress address>:`
+///    [`INGRESS_RELAY_PORT`]): the relay never reaches the agent directly (it is not on the
+///    internal network and has no route to it);
+/// 2. every 10 s: listeners checked (one exits → the container exits and Docker restarts it).
+///    [`INGRESS_READY_FILE`] exists only while the listeners are up.
 pub(crate) fn ingress_script(gateway_ip: IpAddr, agent_ip: IpAddr, ports: &[u16]) -> String {
-    let (fam, host, connect, target) = match agent_ip {
-        IpAddr::V4(a) => ("-4", "32", "TCP4", a.to_string()),
-        IpAddr::V6(a) => ("-6", "128", "TCP6", format!("[{a}]")),
+    let bracket = |ip: IpAddr| match ip {
+        IpAddr::V4(a) => a.to_string(),
+        IpAddr::V6(a) => format!("[{a}]"),
     };
+    let (gw, target) = (bracket(gateway_ip), bracket(agent_ip));
     let ports = ports
         .iter()
         .map(u16::to_string)
@@ -111,22 +119,19 @@ PORTS='{ports}'
 READY='{INGRESS_READY_FILE}'
 PIDS=''
 log() {{ echo "afw-in: $*" >&2; }}
-route() {{ ip {fam} route replace "$AGENT/{host}" via "$GW"; }}
 trap 'kill $PIDS 2>/dev/null; exit 0' TERM INT
 rm -f "$READY"
-until route; do log "no route to $AGENT via $GW yet"; sleep 2 & wait $!; done
 for p in $PORTS; do
-  socat TCP-LISTEN:"$p",fork,reuseaddr {connect}:{target}:"$p" &
+  socat TCP-LISTEN:"$p",fork,reuseaddr PROXY:{gw}:{target}:"$p",proxyport={INGRESS_RELAY_PORT} &
   PIDS="$PIDS $!"
 done
 touch "$READY"
+log "relaying $PORTS to $AGENT through the gateway $GW"
 while :; do
   sleep 10 & wait $!
-  if ! route; then log "cannot route $AGENT via $GW"; rm -f "$READY"; continue; fi
   for pid in $PIDS; do
     if ! kill -0 "$pid" 2>/dev/null; then log "a listener exited"; kill $PIDS 2>/dev/null; exit 1; fi
   done
-  [ -f "$READY" ] || touch "$READY"
 done
 "#
     )
@@ -172,22 +177,23 @@ mod tests {
     }
 
     #[test]
-    fn script_routes_through_the_gateway_only() {
+    fn script_reaches_the_agent_through_the_gateway_listener_only() {
         let s = ingress_script(
             "10.78.0.2".parse().unwrap(),
             "10.77.0.21".parse().unwrap(),
             &[80, 9000],
         );
-        assert!(s.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#));
         assert!(s.contains("PORTS='80 9000'"));
-        assert!(s.contains(r#"TCP4:10.77.0.21:"$p""#));
+        assert!(s.contains(r#"PROXY:10.78.0.2:10.77.0.21:"$p",proxyport=15002"#));
+        // No route towards the agent: the relay only talks to the gateway's ingress address.
+        assert!(!s.contains("route"), "{s}");
+        assert!(!s.contains("TCP4:") && !s.contains("TCP6:"), "{s}");
         let s6 = ingress_script(
             "fd00:78::2".parse().unwrap(),
             "fd00:77::21".parse().unwrap(),
             &[80],
         );
-        assert!(s6.contains(r#"ip -6 route replace "$AGENT/128" via "$GW""#));
-        assert!(s6.contains(r#"TCP6:[fd00:77::21]:"$p""#));
+        assert!(s6.contains(r#"PROXY:[fd00:78::2]:[fd00:77::21]:"$p",proxyport=15002"#));
         let status = std::process::Command::new("sh")
             .arg("-n")
             .arg("-c")

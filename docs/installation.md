@@ -132,7 +132,7 @@ Le fichier `deploy/compose/gateway.yml` définit :
 
 - le conteneur de la passerelle, avec `cap_add: [NET_ADMIN]` ;
 - le réseau **interne** `afw-internal`, déclaré `internal: true` avec un sous-réseau fixe : les agents y sont attachés et n'ont aucune autre sortie ;
-- le réseau **d'entrée** `afw-ingress`, déclaré `internal: true` : les relais `afw-in-<agent>` des agents qui publient des ports y joignent la passerelle, qui transfère ces seules connexions TCP entrantes vers l'agent (voir [enrolement.md](enrolement.md#ports-publiés-flux-entrants)) ;
+- le réseau **d'entrée** `afw-ingress`, déclaré `internal: true` : les relais `afw-in-<agent>` des agents qui publient des ports y joignent la passerelle, dont le relais d'entrée (port `15002`, joignable depuis ce seul réseau) ouvre ces connexions TCP vers l'agent (voir [enrolement.md](enrolement.md#ports-publiés-flux-entrants)) ;
 - le réseau **de sortie** `afw-egress`, par lequel la passerelle joint Internet et la console ;
 - un volume d'état monté sur `/var/lib/afw` : politique installée (`/var/lib/afw/policy.json`), clé et certificat de la passerelle (`identity/`), autorité d'inspection, tampon d'événements ;
 - un répertoire de l'hôte (`AFW_CA_PUBLIC_DIR`, défaut `/etc/agents-firewall`) monté sur `/var/lib/afw/public`, où la passerelle exporte le certificat public de son autorité d'inspection (`gateway.crt`), monté ensuite en lecture seule par les agents enrôlés.

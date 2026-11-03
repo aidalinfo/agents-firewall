@@ -4,7 +4,7 @@
 //! container holding only `NET_ADMIN` owns the network namespace, points the routes and DNS
 //! to the gateway (and nothing else), and the agent joins it with
 //! `network_mode: service:afw-net-<agent>` without `NET_RAW`. Published ports are served by a
-//! separate `afw-in-<agent>` relay routed through the gateway (issue #22). See ADR 0023.
+//! separate `afw-in-<agent>` relay that reaches them through the gateway (issues #22, #24). See ADR 0023.
 
 mod compose;
 mod coolify;
@@ -19,7 +19,7 @@ pub use compose::{ORIGINAL_KEY, enroll_compose, unenroll_compose};
 pub use coolify::{CoolifyClient, CoolifyKind, CoolifyResource, enroll_coolify, unenroll_coolify};
 pub use docker::{docker_run_args, netinit_command, netinit_run_args};
 pub use error::EnrollError;
-pub use ingress::{INGRESS_READY_FILE, MAX_INGRESS_PORTS};
+pub use ingress::{INGRESS_READY_FILE, INGRESS_RELAY_PORT, MAX_INGRESS_PORTS};
 pub use k8s::{K8sSpec, SecretKeyRef, check_networkpolicies, k8s_manifests, patch_pod_template};
 pub use netinit::{HOLDER_CA_DIR, HOLDER_CA_SRC, READY_FILE, netinit_script};
 pub use spec::{

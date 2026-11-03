@@ -131,7 +131,7 @@ Jusqu'à `max_buffered_body` (1 Mio par défaut), un corps est analysé en entie
 
 ### Flux entrants des agents enrôlés
 
-Les ports publiés d'un agent enrôlé sont servis par un relais `afw-in-<agent>` et transférés par la passerelle au niveau TCP ([enrolement.md](enrolement.md#ports-publiés-flux-entrants)). Ce trafic entrant **n'est ni inspecté ni journalisé** : seules les sorties de l'agent le sont. La passerelle n'accepte que les nouvelles connexions du réseau d'entrée vers le réseau interne (jamais l'inverse), donc ce chemin n'offre aucune sortie à l'agent, mais **tout conteneur relié au réseau `afw-ingress` peut joindre n'importe quel agent de l'hôte** : n'y branchez que les relais. UDP n'est pas pris en charge (refusé à l'enrôlement).
+Les ports publiés d'un agent enrôlé sont servis par un relais `afw-in-<agent>` et relayés par la passerelle au niveau TCP ([enrolement.md](enrolement.md#ports-publiés-flux-entrants)). Ce trafic entrant **n'est ni inspecté ni journalisé** : seules les sorties de l'agent le sont. Le relais d'entrée de la passerelle (`CONNECT`, port `15002`) n'est joignable que depuis le réseau d'entrée, n'accepte que des adresses des sous-réseaux internes et la passerelle ne route rien entre les réseaux : ce chemin n'offre aucune sortie à l'agent, mais **tout conteneur relié au réseau `afw-ingress` peut joindre n'importe quel agent de l'hôte** : n'y branchez que les relais. UDP n'est pas pris en charge (refusé à l'enrôlement).
 
 ### Exfiltration lente par DNS
 

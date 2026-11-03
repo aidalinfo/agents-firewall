@@ -1,4 +1,4 @@
-# Integration test of the inbound path of an enrolled agent (issue #22), run by deploy/tests/ingress.sh.
+# Integration test of the inbound path of an enrolled agent (issues #22, #24), run by deploy/tests/ingress.sh.
 # This is the compose file BEFORE enrollment: the test enrolls `test-bot` with afw_enroll::enroll_compose
 # (deploy/tools/demo-enroll), runs the result, then unenrolls it and runs the restored file.
 # Topology: the gateway is on the internal agents network, the ingress network and a fake "wan"; test-bot

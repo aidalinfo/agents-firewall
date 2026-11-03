@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
             println!("registered as gateway {id}");
             Ok(())
         }
-        Some(Cmd::Run(a)) => run(a).await,
+        Some(Cmd::Run(a)) => run(*a).await,
         Some(Cmd::SealPolicy(a)) => {
             let doc: afw_core::policy::PolicyDocument =
                 serde_json::from_slice(&std::fs::read(&a.document)?)?;
@@ -84,6 +84,8 @@ async fn run(a: RunArgs) -> anyhow::Result<()> {
         a.health_ip.unwrap_or(a.listen_ip),
         a.health_port,
     ));
+    o.ingress = a.ingress_port.map(at);
+    o.ingress_targets = a.ingress_targets.clone();
     o.resolver = afw_gateway::upstream::default_resolver(a.upstream_dns_addr()?);
     o.extra_roots = a.extra_roots()?;
     o.console_url = a.console_url.clone().filter(|u| !u.is_empty());

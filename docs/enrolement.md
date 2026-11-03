@@ -124,8 +124,8 @@ services:
   afw-in-mon-agent:                   # relais d'entrée : les ports d'origine, à l'identique
     image: afw-netinit:local
     cap_drop: [ALL]
-    cap_add: [NET_ADMIN, NET_BIND_SERVICE]
-    command: [sh, -c, "…"]            # route vers l'agent via la passerelle, un socat par port
+    cap_add: [NET_BIND_SERVICE]
+    command: [sh, -c, "…"]            # un socat par port, relayé par la passerelle
     networks:
       default:                        # réseaux d'origine de l'agent : Docker y publie les ports
       afw-ingress:                    # réseau d'entrée de la passerelle
@@ -153,14 +153,15 @@ L'enrôlement ajoute donc un **relais d'entrée** `afw-in-<agent>`, distinct de 
 
 ```
   hôte :8080 ──▶ afw-in-mon-agent ──(réseau afw-ingress)──▶ passerelle ──(réseau afw-internal)──▶ mon-agent :8080
-                 ports d'origine        route /32 vers         transfert TCP entrant,
-                 socat, NET_ADMIN       l'agent via la         masquerade : l'agent voit
-                 seulement              passerelle             la passerelle comme pair
+                 ports d'origine        CONNECT agent:8080     connexion ouverte depuis
+                 socat, aucune          vers 10.78.0.2:15002   l'adresse interne de la
+                 route vers l'agent                            passerelle : pair = passerelle
 ```
 
 - le relais reprend la clé `ports` **à l'identique** (adresse d'hôte, syntaxe longue, interpolation) et les réseaux d'origine de l'agent, sur lesquels Docker publie ; il est aussi relié au réseau d'entrée `afw-ingress` de la passerelle ;
-- pour chaque port du conteneur, un `socat` transmet à la même adresse et au même port de l'agent ; la seule route du relais vers l'agent passe par la passerelle (`--ingress-gateway-ip`, défaut `10.78.0.2`) ;
-- la passerelle ne transfère que les **nouvelles connexions TCP du réseau d'entrée vers le réseau interne**, et les masque derrière sa propre adresse : l'agent répond à la passerelle, par son unique route. Rien n'est transféré dans l'autre sens, ni vers un autre réseau ;
+- pour chaque port du conteneur, un `socat` demande au **relais d'entrée de la passerelle** (`--ingress-gateway-ip`, défaut `10.78.0.2`, port `15002`) une connexion `CONNECT <agent>:<port>` ; le relais n'a aucune route vers l'agent et ne le joint jamais directement ;
+- la passerelle n'accepte que des adresses IP **des sous-réseaux internes** (jamais un nom, jamais elle-même) et ouvre la connexion depuis sa propre adresse interne : l'agent répond à la passerelle, par son unique route. La passerelle ne route rien entre les réseaux (pas de `forward`), et son écouteur n'est joignable que depuis le réseau d'entrée ;
+- chaque paquet reste dans le sous-réseau de son réseau Docker (relais → adresse d'entrée de la passerelle, adresse interne de la passerelle → agent). C'est indispensable : sur un hôte qui filtre le trafic des ponts (`br_netfilter`, cas fréquent), Docker supprime sur un réseau `internal` tout paquet dont la source ou la destination sort du sous-réseau. Un relais qui routait ses paquets vers l'adresse de l'agent via la passerelle était bloqué avant d'atteindre celle-ci (issue #24) ;
 - **l'agent ne change pas** : une seule interface, la route par défaut et la route /32 vers la passerelle. Toutes ses sorties restent interceptées, et `afw-in` n'est pas une sortie pour lui (son adresse n'est joignable qu'à travers la politique de la passerelle) ;
 - **passerelle arrêtée** : les sorties de l'agent sont coupées et ses ports entrants aussi. Le service ne paraît donc jamais joignable sans protection ;
 - `afw enroll --dry-run` l'annonce (« its published ports are now served by afw-in-<agent>, which forwards TCP … through the gateway ») ; `afw unenroll` retire le relais et remet les `ports`, les réseaux et les déclarations d'origine à l'identique.
@@ -168,9 +169,9 @@ L'enrôlement ajoute donc un **relais d'entrée** `afw-in-<agent>`, distinct de 
 Contrat et limites :
 
 - **TCP seulement**. Un port UDP, un port de conteneur non littéral (`8080:${PORT}`) ou plus de 64 ports par agent sont **refusés** à l'enrôlement, avec un message clair, plutôt que perdus en silence ;
-- le trafic entrant **n'est ni inspecté ni journalisé** par la passerelle (seul l'aller est relayé, au niveau TCP) ; l'agent voit l'adresse de la passerelle, pas celle du client d'origine ;
+- le trafic entrant **n'est ni inspecté ni journalisé** par la passerelle (il est relayé au niveau TCP) ; l'agent voit l'adresse de la passerelle, pas celle du client d'origine ;
 - tout conteneur relié au réseau `afw-ingress` peut ouvrir une connexion vers n'importe quel agent de l'hôte : ne branchez rien d'autre que les relais sur ce réseau (y accéder suppose déjà les droits Docker de l'hôte) ;
-- la passerelle doit être déployée avec le réseau `afw-ingress` (`deploy/compose/gateway.yml`, variables `AFW_INGRESS_*`). Une passerelle plus ancienne n'a pas ce réseau : `docker compose up` de l'agent échoue alors explicitement (« network afw-ingress … not found ») ; mettez la passerelle à jour avant d'enrôler un agent qui publie des ports ;
+- la passerelle doit être déployée avec le réseau `afw-ingress` (`deploy/compose/gateway.yml`, variables `AFW_INGRESS_*`) et dans une version qui fournit le relais d'entrée (port `15002`, `AFW_INGRESS_PORT` à ne pas changer : les relais s'y connectent). Une passerelle plus ancienne n'a pas ce réseau : `docker compose up` de l'agent échoue alors explicitement (« network afw-ingress … not found ») ; mettez la passerelle à jour avant d'enrôler un agent qui publie des ports ;
 - les autres services du même compose qui appelaient l'agent par son nom de service ne le joignent plus (vrai aussi sans ports publiés) ; pour `docker run`, aucun relais n'est proposé : publiez les ports avec un compose ;
 - avec Coolify, le relais est un service du compose comme les autres : Coolify peut lui ajouter son propre réseau, ce qui est sans effet sur l'isolement (l'agent n'en hérite pas).
 

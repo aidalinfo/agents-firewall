@@ -72,6 +72,30 @@ ses tests sont gardés comme tests de non-régression (`tests/review_bypass.rs`)
   `deploy/tests/ingress.sh` (Docker réel : ports joignables avant/après, pair = passerelle,
   adresse d'hôte conservée, aucune sortie de contournement, passerelle arrêtée, désenrôlement
   identique au fichier d'origine).
+- **Ports publiés, chemin relayé (révision, issue #24).** Sur un hôte qui filtre le trafic des
+  ponts (`br_netfilter`), Docker installe pour chaque réseau `internal` les règles
+  `! -s <sous-réseau> -o <pont> -j DROP` et `! -d <sous-réseau> -i <pont> -j DROP` : le SYN du
+  relais, adressé à l'agent (hors du sous-réseau d'entrée), était supprimé sur le pont d'entrée
+  avant d'atteindre la passerelle. Décision : plus aucun paquet ne quitte le sous-réseau de son
+  pont. La passerelle expose un **relais d'entrée** (`AFW_INGRESS_PORT`, 15002 ; module
+  `afw-gateway::ingress`) : `CONNECT <ip>:<port>` HTTP/1.x, IP littérale des sous-réseaux internes
+  seulement (`AFW_INGRESS_TARGETS`, déduits par l'entrypoint), jamais une adresse de la passerelle,
+  en-tête limité à 4 Kio, 4096 connexions simultanées. L'entrypoint ne l'ouvre que sur les
+  interfaces d'entrée (`counter accept`, refus ailleurs) et **supprime le `forward` et le
+  `masquerade`** : la passerelle ne route plus rien entre les réseaux. Le relais `afw-in-<agent>`
+  perd `NET_ADMIN` (aucune route) et lance `socat … PROXY:<passerelle>:<agent>:<port>,proxyport=15002`.
+  L'agent voit toujours la passerelle comme pair ; passerelle arrêtée, entrées et sorties sont
+  coupées. Écartés : rendre `afw-ingress` non `internal` (Docker pourrait y choisir la route par
+  défaut de la passerelle ou des relais, et casser le retour des ports publiés ; l'hôte deviendrait
+  routeur de ce réseau), modifier les règles de l'hôte (`DOCKER-USER` : hors de portée de
+  l'enrôlement, perdu au redémarrage de Docker), un tunnel IP-in-IP (module noyau, routage de
+  retour par marque), le DNAT par agent (table de correspondance dans la passerelle). Le proxy
+  transparent reste écarté pour l'entrée : ce relais est un écouteur distinct, qui n'évalue pas la
+  politique de sortie. Même règle d'isolation, conséquence connue : une sortie de l'agent qui
+  ignore le proxy vers une adresse hors du sous-réseau interne est supprimée par Docker avant
+  l'interception transparente (refus sans journal, toujours sans contournement). Vérifié par
+  `deploy/tests/ingress.sh`, qui active `br_netfilter` si besoin, contrôle la règle d'isolation
+  installée sur l'hôte et le compteur du relais d'entrée côté passerelle.
 - Variables : `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` et leurs formes minuscules,
   `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` → `…/afw/bundle.pem` (paquet complet :
   les destinations exemptées d'inspection restent vérifiables), `NODE_EXTRA_CA_CERTS` →

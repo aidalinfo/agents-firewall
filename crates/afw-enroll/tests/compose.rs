@@ -756,10 +756,8 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
         original["services"]["bot"]["networks"]["front"]
     );
     assert_eq!(strings(&relay["cap_drop"]), vec!["ALL"]);
-    assert_eq!(
-        strings(&relay["cap_add"]),
-        vec!["NET_ADMIN", "NET_BIND_SERVICE"]
-    );
+    // No NET_ADMIN: the relay sets no route, it only talks to the gateway listener (issue #24).
+    assert_eq!(strings(&relay["cap_add"]), vec!["NET_BIND_SERVICE"]);
     assert!(relay.get("network_mode").is_none());
     assert_eq!(
         relay["depends_on"]["bot"]["condition"].as_str(),
@@ -772,9 +770,10 @@ fn published_ports_go_to_a_relay_routed_through_the_gateway() {
         "{cmd}"
     );
     assert!(
-        cmd.contains(r#"ip -4 route replace "$AGENT/32" via "$GW""#),
+        cmd.contains(r#"PROXY:10.81.0.2:10.80.0.11:"$p",proxyport=15002"#),
         "{cmd}"
     );
+    assert!(!cmd.contains("route"), "{cmd}");
     assert!(cmd.contains("PORTS='90 443 7000 8080'"), "{cmd}");
     assert!(
         strings(&relay["healthcheck"]["test"])

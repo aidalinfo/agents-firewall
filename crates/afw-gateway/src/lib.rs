@@ -18,6 +18,7 @@ pub mod explicit_proxy;
 pub mod flow;
 pub mod health;
 pub mod http_pipeline;
+pub mod ingress;
 pub mod io;
 pub mod l4;
 pub mod metrics;

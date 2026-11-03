@@ -1,7 +1,7 @@
 # afw-netinit: network-namespace holder of an enrolled agent (ADR 0003 « pause », ADR 0023).
 # Runs afw_enroll::netinit_script (deploy/docker/netinit.sh, kept identical by deploy/tests/enroll-sync.sh).
 # The script needs `ip` (iproute2), `awk` (busybox) and /etc/ssl/certs/ca-certificates.crt (ca-certificates).
-# The same image runs the afw-in-<agent> ingress relay of an agent that publishes ports (`ip` and `socat`).
+# The same image runs the afw-in-<agent> ingress relay of an agent that publishes ports (`socat`).
 # Build: docker build -t afw-netinit:local -f deploy/docker/Dockerfile.netinit deploy/docker
 FROM alpine:3.20
 RUN apk add --no-cache iproute2 ca-certificates socat

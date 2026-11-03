@@ -486,8 +486,8 @@ pub fn unenroll_compose(yaml: &str, agent_name: &str) -> Result<String, EnrollEr
 }
 
 /// The `afw-in-<agent>` relay: the original `ports` verbatim, the original networks of the
-/// agent (where Docker publishes them) plus the gateway ingress network, and a route to the agent
-/// through the gateway only. `NET_ADMIN` sets that route, `NET_BIND_SERVICE` binds ports < 1024.
+/// agent (where Docker publishes them) plus the gateway ingress network, where it reaches the
+/// agent through the gateway's inbound relay listener only. `NET_BIND_SERVICE` binds ports < 1024.
 fn relay_service(
     spec: &EnrollSpec,
     svc: &Mapping,
@@ -500,7 +500,7 @@ fn relay_service(
     relay.insert("image".into(), spec.netinit_image.clone().into());
     relay.insert("restart".into(), "unless-stopped".into());
     relay.insert("cap_drop".into(), seq(["ALL"]));
-    relay.insert("cap_add".into(), seq(["NET_ADMIN", "NET_BIND_SERVICE"]));
+    relay.insert("cap_add".into(), seq(["NET_BIND_SERVICE"]));
     relay.insert(
         "command".into(),
         seq([

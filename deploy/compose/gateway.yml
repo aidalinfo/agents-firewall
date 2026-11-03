@@ -3,7 +3,8 @@
 #   docker compose --env-file gateway.env -f gateway.yml up -d
 # Agents are then enrolled with `afw enroll <service> --compose <file> …`, which attaches them to the `afw-internal` network
 # through an afw-net-<agent> container routing everything to this gateway. Their published ports are served by an
-# afw-in-<agent> relay on the `afw-ingress` network, forwarded by this gateway to the agent (issue #22).
+# afw-in-<agent> relay on the `afw-ingress` network, relayed by this gateway's inbound relay listener (port 15002)
+# to the agent (issues #22, #24).
 
 name: afw-gateway
 
@@ -49,8 +50,8 @@ networks:
     ipam:
       config:
         - subnet: ${AFW_INTERNAL_SUBNET:-10.77.0.0/24}
-  # Inbound path of the published ports of enrolled agents: afw-in-<agent> relays -> gateway -> agent
-  # (new TCP connections in that direction only, masqueraded). No exit either.
+  # Inbound path of the published ports of enrolled agents: afw-in-<agent> relays -> gateway inbound relay
+  # listener (CONNECT, internal addresses only) -> agent. Nothing is routed between the networks. No exit either.
   afw-ingress:
     name: ${AFW_INGRESS_NETWORK:-afw-ingress}
     internal: true

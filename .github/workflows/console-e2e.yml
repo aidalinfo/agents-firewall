@@ -22,7 +22,7 @@ jobs:
     env:
       PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.1-noble
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - name: Run the e2e stack and Playwright

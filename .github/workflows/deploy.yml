@@ -18,7 +18,7 @@ jobs:
     name: compose, helm, shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh static
@@ -27,7 +27,7 @@ jobs:
     name: netinit and demo agents match afw-enroll
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh enroll
@@ -36,7 +36,7 @@ jobs:
     name: netinit bypass tests, inbound ports of an enrolled agent, demo world
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh netinit
@@ -47,7 +47,7 @@ jobs:
     name: build images (local only, never pushed)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
       - run: deploy/tests/run.sh images
